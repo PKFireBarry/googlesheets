@@ -61,9 +61,10 @@ export default function Home() {
       const rows = result.values.slice(1);
       setData([headers, ...rows.reverse()]);
       setCurrentIndex(1);
-    } catch (err: any) {
-      console.error("Error fetching data:", err);
-      setError(err.message);
+    } catch (error: unknown) {
+      console.error("Error fetching data:", error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch data';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -153,9 +154,10 @@ export default function Home() {
       if (currentIndex >= newData.length - 1) {
         setCurrentIndex(Math.max(1, newData.length - 2));
       }
-    } catch (err: any) {
-      console.error('Error deleting entry:', err);
-      setError(err.message);
+    } catch (error: unknown) {
+      console.error('Error deleting entry:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to delete entry';
+      setError(errorMessage);
     }
   };
 
