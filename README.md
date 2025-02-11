@@ -1,36 +1,35 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Google Sheet Job Card Viewer - User Guide
 
-## Getting Started
+## Overview  
+This application allows you to view and interact with data from a Google Sheet in a structured, easy-to-read job card format. Instead of manually navigating large spreadsheets, you can enter a sheet URL and browse the data row by row.
 
-First, run the development server:
+## How It Works  
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+1. **Enter the Google Sheet URL**  
+   - Copy the link to the Google Sheet you want to view.  
+   - Paste the URL into the input box at the top of the application.  
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. **Load the Data**  
+   - Press **Enter** or click the submit button.  
+   - The application will process the sheet and display its contents as job cards.  
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+3. **View Job Cards**  
+   - Each row of the spreadsheet is shown as a separate job card.  
+   - Cards will display all relevant details from the sheet in a structured format.  
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Requirements  
+- The Google Sheet.  
+ 
 
-## Learn More
+## Troubleshooting  
+- Ensure the URL is correct and formatted properly.  
 
-To learn more about Next.js, take a look at the following resources:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Example Screenshot  
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
-## Deploy on Vercel
+## License  
+This project is licensed under the [MIT License](LICENSE).  
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+---
+_If you have any issues or need support, please open an issue on GitHub._
