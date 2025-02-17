@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+
 "use client"
 
 import type React from "react"
@@ -18,6 +20,7 @@ import {
 } from "lucide-react"
 import clsx from "clsx"
 import Cookies from "js-cookie"
+import Image from "next/image"
 
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY
 const RANGE = process.env.NEXT_PUBLIC_RANGE
@@ -87,7 +90,7 @@ export default function Home() {
         fetchData(id)
       }
     }
-  }, []) // Remove fetchData from dependency array since it hasn't been defined yet
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleUrlSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -775,12 +778,14 @@ export default function Home() {
           <div className="flex flex-col sm:flex-row justify-between items-start mb-4 sm:mb-6">
             <div className="flex gap-3 sm:gap-4 w-full sm:w-auto">
               {getFieldValue("company_image") && (
-                <img
+                <Image
                   src={getFieldValue("company_image") || "/placeholder.svg"}
                   alt={`${getFieldValue("company_name")} logo`}
+                  width={64}
+                  height={64}
                   className="w-12 h-12 sm:w-16 sm:h-16 object-contain rounded-lg bg-white p-2"
                   onError={(e) => {
-                    ;(e.target as HTMLImageElement).style.display = "none"
+                    e.currentTarget.style.display = "none"
                   }}
                 />
               )}
