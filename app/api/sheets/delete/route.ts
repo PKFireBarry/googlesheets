@@ -41,6 +41,9 @@ export async function POST(request: Request) {
       );
     }
 
+    // Add 1 because Google Sheets uses 1-based indexing
+    const actualRowIndex = rowIndex + 1;
+
     const result = await sheets.spreadsheets.batchUpdate({
       spreadsheetId,
       requestBody: {
@@ -49,8 +52,8 @@ export async function POST(request: Request) {
             range: {
               sheetId: 0,
               dimension: 'ROWS',
-              startIndex: rowIndex - 1,
-              endIndex: rowIndex
+              startIndex: actualRowIndex - 1,  // Convert to 0-based for the API
+              endIndex: actualRowIndex  // This will delete one row
             }
           }
         }]
