@@ -42,6 +42,11 @@ const cn = (...classes: (string | boolean | undefined)[]) => {
   return clsx(classes)
 }
 
+interface RowData {
+  data: string[];
+  originalIndex: number;
+}
+
 export default function Home() {
   const [data, setData] = useState<string[][]>([])
   const [loading, setLoading] = useState(false)
@@ -82,7 +87,7 @@ export default function Home() {
         fetchData(id)
       }
     }
-  }, [])
+  }, []) // Remove fetchData from dependency array since it hasn't been defined yet
 
   const handleUrlSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -123,13 +128,13 @@ export default function Home() {
       setTotalSheetRows(rows.length)
 
       // Add original indices to rows before filtering
-      const rowsWithIndices = rows.map((row: any, index: number) => ({
+      const rowsWithIndices = rows.map((row: string[], index: number) => ({
         data: row,
-        originalIndex: index + 2, // +2 for 1-based index and header row
+        originalIndex: index + 2,
       }))
 
       // Filter out invalid entries while preserving original indices
-      const validRows = rowsWithIndices.filter((row: { data: string[]; originalIndex: any }, index: any) => {
+      const validRows = rowsWithIndices.filter((row: RowData) => {
         const isValid = validateJobListing(row.data, headers)
         if (!isValid) {
           console.log(`Row ${row.originalIndex} failed validation:`, row.data)
@@ -207,10 +212,10 @@ export default function Home() {
       }
 
       // Store the data with original indices
-      setData([headers, ...filteredRows.reverse().map((row: { data: any }) => row.data)])
+      setData([headers, ...filteredRows.reverse().map((row: RowData) => row.data)])
 
       // Store the original indices separately
-      const indices = filteredRows.map((row: { originalIndex: any }) => row.originalIndex)
+      const indices = filteredRows.map((row: RowData) => row.originalIndex)
       setRowIndices(indices.reverse())
 
       setCurrentIndex(1)
