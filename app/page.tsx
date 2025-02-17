@@ -565,7 +565,7 @@ export default function Home() {
             <div className="space-y-6 text-gray-300">
               <p className="leading-relaxed">
                 This app helps you organize and review job listings from various sources including Glassdoor,
-                HiringCafe, USAJOBS.gov, PublicHealthJobs, and more. Simply connect your spreadsheet, and we'll
+                HiringCafe, USAJOBS.gov, PublicHealthJobs, and more. Simply connect your spreadsheet, and we&apos;ll
                 transform it into an easy-to-navigate format.
               </p>
 
