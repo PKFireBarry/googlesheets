@@ -572,7 +572,7 @@ export default function Home() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
                 <div className="flex items-start gap-3">
                   <div className="mt-1 text-blue-400">✓</div>
-                  <p className="text-sm">Create custom filters and delete jobs you don't want to see</p>
+                  <p className="text-sm">Create custom filters and delete jobs you don&apos;t want to see</p>
                 </div>
                 <div className="flex items-start gap-3">
                   <div className="mt-1 text-blue-400">✓</div>
