@@ -195,17 +195,22 @@ export default function Home() {
     }
   }
 
-  const formatDate = (dateString: string | number | Date) => {
+  const formatDate = (dateString: string | number | Date): string => {
     if (!dateString) return ""
     try {
       const date = new Date(dateString)
+      if (isNaN(date.getTime())) {
+        // If date is invalid, return the original string
+        return String(dateString)
+      }
       return date.toLocaleDateString("en-US", {
         month: "short",
         day: "numeric",
         year: "numeric",
       })
     } catch {
-      return dateString
+      // If there's any error, return the original string
+      return String(dateString)
     }
   }
 
