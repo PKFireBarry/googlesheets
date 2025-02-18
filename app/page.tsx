@@ -17,6 +17,10 @@ import {
   CheckCircle,
   Filter,
   Globe,
+  ExternalLink,
+  Users,
+  TrendingUp,
+  Linkedin,
 } from "lucide-react"
 import clsx from "clsx"
 import Cookies from "js-cookie"
@@ -31,14 +35,8 @@ const extractSpreadsheetId = (url: string) => {
 }
 
 const validateJobListing = (row: string[], headers: string[]) => {
-  const getFieldValue = (fieldName: string) => {
-    const index = headers.findIndex((header) => header.toLowerCase() === fieldName.toLowerCase())
-    return index !== -1 ? row[index] : ""
-  }
-
-  return Boolean(
-    getFieldValue("title")?.trim() && getFieldValue("description")?.trim() && getFieldValue("company_name")?.trim(),
-  )
+  // Return true for all rows to avoid filtering
+  return true
 }
 
 const cn = (...classes: (string | boolean | undefined)[]) => {
@@ -48,6 +46,50 @@ const cn = (...classes: (string | boolean | undefined)[]) => {
 interface RowData {
   data: string[];
   originalIndex: number;
+}
+
+const stripHtmlAndFormatText = (html: string) => {
+  // Replace common HTML entities
+  const decodedText = html
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&ndash;/g, "–")
+    .replace(/&mdash;/g, "—")
+    .replace(/&bull;/g, "•")
+    
+  // Replace HTML lists with plain text bullets
+  const listFormatted = decodedText
+    .replace(/<\/?ul>/g, '\n')
+    .replace(/<\/?ol>/g, '\n')
+    .replace(/<li>/g, '• ')
+    .replace(/<\/li>/g, '\n')
+    
+  // Replace line breaks and paragraphs with newlines
+  const lineBreaksFormatted = listFormatted
+    .replace(/<br\s*\/?>/g, '\n')
+    .replace(/<\/p>/g, '\n\n')
+    .replace(/<p>/g, '')
+    
+  // Remove all remaining HTML tags
+  const strippedText = lineBreaksFormatted.replace(/<[^>]*>/g, '')
+  
+  // Clean up extra whitespace and newlines
+  return strippedText
+    .replace(/\n\s*\n\s*\n/g, '\n\n') // Replace multiple newlines with double newlines
+    .replace(/\s+/g, ' ') // Replace multiple spaces with single space
+    .trim() // Remove leading/trailing whitespace
+}
+
+const ensureHttps = (url: string) => {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return url;
+  }
+  return `https://${url}`;
 }
 
 export default function Home() {
@@ -130,95 +172,17 @@ export default function Home() {
       console.log("Total rows from sheet:", rows.length)
       setTotalSheetRows(rows.length)
 
-      // Add original indices to rows before filtering
+      // Add original indices to rows (keeping all rows)
       const rowsWithIndices = rows.map((row: string[], index: number) => ({
         data: row,
         originalIndex: index + 2,
       }))
 
-      // Filter out invalid entries while preserving original indices
-      const validRows = rowsWithIndices.filter((row: RowData) => {
-        const isValid = validateJobListing(row.data, headers)
-        if (!isValid) {
-          console.log(`Row ${row.originalIndex} failed validation:`, row.data)
-        }
-        return isValid
-      })
-
-      console.log("Valid rows after filtering:", validRows.length)
-      console.log("Filtered out rows:", rows.length - validRows.length)
-
-      if (validRows.length === 0) {
-        throw new Error("No valid job listings found")
-      }
-
-      // Apply active filters
-      const filteredRows = validRows.filter((row: { data: { [x: string]: string } }) => {
-        return activeFilters.every((filter) => {
-          if (filter.field === "both") {
-            const titleIndex = headers.findIndex((header: string) => header.toLowerCase() === "title")
-            const descIndex = headers.findIndex((header: string) => header.toLowerCase() === "description")
-
-            const titleValue = row.data[titleIndex]?.toLowerCase() || ""
-            const descValue = row.data[descIndex]?.toLowerCase() || ""
-            const searchValue = filter.value.toLowerCase()
-
-            if (filter.type === "include") {
-              return titleValue.includes(searchValue) || descValue.includes(searchValue)
-            } else {
-              // For exclude, check if the search term appears as a word or part of a word
-              const combinedText = `${titleValue} ${descValue}`
-              const words = combinedText.split(/[\s,.-]+/).filter(Boolean)
-
-              return !words.some(
-                (word) =>
-                  word === searchValue ||
-                  word.includes(searchValue) ||
-                  // Check for common word variations
-                  word.startsWith(searchValue) ||
-                  word.endsWith(searchValue) ||
-                  // Handle plural forms and common suffixes
-                  word.replace(/(?:ist|ists|ing|ed|er|ors|s)$/, "") === searchValue,
-              )
-            }
-          } else {
-            const fieldIndex = headers.findIndex((header: string) => header.toLowerCase() === filter.field.toLowerCase())
-            if (fieldIndex === -1) return true
-
-            const fieldValue = row.data[fieldIndex]?.toLowerCase() || ""
-            const searchValue = filter.value.toLowerCase()
-
-            if (filter.type === "include") {
-              return fieldValue.includes(searchValue)
-            } else {
-              const words = fieldValue.split(/[\s,.-]+/).filter(Boolean)
-
-              return !words.some(
-                (word) =>
-                  word === searchValue ||
-                  word.includes(searchValue) ||
-                  // Check for common word variations
-                  word.startsWith(searchValue) ||
-                  word.endsWith(searchValue) ||
-                  // Handle plural forms and common suffixes
-                  word.replace(/(?:ist|ists|ing|ed|er|ors|s)$/, "") === searchValue,
-              )
-            }
-          }
-        })
-      })
-
-      console.log("Filtered rows after applying active filters:", filteredRows.length)
-
-      if (filteredRows.length === 0) {
-        throw new Error("No valid job listings after applying filters")
-      }
-
-      // Store the data with original indices
-      setData([headers, ...filteredRows.reverse().map((row: RowData) => row.data)])
+      // Store the data with original indices (no filtering)
+      setData([headers, ...rowsWithIndices.reverse().map((row: RowData) => row.data)])
 
       // Store the original indices separately
-      const indices = filteredRows.map((row: RowData) => row.originalIndex)
+      const indices = rowsWithIndices.map((row: RowData) => row.originalIndex)
       setRowIndices(indices.reverse())
 
       setCurrentIndex(1)
@@ -775,93 +739,151 @@ export default function Home() {
         onTouchEnd={handleTouchEnd}
       >
         <div className="p-4 sm:p-8">
-          <div className="flex flex-col sm:flex-row justify-between items-start mb-4 sm:mb-6">
-            <div className="flex gap-3 sm:gap-4 w-full sm:w-auto">
-              {getFieldValue("company_image") && (
+          <div className="flex flex-col sm:flex-row justify-between items-start mb-6">
+            <div className="flex gap-4 w-full sm:w-auto">
+              {getFieldValue("company image") && (
                 <Image
-                  src={getFieldValue("company_image") || "/placeholder.svg"}
-                  alt={`${getFieldValue("company_name")} logo`}
+                  src={getFieldValue("company image")}
+                  alt={`${getFieldValue("company")} logo`}
                   width={64}
                   height={64}
-                  className="w-12 h-12 sm:w-16 sm:h-16 object-contain rounded-lg bg-white p-2"
+                  className="w-16 h-16 object-contain rounded-lg bg-white p-2"
                   onError={(e) => {
                     e.currentTarget.style.display = "none"
                   }}
                 />
               )}
-              <div className="space-y-1 sm:space-y-2 flex-1">
-                <h2 className="text-xl sm:text-3xl font-bold text-white">{getFieldValue("title")}</h2>
-                <div className="flex items-center gap-2">
-                  <Building className="w-4 h-4 sm:w-[18px] sm:h-[18px] text-blue-400" />
-                  <span className="font-semibold text-base sm:text-lg text-blue-400">
-                    {getFieldValue("company_name")}
-                  </span>
+              <div className="space-y-2 flex-1">
+                <h2 className="text-2xl sm:text-3xl font-bold text-white">{getFieldValue("title")}</h2>
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-2">
+                    <Building className="w-4 h-4 text-blue-400" />
+                    <span className="font-semibold text-blue-400">{getFieldValue("company")}</span>
+                  </div>
+                  {getFieldValue("tagline") && (
+                    <p className="text-sm text-gray-400 italic">{getFieldValue("tagline")}</p>
+                  )}
                 </div>
               </div>
             </div>
-            <div className="flex flex-col items-start sm:items-end gap-2 mt-2 sm:mt-0 w-full sm:w-auto">
-              <div className="text-xs sm:text-sm text-gray-400">
-                <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 inline mr-1" />
-                Posted: {formatDate(getFieldValue("currentDate"))?.toString()}
+            
+            <div className="flex flex-col items-start sm:items-end gap-2 mt-4 sm:mt-0">
+              <div className="text-sm text-gray-400">
+                <Clock className="w-4 h-4 inline mr-1" />
+                Posted: {formatDate(getFieldValue("date post"))}
               </div>
-              {getFieldValue("company_website") && (
-                <div className="text-xs sm:text-sm text-gray-400">
-                  <Globe className="w-3.5 h-3.5 sm:w-4 sm:h-4 inline mr-1" />
-                  Source: {new URL(getFieldValue("company_website")).hostname}
+              {getFieldValue("postionID") && (
+                <div className="text-sm text-gray-400">
+                  ID: {getFieldValue("postionID")}
                 </div>
               )}
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-6 mb-6 sm:mb-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8 bg-gray-700/30 rounded-lg p-4">
             <div className="flex items-center gap-3">
-              <MapPin className="w-4 h-4 sm:w-[18px] sm:h-[18px] text-gray-400 flex-shrink-0" />
+              <MapPin className="w-4 h-4 text-gray-400" />
               <span className="text-gray-200">{getFieldValue("location") || "Location not specified"}</span>
             </div>
             <div className="flex items-center gap-3">
-              <Briefcase className="w-4 h-4 sm:w-[18px] sm:h-[18px] text-gray-400 flex-shrink-0" />
+              <Briefcase className="w-4 h-4 text-gray-400" />
               <span className="text-gray-200">{getFieldValue("type") || "Type not specified"}</span>
             </div>
             <div className="flex items-center gap-3">
-              <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 inline mr-1" />
-              <span className="text-gray-200">
-                {getFieldValue("experience")
-                  ? `${getFieldValue("experience")}+ years experience`
-                  : "Experience not specified"}
-              </span>
-            </div>
-            <div className="flex items-center gap-3">
-              <DollarSign className="w-4 h-4 sm:w-[18px] sm:h-[18px] text-gray-400 flex-shrink-0" />
+              <DollarSign className="w-4 h-4 text-gray-400" />
               <span className="text-gray-200">{getFieldValue("salary") || "Salary not specified"}</span>
             </div>
+            {getFieldValue("industry") && (
+              <div className="flex items-center gap-3">
+                <Building className="w-4 h-4 text-gray-400" />
+                <span className="text-gray-200">{getFieldValue("industry")}</span>
+              </div>
+            )}
+            {getFieldValue("employees") && (
+              <div className="flex items-center gap-3">
+                <Users className="w-4 h-4 text-gray-400" />
+                <span className="text-gray-200">{getFieldValue("employees")} employees</span>
+              </div>
+            )}
+            {getFieldValue("ticker") && (
+              <div className="flex items-center gap-3">
+                <TrendingUp className="w-4 h-4 text-gray-400" />
+                <span className="text-gray-200">Ticker: {getFieldValue("ticker")}</span>
+              </div>
+            )}
           </div>
 
           <div className="mb-8">
             <h3 className="text-xl font-semibold mb-3 text-blue-400">Description</h3>
             <div className="bg-gray-700/30 rounded-lg p-4">
               <p className="text-gray-300 whitespace-pre-wrap leading-relaxed">
-                {getFieldValue("description") || "No description provided"}
+                {stripHtmlAndFormatText(getFieldValue("description") || "No description provided")}
               </p>
             </div>
           </div>
 
-          {getFieldValue("skills") && (
+          {getFieldValue("summary") && (
             <div className="mb-8">
-              <h3 className="text-xl font-semibold mb-3 text-blue-400">Skills</h3>
-              <div className="flex flex-wrap gap-2">
-                {getFieldValue("skills").split(",").map(
-                  (skill: string | number | bigint | boolean | null | undefined, index: Key | null | undefined) => (
-                    <span
-                      key={index}
-                      className="px-3 py-1 bg-gray-700 text-gray-200 rounded-full text-sm border border-gray-600 hover:border-blue-500 transition-colors duration-200"
-                    >
-                      {skill}
-                    </span>
-                  ),
-                )}
+              <h3 className="text-xl font-semibold mb-3 text-blue-400">Summary</h3>
+              <div className="bg-gray-700/30 rounded-lg p-4">
+                <p className="text-gray-300 whitespace-pre-wrap leading-relaxed">
+                  {stripHtmlAndFormatText(getFieldValue("summary"))}
+                </p>
               </div>
             </div>
           )}
+
+          {getFieldValue("tools") && (
+            <div className="mb-8">
+              <h3 className="text-xl font-semibold mb-3 text-blue-400">Required Tools & Skills</h3>
+              <div className="flex flex-wrap gap-2">
+                {getFieldValue("tools").split(",").map((tool, index) => (
+                  <span
+                    key={index}
+                    className="px-3 py-1 bg-gray-700 text-gray-200 rounded-full text-sm border border-gray-600 hover:border-blue-500 transition-colors duration-200"
+                  >
+                    {tool.trim()}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-wrap gap-3 mt-8">
+            {getFieldValue("apply url") && (
+              <a
+                href={ensureHttps(getFieldValue("apply url"))}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200"
+              >
+                <ExternalLink className="w-4 h-4" />
+                Apply Now
+              </a>
+            )}
+            {getFieldValue("website") && (
+              <a
+                href={ensureHttps(getFieldValue("website"))}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-colors duration-200"
+              >
+                <Globe className="w-4 h-4" />
+                Company Website
+              </a>
+            )}
+            {getFieldValue("linkedinURL") && (
+              <a
+                href={ensureHttps(getFieldValue("linkedinURL"))}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-[#0A66C2] text-white rounded-lg hover:bg-[#004182] transition-colors duration-200"
+              >
+                <Linkedin className="w-4 h-4" />
+                LinkedIn
+              </a>
+            )}
+          </div>
 
           <div className="mb-8">
             <button
@@ -968,18 +990,6 @@ export default function Home() {
                 {appliedJobs.includes(getFieldValue("id") || `${currentIndex}`) ? "Applied" : "Mark as Applied"}
               </button>
             </div>
-
-            {getFieldValue("company_website") && (
-              <a
-                href={getFieldValue("company_website")}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200 text-sm sm:text-base"
-              >
-                <Globe className="w-4 h-4 sm:w-[18px] sm:h-[18px]" />
-                View Job Posting
-              </a>
-            )}
           </div>
         </div>
       </div>
