@@ -14,7 +14,8 @@ const nextConfig = {
       'avatars.githubusercontent.com',
       'res.cloudinary.com',
       'media.glassdoor.com',
-      'rmkcdn.successfactors.com'
+      'rmkcdn.successfactors.com',
+      'storage.googleapis.com'
     ],
   },
 };
