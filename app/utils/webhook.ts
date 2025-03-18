@@ -159,17 +159,16 @@ export const lookupHRContacts = async (company: string, timeout = 60000) => {
     
     // Prepare the payload
     const payload = {
-      webhookUrl: "http://localhost:5678/webhook/1f50d8b8-820e-43b4-91a5-5cc31014fc8a",
+      webhookUrl: WEBHOOK_URL,
       type: 'hr_contact_search',
       company: company,
       timestamp: new Date().toISOString(),
     };
     
-    // Log the payload being sent
     console.log('Sending lookup request with payload:', payload);
     
     // Create the fetch request
-    const fetchPromise = fetch("http://localhost:5678/webhook/1f50d8b8-820e-43b4-91a5-5cc31014fc8a", {
+    const fetchPromise = fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -183,12 +182,11 @@ export const lookupHRContacts = async (company: string, timeout = 60000) => {
       timeoutPromise(timeout)
     ]) as Response;
     
-    // Log the response status
-    console.log('Webhook response status:', response.status);
-    
     if (!response.ok) {
       throw new Error(`Webhook request failed: ${response.statusText}`);
     }
+    
+    console.log('Webhook response received:', response.status);
     
     // Wait for the response from the webhook
     const responseData = await response.json();

@@ -15,9 +15,18 @@ const nextConfig = {
       'res.cloudinary.com',
       'media.glassdoor.com',
       'rmkcdn.successfactors.com',
-      'storage.googleapis.com'
+      'storage.googleapis.com',
+      's6-recruiting.cdn.greenhouse.io',
+      'vwr.wd1.myworkdayjobs.com',
+    ],
+    // Allow all domains for images
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: '**', // Wildcard to allow any domain
+      },
     ],
   },
 };
 
-module.exports = nextConfig; 
+module.exports = nextConfig;

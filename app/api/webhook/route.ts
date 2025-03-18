@@ -13,9 +13,6 @@ export async function POST(request: NextRequest) {
     // Get the request body
     const body = await request.json();
     
-    // Log the incoming request body for debugging
-    console.log('Incoming request body:', body);
-    
     // Get the webhook URL from the request or use the default
     const webhookUrl = body.webhookUrl 
       ? ensureProperProtocol(body.webhookUrl) 
@@ -46,11 +43,6 @@ export async function POST(request: NextRequest) {
     // Forward the request to the actual webhook
     const response = await fetch(webhookUrl, fetchOptions);
     
-    // Log the response status and body for debugging
-    console.log('Webhook response status:', response.status);
-    const responseData = await response.json();
-    console.log('Webhook response data:', responseData);
-    
     // Check if the response is OK
     if (!response.ok) {
       console.error(`Webhook request failed: ${response.status} ${response.statusText}`);
@@ -62,6 +54,7 @@ export async function POST(request: NextRequest) {
     
     // Try to parse the response as JSON
     try {
+      const responseData = await response.json();
       console.log('Webhook response:', responseData);
       
       // If this is a test execution or contains a webhookUrl, it might be just an acknowledgment
