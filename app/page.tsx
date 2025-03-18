@@ -49,6 +49,7 @@ export default function Home() {
   const [rowIndices, setRowIndices] = useState<number[]>([]);
   const [totalSheetRows, setTotalSheetRows] = useState<number>(0);
   const [sheetAutoLoaded, setSheetAutoLoaded] = useState(false);
+  const [sheetsLoaded, setSheetsLoaded] = useState(false);
   
   // Filtering state
   const [filterText, setFilterText] = useState("");
@@ -96,6 +97,7 @@ export default function Home() {
       if (id) {
         setSpreadsheetId(id);
         setSheetAutoLoaded(true);
+        setSheetsLoaded(true);
         fetchData(id);
       }
     }
@@ -706,11 +708,212 @@ export default function Home() {
         </div>
 
         {!sheetAutoLoaded && (
-          <SheetUrlForm
-            initialUrl={sheetUrl}
-            onSubmit={handleUrlSubmit}
-            isLoading={loading}
-          />
+          <>
+            <SheetUrlForm
+              initialUrl={sheetUrl}
+              onSubmit={(url) => {
+                handleUrlSubmit(url);
+                setSheetsLoaded(true);
+              }}
+              isLoading={loading}
+            />
+
+            {!sheetsLoaded && (
+              <div className="mt-10 mb-16">
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border border-gray-100 dark:border-gray-700">
+                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">Welcome to Job Application Tracker</h2>
+                  
+                  <p className="text-gray-700 dark:text-gray-300 mb-6">
+                    This application helps you manage your job search process using Google Sheets as a database.
+                    Enter your Google Sheet URL above to get started, or learn about the features below.
+                  </p>
+                  
+                  <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">How It Works</h3>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                    <div className="flex">
+                      <div className="flex-shrink-0">
+                        <div className="flex items-center justify-center h-12 w-12 rounded-md bg-blue-500 text-white">
+                          <FileSpreadsheet className="h-6 w-6" />
+                        </div>
+                      </div>
+                      <div className="ml-4">
+                        <h4 className="text-lg font-medium text-gray-900 dark:text-white">Google Sheets Integration</h4>
+                        <p className="mt-2 text-base text-gray-600 dark:text-gray-400">
+                          Connect to your existing Google Sheet containing job listings. We'll automatically organize and display your data.
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex">
+                      <div className="flex-shrink-0">
+                        <div className="flex items-center justify-center h-12 w-12 rounded-md bg-green-500 text-white">
+                          <CheckCircle className="h-6 w-6" />
+                        </div>
+                      </div>
+                      <div className="ml-4">
+                        <h4 className="text-lg font-medium text-gray-900 dark:text-white">Track Applications</h4>
+                        <p className="mt-2 text-base text-gray-600 dark:text-gray-400">
+                          Mark jobs as applied, view your application progress, and keep track of which opportunities still need attention.
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex">
+                      <div className="flex-shrink-0">
+                        <div className="flex items-center justify-center h-12 w-12 rounded-md bg-purple-500 text-white">
+                          <Sliders className="h-6 w-6" />
+                        </div>
+                      </div>
+                      <div className="ml-4">
+                        <h4 className="text-lg font-medium text-gray-900 dark:text-white">Advanced Filtering</h4>
+                        <p className="mt-2 text-base text-gray-600 dark:text-gray-400">
+                          Filter job listings by location, skills, salary requirements, and more. Exclude terms like "senior" to focus on relevant positions.
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex">
+                      <div className="flex-shrink-0">
+                        <div className="flex items-center justify-center h-12 w-12 rounded-md bg-yellow-500 text-white">
+                          <Calendar className="h-6 w-6" />
+                        </div>
+                      </div>
+                      <div className="ml-4">
+                        <h4 className="text-lg font-medium text-gray-900 dark:text-white">Latest Opportunities</h4>
+                        <p className="mt-2 text-base text-gray-600 dark:text-gray-400">
+                          Filter for jobs posted in the last 24 hours. Stay on top of the newest opportunities without missing out.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Recommended Sheet Structure</h3>
+                  <p className="text-gray-700 dark:text-gray-300 mb-4">
+                    For best results, your Google Sheet should include these columns:
+                  </p>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mb-8">
+                    <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
+                      <span className="font-medium text-gray-900 dark:text-white">title</span>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">Job title</p>
+                    </div>
+                    <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
+                      <span className="font-medium text-gray-900 dark:text-white">company_name</span>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">Name of the company</p>
+                    </div>
+                    <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
+                      <span className="font-medium text-gray-900 dark:text-white">description</span>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">Job description</p>
+                    </div>
+                    <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
+                      <span className="font-medium text-gray-900 dark:text-white">location</span>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">Job location(s)</p>
+                    </div>
+                    <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
+                      <span className="font-medium text-gray-900 dark:text-white">skills</span>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">Required skills</p>
+                    </div>
+                    <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
+                      <span className="font-medium text-gray-900 dark:text-white">salary</span>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">Salary information</p>
+                    </div>
+                    <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
+                      <span className="font-medium text-gray-900 dark:text-white">date_posted</span>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">When the job was posted</p>
+                    </div>
+                    <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
+                      <span className="font-medium text-gray-900 dark:text-white">notes</span>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">Your personal notes</p>
+                    </div>
+                    <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
+                      <span className="font-medium text-gray-900 dark:text-white">url</span>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">Link to the job posting</p>
+                    </div>
+                  </div>
+
+                  <div className="bg-blue-50 dark:bg-blue-900/20 p-5 rounded-lg border border-blue-100 dark:border-blue-800">
+                    <h4 className="text-lg font-medium text-blue-800 dark:text-blue-300 mb-2">Ready to get started?</h4>
+                    <p className="text-blue-700 dark:text-blue-400 mb-3">
+                      Enter your Google Sheets URL above. The app will remember your sheet for future visits.
+                    </p>
+                    <p className="text-sm text-blue-600 dark:text-blue-500">
+                      Note: Your Google Sheet must be publicly accessible or shared with view access.
+                    </p>
+                  </div>
+
+                  {/* Quick Setup Guide */}
+                  <div className="mt-10 mb-8">
+                    <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Quick Setup Guide</h3>
+                    
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 border border-gray-100 dark:border-gray-700">
+                      <ol className="space-y-6">
+                        <li className="flex">
+                          <div className="flex-shrink-0">
+                            <div className="flex items-center justify-center h-8 w-8 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300 font-bold">
+                              1
+                            </div>
+                          </div>
+                          <div className="ml-4">
+                            <h4 className="text-lg font-medium text-gray-900 dark:text-white">Create a Google Sheet</h4>
+                            <p className="mt-1 text-gray-600 dark:text-gray-400">
+                              Create a new Google Sheet or use an existing one to store your job listings. Add column headers like those listed above.
+                            </p>
+                          </div>
+                        </li>
+                        
+                        <li className="flex">
+                          <div className="flex-shrink-0">
+                            <div className="flex items-center justify-center h-8 w-8 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300 font-bold">
+                              2
+                            </div>
+                          </div>
+                          <div className="ml-4">
+                            <h4 className="text-lg font-medium text-gray-900 dark:text-white">Make Your Sheet Public</h4>
+                            <p className="mt-1 text-gray-600 dark:text-gray-400">
+                              Click the "Share" button in Google Sheets and change access to "Anyone with the link" with "Viewer" permissions.
+                            </p>
+                          </div>
+                        </li>
+                        
+                        <li className="flex">
+                          <div className="flex-shrink-0">
+                            <div className="flex items-center justify-center h-8 w-8 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300 font-bold">
+                              3
+                            </div>
+                          </div>
+                          <div className="ml-4">
+                            <h4 className="text-lg font-medium text-gray-900 dark:text-white">Copy Your Sheet URL</h4>
+                            <p className="mt-1 text-gray-600 dark:text-gray-400">
+                              Copy the URL from your browser's address bar while viewing your Sheet. It should look like:
+                              <code className="ml-1 px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-sm">
+                                https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/edit
+                              </code>
+                            </p>
+                          </div>
+                        </li>
+                        
+                        <li className="flex">
+                          <div className="flex-shrink-0">
+                            <div className="flex items-center justify-center h-8 w-8 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300 font-bold">
+                              4
+                            </div>
+                          </div>
+                          <div className="ml-4">
+                            <h4 className="text-lg font-medium text-gray-900 dark:text-white">Paste URL Above</h4>
+                            <p className="mt-1 text-gray-600 dark:text-gray-400">
+                              Paste your Sheet URL into the form above and click "Load Jobs" to connect your data. 
+                              The app will remember your sheet for future visits.
+                            </p>
+                          </div>
+                        </li>
+                      </ol>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 
