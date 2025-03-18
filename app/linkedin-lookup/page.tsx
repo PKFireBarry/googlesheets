@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import CookieUtil from '../utils/cookies'
 import { Loader2, Search, Linkedin, Globe, Settings, ArrowRight, Plus } from 'lucide-react'
@@ -40,7 +40,8 @@ const formatUrl = (url: string): string => {
   return `https://${url}`;
 }
 
-export default function LinkedInLookupPage() {
+// This component uses the useSearchParams hook and is wrapped in Suspense
+function LinkedInLookupContent() {
   const searchParams = useSearchParams()
   const companyParam = searchParams.get('company')
   
@@ -696,5 +697,19 @@ export default function LinkedInLookupPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+// Main page component that wraps the content with Suspense
+export default function LinkedInLookupPage() {
+  return (
+    <Suspense fallback={
+      <div className="max-w-6xl mx-auto p-8 flex justify-center items-center">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <span className="ml-2 text-gray-700 dark:text-gray-300">Loading...</span>
+      </div>
+    }>
+      <LinkedInLookupContent />
+    </Suspense>
   )
 }
