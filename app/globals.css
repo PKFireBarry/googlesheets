@@ -40,10 +40,25 @@
 }
 
 @layer base {
+  html {
+    touch-action: manipulation;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  
   body {
     color: var(--foreground);
     background: var(--background);
     font-family: var(--font-inter), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    overflow-x: hidden;
+    width: 100%;
+    position: relative;
+  }
+  
+  img, svg, video {
+    max-width: 100%;
+    height: auto;
+    display: block;
   }
   
   h1, h2, h3, h4, h5, h6 {
@@ -92,6 +107,11 @@
   .badge-gray {
     @apply bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300;
   }
+  
+  /* Mobile-friendly container */
+  .mobile-container {
+    @apply w-full max-w-full overflow-x-hidden px-4;
+  }
 }
 
 @layer utilities {
@@ -138,6 +158,16 @@
   .custom-scrollbar {
     scrollbar-width: thin;
     scrollbar-color: rgba(156, 163, 175, 0.5) transparent;
+  }
+  
+  /* Prevent content overflow */
+  .no-overflow {
+    @apply max-w-full overflow-x-hidden;
+  }
+  
+  /* Responsive text sizing */
+  .text-responsive {
+    @apply text-base md:text-lg;
   }
   
   @keyframes fadeIn {

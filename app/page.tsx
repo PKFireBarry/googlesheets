@@ -695,7 +695,7 @@ export default function Home() {
   });
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 no-overflow mobile-container">
       <div className="mb-8 sm:mb-12">
         <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl shadow-xl p-6 sm:p-10 text-white mb-8">
           <h1 className="text-3xl sm:text-4xl font-bold mb-3">

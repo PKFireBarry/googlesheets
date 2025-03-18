@@ -10,8 +10,8 @@ export default function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   
   return (
-    <nav className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white shadow-lg">
-      <div className="container mx-auto px-4 py-3">
+    <nav className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white shadow-lg w-full">
+      <div className="container mx-auto px-4 py-3 no-overflow">
         <div className="flex items-center justify-between">
           <div className="flex items-center">
             <Link href="/" className="flex items-center space-x-2">
@@ -56,6 +56,7 @@ export default function Navbar() {
             <button 
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className="p-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-white"
+              aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
             >
               {mobileMenuOpen ? (
                 <X className="w-6 h-6" />
@@ -68,7 +69,7 @@ export default function Navbar() {
         
         {/* Mobile Navigation */}
         {mobileMenuOpen && (
-          <div className="md:hidden pt-2 pb-3 space-y-1">
+          <div className="md:hidden pt-2 pb-3 space-y-1 mobile-container">
             <MobileNavLink href="/" active={pathname === '/'}>
               <Home className="w-4 h-4 mr-2" />
               Home
