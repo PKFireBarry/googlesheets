@@ -17,7 +17,8 @@ import {
   ChevronRight,
   X,
   Linkedin,
-  Search
+  Search,
+  Link2
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
@@ -39,7 +40,8 @@ interface JobCardProps {
     skills: string;
     notes: string;
     id: string;
-    [key: string]: string; // Allow for additional fields
+    source?: string; // Added source field which may be passed from JobCardGrid
+    [key: string]: string | undefined; // Allow for additional fields
   };
   isApplied: boolean;
   onApply: () => void;
@@ -71,6 +73,13 @@ export default function JobCard({
     return text.substring(0, maxLength) + '...'
   }
   
+  // Helper function to clean skill text from junk characters
+  const cleanSkillText = (skill: string): string => {
+    return skill
+      .replace(/[\[\]"']/g, '') // Remove brackets and quotes
+      .trim();                   // Remove extra whitespace
+  }
+  
   const handleNoteSubmit = () => {
     onUpdateNote(noteText)
     setIsEditingNote(false)
@@ -86,21 +95,73 @@ export default function JobCard({
   }
   
   const formatDate = (dateString: string) => {
-    if (!dateString) return null;
+    console.log('Formatting date string:', dateString);
+    if (!dateString) return "Unknown";
     
     try {
+      // Try to parse the date
       const date = new Date(dateString);
-      if (isNaN(date.getTime())) return dateString;
       
+      // Check if the date is valid
+      if (isNaN(date.getTime())) {
+        console.log('Invalid date:', dateString);
+        return dateString;
+      }
+      
+      console.log('Parsed date object:', date);
       return date.toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'short',
         day: 'numeric'
       });
     } catch (e) {
+      console.error('Error parsing date:', e);
       return dateString;
     }
   }
+  
+  // Extract source from URL if not already provided
+  const getJobSource = (): string => {
+    if (job.source) return job.source;
+    
+    const url = job.company_website || job.url || '';
+    if (!url) return 'Unknown';
+    
+    try {
+      // Remove protocol and www. prefix
+      let domain = url.replace(/^(https?:\/\/)?(www\.)?/i, '');
+      
+      // Get domain name without path
+      domain = domain.split('/')[0];
+      
+      // Special case handling for common job sites
+      if (domain.includes('linkedin')) return 'LinkedIn';
+      if (domain.includes('indeed')) return 'Indeed';
+      if (domain.includes('ziprecruiter')) return 'ZipRecruiter';
+      if (domain.includes('monster')) return 'Monster';
+      if (domain.includes('glassdoor')) return 'Glassdoor';
+      if (domain.includes('dice')) return 'Dice';
+      if (domain.includes('simplyhired')) return 'SimplyHired';
+      if (domain.includes('careerbuilder')) return 'CareerBuilder';
+      
+      // Return just the domain part
+      return domain;
+    } catch (error) {
+      console.error('Error extracting source:', error);
+      return 'Unknown';
+    }
+  }
+  
+  // Debug logs to see what date values we're getting
+  useEffect(() => {
+    if (job) {
+      console.log('Job date fields:', {
+        date_posted: job.date_posted,
+        currentDate: job.currentDate,
+        currentdate: job.currentdate
+      });
+    }
+  }, [job]);
   
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-100 dark:border-gray-700 transition-all hover:shadow-xl">
@@ -190,12 +251,16 @@ export default function JobCard({
             </div>
           )}
           
-          {(job.date_posted || job.currentDate) && (
-            <div className="flex items-center text-gray-600 dark:text-gray-400">
-              <Calendar className="w-4 h-4 mr-2 text-gray-500 dark:text-gray-500 flex-shrink-0" />
-              <span>Posted: {formatDate(job.date_posted || job.currentDate)}</span>
-            </div>
-          )}
+          {/* Date Posted - Always show this regardless of whether date exists */}
+          <div className="flex items-center text-gray-600 dark:text-gray-400">
+            <Calendar className="w-4 h-4 mr-2 text-gray-500 dark:text-gray-500 flex-shrink-0" />
+            <span>Posted: {formatDate(job.date_posted || job.currentDate || job.currentdate)}</span>
+          </div>
+
+          <div className="flex items-center text-gray-600 dark:text-gray-400">
+            <Link2 className="w-4 h-4 mr-2 text-gray-500 dark:text-gray-500 flex-shrink-0" />
+            <span>Source: {getJobSource()}</span>
+          </div>
         </div>
         
         {/* HR Lookup Actions */}
@@ -254,14 +319,22 @@ export default function JobCard({
             
             {showSkills && (
               <div className="flex flex-wrap gap-2 mt-2">
-                {job.skills.split(',').map((skill, index) => (
-                  <span 
-                    key={index}
-                    className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
-                  >
-                    {skill.trim()}
-                  </span>
-                ))}
+                {job.skills.split(',').filter(Boolean).map((skill, index) => {
+                  // Clean the skill text by removing quotes, brackets, etc.
+                  const cleanedSkill = skill.replace(/[\[\]"'{}]/g, '').trim();
+                  
+                  // Only show non-empty skills
+                  if (!cleanedSkill) return null;
+                  
+                  return (
+                    <span 
+                      key={index}
+                      className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
+                    >
+                      {cleanedSkill}
+                    </span>
+                  );
+                })}
               </div>
             )}
           </div>

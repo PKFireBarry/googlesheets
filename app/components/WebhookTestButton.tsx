@@ -18,8 +18,7 @@ export default function WebhookTestButton({ className = '', webhookUrl = WEBHOOK
     setErrorMessage('');
 
     try {
-      // Use the testWebhook function from the webhook utility
-      // Set a longer timeout (60 seconds) for the test to ensure it has time to complete
+      // Use the testWebhook function from the webhook utility with the provided webhookUrl
       await testWebhook(webhookUrl, 60000);
       setTestResult('success');
     } catch (error) {

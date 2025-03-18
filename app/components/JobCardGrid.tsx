@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, TouchEvent } from 'react'
 import JobCard from './JobCard'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Grid, List, MapPin, Calendar, Link2, CheckCircle } from 'lucide-react'
 
 interface JobCardGridProps {
   jobs: Array<any>;
@@ -28,6 +28,8 @@ export default function JobCardGrid({
   const [isAnimating, setIsAnimating] = useState(false)
   const [direction, setDirection] = useState<'left' | 'right' | null>(null)
   const cardRef = useRef<HTMLDivElement>(null)
+  const [viewMode, setViewMode] = useState<'card' | 'list'>('card')
+  const [selectedJobForDetail, setSelectedJobForDetail] = useState<any>(null)
   
   // Minimum swipe distance (in px)
   const minSwipeDistance = 50
@@ -175,22 +177,81 @@ export default function JobCardGrid({
   }
   
   const prepareJobData = (job: any, index: number) => {
-    const jobData = Array.isArray(job) ? job : job.data
-    const originalIndex = job.originalIndex || index + 2
+    // Ensure we have valid job data
+    if (!job) {
+      console.error('Invalid job data:', job);
+      return {
+        id: `job-${index}`,
+        originalIndex: index + 2,
+        title: 'Unknown Job',
+        company_name: 'Unknown Company',
+        location: '',
+        description: '',
+        skills: '',
+        date_posted: '',
+        currentDate: '',
+        currentdate: '',
+        url: '',
+        company_website: '',
+        company_image: '',
+        experience: '',
+        notes: '',
+        source: 'Unknown'
+      };
+    }
+
+    // Get the job data array, handling both array and object formats
+    const jobData = Array.isArray(job) ? job : (job.data || []);
+    
+    // Ensure we have a valid originalIndex
+    const originalIndex = job.originalIndex || index + 2;
     
     // Create a structured job object
     const structuredJob: any = {
       id: generateJobId(job, index),
       originalIndex
-    }
+    };
     
     // Map all available fields from the headers
     headers.forEach((header, idx) => {
-      const key = header.toLowerCase().replace(/\s+/g, '_')
-      structuredJob[key] = jobData[idx] || ''
-    })
+      const key = header.toLowerCase().replace(/\s+/g, '_');
+      structuredJob[key] = jobData[idx] || '';
+    });
     
-    return structuredJob
+    // Extract source from company_website or url field
+    structuredJob.source = extractSourceFromUrl(structuredJob.company_website || structuredJob.url || '');
+    
+    return structuredJob;
+  }
+  
+  // Extract source name from URL (e.g., linkedin.com, indeed.com)
+  const extractSourceFromUrl = (url: string): string => {
+    if (!url) return 'Unknown'
+    
+    try {
+      // Remove protocol and www. prefix
+      let domain = url.replace(/^(https?:\/\/)?(www\.)?/i, '')
+      
+      // Get domain name without path
+      domain = domain.split('/')[0]
+      
+      // Special case handling for common job sites
+      if (domain.includes('linkedin')) return 'LinkedIn'
+      if (domain.includes('indeed')) return 'Indeed'
+      if (domain.includes('ziprecruiter')) return 'ZipRecruiter'
+      if (domain.includes('monster')) return 'Monster'
+      if (domain.includes('glassdoor')) return 'Glassdoor'
+      if (domain.includes('dice')) return 'Dice'
+      if (domain.includes('simplyhired')) return 'SimplyHired'
+      if (domain.includes('careerbuilder')) return 'CareerBuilder'
+      if (domain.includes('google.com/about/careers')) return 'Google Careers'
+      
+      // Return just the domain part
+      return domain
+    } catch (error) {
+      console.error('Error extracting source from URL:', url, error)
+      return 'Unknown'
+    }
   }
   
   const handleDelete = () => {
@@ -238,11 +299,266 @@ export default function JobCardGrid({
       onUpdateNote(originalIndex, note, notesIndex)
     }
   }
+
+  const toggleViewMode = () => {
+    setViewMode(viewMode === 'card' ? 'list' : 'card')
+    setSelectedJobForDetail(null)
+  }
+
+  const handleListItemClick = (job: any, index: number) => {
+    const preparedJob = prepareJobData(job, index)
+    setSelectedJobForDetail(preparedJob)
+  }
+
+  const handleBackToList = () => {
+    setSelectedJobForDetail(null)
+  }
+  
+  // Format a date string safely
+  const formatDateSafely = (dateString: string | undefined): string => {
+    if (!dateString) return 'Unknown';
+    
+    try {
+      const date = new Date(dateString);
+      
+      // Check if the date is valid
+      if (isNaN(date.getTime())) {
+        console.log('Invalid date in JobCardGrid:', dateString);
+        return dateString;
+      }
+      
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      });
+    } catch (e) {
+      console.error('Error formatting date in JobCardGrid:', dateString, e);
+      return dateString || 'Unknown';
+    }
+  }
   
   if (sortedJobs.length === 0) {
     return <div className="text-center py-8 text-gray-500">No job listings found</div>
   }
+
+  // View mode toggle button
+  const ViewToggle = () => (
+    <div className="flex justify-end mb-4">
+      <button
+        onClick={toggleViewMode}
+        className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+      >
+        {viewMode === 'card' ? (
+          <>
+            <List className="w-4 h-4 mr-2" />
+            Show as List
+          </>
+        ) : (
+          <>
+            <Grid className="w-4 h-4 mr-2" />
+            Show as Cards
+          </>
+        )}
+      </button>
+    </div>
+  )
   
+  // When in list view mode
+  if (viewMode === 'list') {
+    if (selectedJobForDetail) {
+      // Show detail view for selected job
+      const isJobApplied = appliedJobs.includes(selectedJobForDetail.id) || 
+                          appliedJobs.includes(selectedJobForDetail.title)
+
+      return (
+        <div>
+          <ViewToggle />
+          <div className="flex items-center mb-4">
+            <button
+              onClick={handleBackToList}
+              className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700"
+            >
+              <ChevronLeft className="w-4 h-4 mr-1" />
+              Back to List
+            </button>
+          </div>
+          <JobCard
+            job={selectedJobForDetail}
+            isApplied={isJobApplied}
+            onApply={() => {
+              onApply(selectedJobForDetail.id || selectedJobForDetail.title)
+            }}
+            onDelete={() => {
+              onDelete(selectedJobForDetail.originalIndex)
+              handleBackToList()
+            }}
+            onUpdateNote={(note) => {
+              const notesIndex = findColumnIndex('notes')
+              if (notesIndex !== -1) {
+                onUpdateNote(selectedJobForDetail.originalIndex, note, notesIndex)
+              }
+            }}
+          />
+        </div>
+      )
+    }
+
+    return (
+      <div>
+        <ViewToggle />
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-100 dark:border-gray-700 h-[calc(100vh-250px)] min-h-[500px] flex flex-col">
+          <div className="p-3 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+            <div className="text-sm text-gray-500 dark:text-gray-400">
+              {sortedJobs.length} job listings
+            </div>
+            <div className="text-xs text-gray-400 dark:text-gray-500 flex items-center">
+              <span className="animate-pulse mr-1">•</span> 
+              Scroll to view more
+            </div>
+          </div>
+          
+          {/* Mobile list view - optimized for small screens */}
+          <div className="block md:hidden h-full">
+            <div className="grid gap-3 overflow-y-auto px-3 py-2 h-full custom-scrollbar">
+              {sortedJobs.map((job, index) => {
+                const preparedJob = prepareJobData(job, index);
+                const isJobApplied = appliedJobs.includes(preparedJob.id) || 
+                                  appliedJobs.includes(preparedJob.title);
+                
+                return (
+                  <div 
+                    key={preparedJob.id || index}
+                    onClick={() => handleListItemClick(job, index)}
+                    className="hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer p-4 border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg shadow-sm transition-all hover:shadow-md animate-fade-in"
+                  >
+                    <div className="flex justify-between items-start mb-2">
+                      <h3 className="font-medium text-gray-900 dark:text-white text-sm line-clamp-2 mr-2">
+                        {preparedJob.title}
+                      </h3>
+                      {isJobApplied ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 ml-2 whitespace-nowrap flex-shrink-0">
+                          <CheckCircle className="w-3 h-3 mr-1" />
+                          Applied
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 ml-2 whitespace-nowrap flex-shrink-0">
+                          Not Applied
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-gray-500 dark:text-gray-400 text-xs mb-2 font-medium">
+                      {preparedJob.company_name}
+                    </div>
+                    <div className="flex flex-wrap gap-y-1.5 gap-x-3 text-xs text-gray-500 dark:text-gray-400">
+                      {preparedJob.location && (
+                        <div className="flex items-center">
+                          <MapPin className="w-3 h-3 mr-1 flex-shrink-0 text-gray-400" />
+                          <span className="truncate max-w-[150px]">{preparedJob.location}</span>
+                        </div>
+                      )}
+                      <div className="flex items-center">
+                        <Calendar className="w-3 h-3 mr-1 flex-shrink-0 text-gray-400" />
+                        <span>
+                          {formatDateSafely(preparedJob.date_posted || preparedJob.currentDate || preparedJob.currentdate)}
+                        </span>
+                      </div>
+                      {preparedJob.source && (
+                        <div className="flex items-center">
+                          <Link2 className="w-3 h-3 mr-1 flex-shrink-0 text-gray-400" />
+                          <span>{preparedJob.source}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Desktop table view */}
+          <div className="hidden md:block h-full overflow-y-auto custom-scrollbar">
+            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 table-fixed">
+              <thead className="bg-gray-50 dark:bg-gray-900 sticky top-0 z-10 shadow-sm">
+                <tr>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-1/3">
+                    Job Title
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-1/5">
+                    Company
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-1/5">
+                    Location
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-1/8">
+                    Date Posted
+                  </th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-1/8">
+                    Status
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                {sortedJobs.map((job, index) => {
+                  const preparedJob = prepareJobData(job, index);
+                  const isJobApplied = appliedJobs.includes(preparedJob.id) || 
+                                    appliedJobs.includes(preparedJob.title);
+                  
+                  return (
+                    <tr 
+                      key={preparedJob.id || index}
+                      onClick={() => handleListItemClick(job, index)}
+                      className="hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors"
+                    >
+                      <td className="px-6 py-4 text-sm">
+                        <div className="font-medium text-gray-900 dark:text-white line-clamp-2">
+                          {preparedJob.title}
+                        </div>
+                        {preparedJob.source && (
+                          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 flex items-center">
+                            <Link2 className="w-3 h-3 mr-1" />
+                            {preparedJob.source}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
+                        {preparedJob.company_name}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
+                        {preparedJob.location && (
+                          <div className="flex items-center">
+                            <MapPin className="w-3.5 h-3.5 mr-1.5 text-gray-400 flex-shrink-0" />
+                            <span className="line-clamp-1">{preparedJob.location}</span>
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
+                        {formatDateSafely(preparedJob.date_posted || preparedJob.currentDate || preparedJob.currentdate)}
+                      </td>
+                      <td className="px-6 py-4 text-sm whitespace-nowrap">
+                        {isJobApplied ? (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                            <CheckCircle className="w-3.5 h-3.5 mr-1" />
+                            Applied
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+                            Not Applied
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  
+  // Default card view mode
   const currentJob = sortedJobs[currentIndex]
   const preparedJob = prepareJobData(currentJob, currentIndex)
   
@@ -252,69 +568,57 @@ export default function JobCardGrid({
     (Array.isArray(currentJob) ? currentJob[titleIndex] : 
      ((currentJob as any).data ? (currentJob as any).data[titleIndex] : '')) : ''
   
-  // First check if the job title is in the applied jobs list
-  let isCurrentJobApplied = jobTitle && appliedJobs.includes(jobTitle)
+  const isJobApplied = 
+    appliedJobs.includes(preparedJob.id) || 
+    appliedJobs.includes(jobTitle)
   
-  // If not found by title, fall back to checking by ID
-  if (!isCurrentJobApplied) {
-    isCurrentJobApplied = appliedJobs.includes(preparedJob.id)
-  }
-  
-  console.log("Current job:", {
-    title: jobTitle,
-    id: preparedJob.id,
-    isApplied: isCurrentJobApplied,
-    appliedJobs
-  })
+  const animationClass = direction === 'left' 
+    ? 'animate-slide-out-left' 
+    : direction === 'right' 
+      ? 'animate-slide-out-right' 
+      : ''
   
   return (
     <div className="relative">
-      <div 
+      <ViewToggle />
+      <div
         ref={cardRef}
-        className="relative overflow-hidden"
+        className={`relative ${animationClass}`}
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
       >
-        <div 
-          className={`transition-transform duration-300 ease-in-out ${
-            isAnimating && direction === 'left' ? 'translate-x-[-100%] opacity-0' : 
-            isAnimating && direction === 'right' ? 'translate-x-[100%] opacity-0' : 
-            'translate-x-0 opacity-100'
-          }`}
-        >
-          <JobCard 
-            job={preparedJob}
-            isApplied={isCurrentJobApplied}
-            onApply={handleApply}
-            onDelete={handleDelete}
-            onUpdateNote={handleUpdateNote}
-          />
-        </div>
+        <JobCard
+          job={preparedJob}
+          isApplied={isJobApplied}
+          onApply={handleApply}
+          onDelete={handleDelete}
+          onUpdateNote={handleUpdateNote}
+        />
       </div>
       
-      <div className="flex justify-between items-center mt-6">
-        <div className="text-sm text-gray-500 dark:text-gray-400">
-          Job {currentIndex + 1} of {sortedJobs.length}
+      <div className="flex justify-center mt-6 gap-3">
+        <button
+          onClick={goToPrevJob}
+          className="inline-flex items-center justify-center p-2 rounded-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none"
+          aria-label="Previous job"
+        >
+          <ChevronLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+        </button>
+        
+        <div className="flex items-center">
+          <span className="text-sm text-gray-500 dark:text-gray-400">
+            {currentIndex + 1} of {sortedJobs.length}
+          </span>
         </div>
         
-        <div className="flex space-x-2">
-          <button
-            onClick={goToPrevJob}
-            className="p-2 rounded-full bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shadow-sm"
-            aria-label="Previous job"
-          >
-            <ChevronLeft className="w-5 h-5" />
-          </button>
-          
-          <button
-            onClick={goToNextJob}
-            className="p-2 rounded-full bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors shadow-sm"
-            aria-label="Next job"
-          >
-            <ChevronRight className="w-5 h-5" />
-          </button>
-        </div>
+        <button
+          onClick={goToNextJob}
+          className="inline-flex items-center justify-center p-2 rounded-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none"
+          aria-label="Next job"
+        >
+          <ChevronRight className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+        </button>
       </div>
     </div>
   )

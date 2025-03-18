@@ -390,9 +390,6 @@ export default function AnalyticsPage() {
     
     setCompanyStats(companyData)
     
-    // Send company data to webhook
-    sendToWebhook('company_data', companyData)
-    
     // Process location statistics
     const locations: Record<string, number> = {}
     rows.forEach(row => {
@@ -550,22 +547,48 @@ export default function AnalyticsPage() {
         let skills: string[] = []
         const skillsData = row[skillsIndex]
         
-        // Handle different formats of skills data
-        if (typeof skillsData === 'string') {
-          // Handle comma-separated string
-          skills = skillsData.split(',').map((s: string) => s.trim())
-        } else if (Array.isArray(skillsData)) {
-          // Handle array
-          skills = skillsData.map((s: any) => s.toString().trim())
-        } else if (typeof skillsData === 'object' && skillsData !== null) {
-          // Handle object - extract keys or values
-          try {
-            const skillsObj = JSON.parse(JSON.stringify(skillsData))
-            skills = Object.keys(skillsObj)
-          } catch (e) {
-            // If parsing fails, try to convert to string
-            skills = [String(skillsData)]
+        // Clean and parse skills data
+        const cleanSkill = (skill: string): string => {
+          // Remove common JSON artifacts and clean the string
+          return skill
+            .replace(/["\[\]{}]/g, '') // Remove JSON syntax characters
+            .replace(/\\"/g, '') // Remove escaped quotes
+            .replace(/^'|'$/g, '') // Remove single quotes
+            .trim()
+            .replace(/\s+/g, ' ') // Normalize whitespace
+        }
+
+        try {
+          if (typeof skillsData === 'string') {
+            // First try to parse as JSON if it looks like JSON
+            if (skillsData.trim().startsWith('{') || skillsData.trim().startsWith('[')) {
+              try {
+                const parsed = JSON.parse(skillsData)
+                if (Array.isArray(parsed)) {
+                  skills = parsed.map(s => cleanSkill(String(s)))
+                } else if (typeof parsed === 'object' && parsed !== null) {
+                  skills = Object.keys(parsed).map(cleanSkill)
+                }
+              } catch {
+                // If JSON parsing fails, treat as comma-separated
+                skills = skillsData.split(',').map(cleanSkill)
+              }
+            } else {
+              // Handle as comma-separated string
+              skills = skillsData.split(',').map(cleanSkill)
+            }
+          } else if (Array.isArray(skillsData)) {
+            skills = skillsData.map(s => cleanSkill(String(s)))
+          } else if (typeof skillsData === 'object' && skillsData !== null) {
+            skills = Object.keys(skillsData).map(cleanSkill)
           }
+
+          // Filter out empty skills and normalize
+          skills = skills
+            .filter(skill => skill.length > 0)
+            .map(skill => skill.charAt(0).toUpperCase() + skill.slice(1).toLowerCase())
+        } catch (e) {
+          console.error('Error processing skills:', e)
         }
         
         // Count each skill
@@ -580,6 +603,7 @@ export default function AnalyticsPage() {
       const skillsChartData = Object.entries(skillsMap)
         .map(([name, count]) => ({ name, count }))
         .sort((a, b) => b.count - a.count)
+        .filter(({ name }) => name.length > 1) // Filter out single-character skills
         .slice(0, 50) // Top 50 skills
       
       setSkillsData(skillsChartData)
@@ -774,7 +798,7 @@ export default function AnalyticsPage() {
             <div className="h-56 sm:h-80">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
-                  data={locationStats.slice(0, window.innerWidth < 768 ? 5 : 10)}
+                  data={locationStats.slice(0, 5)}
                   margin={{ top: 5, right: 5, left: 5, bottom: 5 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" stroke="#333" />
@@ -782,7 +806,7 @@ export default function AnalyticsPage() {
                   <YAxis tick={{ fontSize: 10, fill: '#999' }} />
                   <Tooltip contentStyle={{ backgroundColor: '#333', border: 'none' }} itemStyle={{ color: '#fff' }} />
                   <Bar dataKey="count" name="Job Count" fill="#00C49F" radius={[4, 4, 0, 0]}>
-                    {locationStats.slice(0, window.innerWidth < 768 ? 5 : 10).map((entry, index) => (
+                    {locationStats.slice(0, 5).map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={`hsl(${160 - index * 8}, 70%, 50%)`} />
                     ))}
                   </Bar>

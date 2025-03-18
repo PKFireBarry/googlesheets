@@ -59,16 +59,16 @@ export default function LinkedInLookupPage() {
   
   useEffect(() => {
     // Load saved webhook URL from cookies, or use hardcoded URL if none exists
-    const savedUrl = CookieUtil.get("linkedinWebhookUrl") || WEBHOOK_URL
-    const processedUrl = ensureProperProtocol(savedUrl)
+    const savedUrl = CookieUtil.get("linkedinWebhookUrl") || WEBHOOK_URL;
+    const processedUrl = ensureProperProtocol(savedUrl);
     
     console.log('Setting webhook URL:', processedUrl);
-    setWebhookUrl("http://localhost:5678/webhook/1f50d8b8-820e-43b4-91a5-5cc31014fc8a")
-    setSavedWebhook("http://localhost:5678/webhook/1f50d8b8-820e-43b4-91a5-5cc31014fc8a")
+    setWebhookUrl(processedUrl);
+    setSavedWebhook(processedUrl);
     
-    const savedWorkflowId = CookieUtil.get("n8nWorkflowId")
+    const savedWorkflowId = CookieUtil.get("n8nWorkflowId");
     if (savedWorkflowId) {
-      setN8nWorkflowId(savedWorkflowId)
+      setN8nWorkflowId(savedWorkflowId);
     }
     
     // Load companies from Google Sheet
@@ -212,11 +212,10 @@ export default function LinkedInLookupPage() {
     setError(null) // Clear any previous errors
     
     try {
-      console.log(`Starting search for company: ${companyToSearch} using webhook: ${"http://localhost:5678/webhook/1f50d8b8-820e-43b4-91a5-5cc31014fc8a"}`);
+      console.log(`Starting search for company: ${companyToSearch} using webhook: ${savedWebhook}`);
       
-      // Use the lookupHRContacts function from the webhook utility
-      // Set a longer timeout (60 seconds) for the search to ensure it has time to complete
-      const responseData = await lookupHRContacts(companyToSearch, 60000)
+      // Pass the saved webhook URL to override the default
+      const responseData = await lookupHRContacts(companyToSearch, 60000, savedWebhook);
       
       console.log('Search completed, processing response data:', responseData);
       

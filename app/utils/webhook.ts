@@ -48,9 +48,10 @@ const timeoutPromise = (ms: number) => {
  * @param type The type of data being sent
  * @param data The data to send
  * @param timeout Optional timeout in milliseconds (defaults to 30 seconds)
+ * @param webhookUrl Optional custom webhook URL (overrides the default)
  * @returns Promise that resolves when the data is sent
  */
-export const sendToWebhook = async (type: string, data: any, timeout = DEFAULT_TIMEOUT) => {
+export const sendToWebhook = async (type: string, data: any, timeout = DEFAULT_TIMEOUT, webhookUrl = WEBHOOK_URL) => {
   try {
     console.log(`Sending ${type} data to webhook:`, data);
     
@@ -64,7 +65,7 @@ export const sendToWebhook = async (type: string, data: any, timeout = DEFAULT_T
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        webhookUrl: WEBHOOK_URL,
+        webhookUrl: webhookUrl,
         type,
         data,
         timestamp: new Date().toISOString(),
@@ -147,19 +148,20 @@ export const testWebhook = async (webhookUrl: string, timeout = DEFAULT_TIMEOUT)
 /**
  * Looks up HR contacts for a company
  * @param company The company name to look up
- * @param timeout Optional timeout in milliseconds (defaults to 30 seconds)
+ * @param timeout Optional timeout in milliseconds (defaults to 60 seconds)
+ * @param webhookUrl Optional custom webhook URL (overrides the default)
  * @returns Promise that resolves with the HR contacts
  */
-export const lookupHRContacts = async (company: string, timeout = 60000) => {
+export const lookupHRContacts = async (company: string, timeout = 60000, webhookUrl = WEBHOOK_URL) => {
   try {
     console.log(`Looking up HR contacts for company: ${company}`);
     
     // Use our API route instead of calling the webhook directly
-    const apiUrl = 'http://localhost:5678/webhook/1f50d8b8-820e-43b4-91a5-5cc31014fc8a';
+    const apiUrl = '/api/webhook';
     
     // Prepare the payload
     const payload = {
-      webhookUrl: WEBHOOK_URL,
+      webhookUrl: webhookUrl, // Use the provided webhook URL or default
       type: 'hr_contact_search',
       company: company,
       timestamp: new Date().toISOString(),
