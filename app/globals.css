@@ -53,6 +53,8 @@
     overflow-x: hidden;
     width: 100%;
     position: relative;
+    font-size: 14px;
+    line-height: 1.4;
   }
   
   img, svg, video {
@@ -64,6 +66,28 @@
   h1, h2, h3, h4, h5, h6 {
     font-weight: 600;
     line-height: 1.2;
+  }
+  
+  @media (max-width: 640px) {
+    h1 {
+      font-size: 1.75rem; /* Smaller heading on mobile */
+    }
+    
+    h2 {
+      font-size: 1.25rem;
+    }
+    
+    h3 {
+      font-size: 1.125rem;
+    }
+    
+    h4, h5, h6 {
+      font-size: 1rem;
+    }
+    
+    p, li, div {
+      font-size: 0.9375rem;
+    }
   }
 }
 
@@ -111,6 +135,21 @@
   /* Mobile-friendly container */
   .mobile-container {
     @apply w-full max-w-full overflow-x-hidden px-4;
+  }
+  
+  /* Mobile-optimized card with reduced padding */
+  .card-mobile {
+    @apply p-3 sm:p-5;
+  }
+  
+  /* Compact spacing for mobile */
+  .mobile-spacing {
+    @apply mb-3 sm:mb-5;
+  }
+  
+  /* Compact section spacing */
+  .mobile-section {
+    @apply mb-4 sm:mb-8;
   }
 }
 
@@ -167,7 +206,41 @@
   
   /* Responsive text sizing */
   .text-responsive {
-    @apply text-base md:text-lg;
+    @apply text-sm sm:text-base md:text-lg;
+  }
+  
+  /* Text size utilities for mobile */
+  .text-mobile-xs {
+    @apply text-xs sm:text-sm;
+  }
+  
+  .text-mobile-sm {
+    @apply text-sm sm:text-base;
+  }
+  
+  .text-mobile-base {
+    @apply text-base sm:text-lg;
+  }
+  
+  .text-mobile-lg {
+    @apply text-lg sm:text-xl;
+  }
+  
+  .text-mobile-xl {
+    @apply text-xl sm:text-2xl;
+  }
+  
+  /* Compact padding for mobile */
+  .p-mobile {
+    @apply p-2 sm:p-4;
+  }
+  
+  .px-mobile {
+    @apply px-2 sm:px-4;
+  }
+  
+  .py-mobile {
+    @apply py-2 sm:py-4;
   }
   
   @keyframes fadeIn {

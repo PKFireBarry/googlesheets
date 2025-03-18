@@ -696,12 +696,12 @@ export default function Home() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 no-overflow mobile-container">
-      <div className="mb-8 sm:mb-12">
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl shadow-xl p-6 sm:p-10 text-white mb-8">
-          <h1 className="text-3xl sm:text-4xl font-bold mb-3">
+      <div className="mb-4 sm:mb-8">
+        <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl shadow-xl p-4 sm:p-10 text-white mb-4 sm:mb-8">
+          <h1 className="text-2xl sm:text-4xl font-bold mb-2 sm:mb-3">
             Job Application Tracker
           </h1>
-          <p className="text-blue-100 text-lg max-w-2xl">
+          <p className="text-mobile-sm text-blue-100 max-w-2xl">
             Track and manage your job applications with Google Sheets integration. 
             Keep all your job opportunities organized in one place.
           </p>
@@ -719,27 +719,27 @@ export default function Home() {
             />
 
             {!sheetsLoaded && (
-              <div className="mt-10 mb-16">
-                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border border-gray-100 dark:border-gray-700">
-                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">Welcome to Job Application Tracker</h2>
+              <div className="mt-6 sm:mt-10 mb-8 sm:mb-16">
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-4 sm:p-6 border border-gray-100 dark:border-gray-700">
+                  <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white mb-4 sm:mb-6">Welcome to Job Application Tracker</h2>
                   
-                  <p className="text-gray-700 dark:text-gray-300 mb-6">
+                  <p className="text-mobile-sm text-gray-700 dark:text-gray-300 mb-4 sm:mb-6">
                     This application helps you manage your job search process using Google Sheets as a database.
                     Enter your Google Sheet URL above to get started, or learn about the features below.
                   </p>
                   
-                  <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">How It Works</h3>
+                  <h3 className="text-lg sm:text-xl font-semibold text-gray-800 dark:text-white mb-3 sm:mb-4">How It Works</h3>
                   
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-6 mb-6 sm:mb-8">
                     <div className="flex">
                       <div className="flex-shrink-0">
-                        <div className="flex items-center justify-center h-12 w-12 rounded-md bg-blue-500 text-white">
-                          <FileSpreadsheet className="h-6 w-6" />
+                        <div className="flex items-center justify-center h-10 w-10 sm:h-12 sm:w-12 rounded-md bg-blue-500 text-white">
+                          <FileSpreadsheet className="h-5 w-5 sm:h-6 sm:w-6" />
                         </div>
                       </div>
-                      <div className="ml-4">
-                        <h4 className="text-lg font-medium text-gray-900 dark:text-white">Google Sheets Integration</h4>
-                        <p className="mt-2 text-base text-gray-600 dark:text-gray-400">
+                      <div className="ml-3 sm:ml-4">
+                        <h4 className="text-base sm:text-lg font-medium text-gray-900 dark:text-white">Google Sheets Integration</h4>
+                        <p className="mt-1 sm:mt-2 text-mobile-xs text-gray-600 dark:text-gray-400">
                           Connect to your existing Google Sheet containing job listings. We'll automatically organize and display your data.
                         </p>
                       </div>
@@ -747,13 +747,13 @@ export default function Home() {
                     
                     <div className="flex">
                       <div className="flex-shrink-0">
-                        <div className="flex items-center justify-center h-12 w-12 rounded-md bg-green-500 text-white">
-                          <CheckCircle className="h-6 w-6" />
+                        <div className="flex items-center justify-center h-10 w-10 sm:h-12 sm:w-12 rounded-md bg-green-500 text-white">
+                          <CheckCircle className="h-5 w-5 sm:h-6 sm:w-6" />
                         </div>
                       </div>
-                      <div className="ml-4">
-                        <h4 className="text-lg font-medium text-gray-900 dark:text-white">Track Applications</h4>
-                        <p className="mt-2 text-base text-gray-600 dark:text-gray-400">
+                      <div className="ml-3 sm:ml-4">
+                        <h4 className="text-base sm:text-lg font-medium text-gray-900 dark:text-white">Track Applications</h4>
+                        <p className="mt-1 sm:mt-2 text-mobile-xs text-gray-600 dark:text-gray-400">
                           Mark jobs as applied, view your application progress, and keep track of which opportunities still need attention.
                         </p>
                       </div>
@@ -761,13 +761,13 @@ export default function Home() {
                     
                     <div className="flex">
                       <div className="flex-shrink-0">
-                        <div className="flex items-center justify-center h-12 w-12 rounded-md bg-purple-500 text-white">
-                          <Sliders className="h-6 w-6" />
+                        <div className="flex items-center justify-center h-10 w-10 sm:h-12 sm:w-12 rounded-md bg-purple-500 text-white">
+                          <Sliders className="h-5 w-5 sm:h-6 sm:w-6" />
                         </div>
                       </div>
-                      <div className="ml-4">
-                        <h4 className="text-lg font-medium text-gray-900 dark:text-white">Advanced Filtering</h4>
-                        <p className="mt-2 text-base text-gray-600 dark:text-gray-400">
+                      <div className="ml-3 sm:ml-4">
+                        <h4 className="text-base sm:text-lg font-medium text-gray-900 dark:text-white">Advanced Filtering</h4>
+                        <p className="mt-1 sm:mt-2 text-mobile-xs text-gray-600 dark:text-gray-400">
                           Filter job listings by location, skills, salary requirements, and more. Exclude terms like "senior" to focus on relevant positions.
                         </p>
                       </div>
@@ -775,88 +775,88 @@ export default function Home() {
                     
                     <div className="flex">
                       <div className="flex-shrink-0">
-                        <div className="flex items-center justify-center h-12 w-12 rounded-md bg-yellow-500 text-white">
-                          <Calendar className="h-6 w-6" />
+                        <div className="flex items-center justify-center h-10 w-10 sm:h-12 sm:w-12 rounded-md bg-yellow-500 text-white">
+                          <Calendar className="h-5 w-5 sm:h-6 sm:w-6" />
                         </div>
                       </div>
-                      <div className="ml-4">
-                        <h4 className="text-lg font-medium text-gray-900 dark:text-white">Latest Opportunities</h4>
-                        <p className="mt-2 text-base text-gray-600 dark:text-gray-400">
+                      <div className="ml-3 sm:ml-4">
+                        <h4 className="text-base sm:text-lg font-medium text-gray-900 dark:text-white">Latest Opportunities</h4>
+                        <p className="mt-1 sm:mt-2 text-mobile-xs text-gray-600 dark:text-gray-400">
                           Filter for jobs posted in the last 24 hours. Stay on top of the newest opportunities without missing out.
                         </p>
                       </div>
                     </div>
                   </div>
-                  
-                  <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Recommended Sheet Structure</h3>
-                  <p className="text-gray-700 dark:text-gray-300 mb-4">
+
+                  <h3 className="text-lg sm:text-xl font-semibold text-gray-800 dark:text-white mb-3 sm:mb-4">Recommended Sheet Structure</h3>
+                  <p className="text-mobile-sm text-gray-700 dark:text-gray-300 mb-3 sm:mb-4">
                     For best results, your Google Sheet should include these columns:
                   </p>
                   
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mb-8">
-                    <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
-                      <span className="font-medium text-gray-900 dark:text-white">title</span>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">Job title</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-4 mb-6 sm:mb-8">
+                    <div className="bg-gray-50 dark:bg-gray-700 p-2 sm:p-3 rounded-lg">
+                      <span className="font-medium text-mobile-sm text-gray-900 dark:text-white">title</span>
+                      <p className="text-mobile-xs text-gray-600 dark:text-gray-400">Job title</p>
                     </div>
-                    <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
-                      <span className="font-medium text-gray-900 dark:text-white">company_name</span>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">Name of the company</p>
+                    <div className="bg-gray-50 dark:bg-gray-700 p-2 sm:p-3 rounded-lg">
+                      <span className="font-medium text-mobile-sm text-gray-900 dark:text-white">company_name</span>
+                      <p className="text-mobile-xs text-gray-600 dark:text-gray-400">Name of the company</p>
                     </div>
-                    <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
-                      <span className="font-medium text-gray-900 dark:text-white">description</span>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">Job description</p>
+                    <div className="bg-gray-50 dark:bg-gray-700 p-2 sm:p-3 rounded-lg">
+                      <span className="font-medium text-mobile-sm text-gray-900 dark:text-white">description</span>
+                      <p className="text-mobile-xs text-gray-600 dark:text-gray-400">Job description</p>
                     </div>
-                    <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
-                      <span className="font-medium text-gray-900 dark:text-white">location</span>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">Job location(s)</p>
+                    <div className="bg-gray-50 dark:bg-gray-700 p-2 sm:p-3 rounded-lg">
+                      <span className="font-medium text-mobile-sm text-gray-900 dark:text-white">location</span>
+                      <p className="text-mobile-xs text-gray-600 dark:text-gray-400">Job location(s)</p>
                     </div>
-                    <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
-                      <span className="font-medium text-gray-900 dark:text-white">skills</span>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">Required skills</p>
+                    <div className="bg-gray-50 dark:bg-gray-700 p-2 sm:p-3 rounded-lg">
+                      <span className="font-medium text-mobile-sm text-gray-900 dark:text-white">skills</span>
+                      <p className="text-mobile-xs text-gray-600 dark:text-gray-400">Required skills</p>
                     </div>
-                    <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
-                      <span className="font-medium text-gray-900 dark:text-white">salary</span>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">Salary information</p>
+                    <div className="bg-gray-50 dark:bg-gray-700 p-2 sm:p-3 rounded-lg">
+                      <span className="font-medium text-mobile-sm text-gray-900 dark:text-white">salary</span>
+                      <p className="text-mobile-xs text-gray-600 dark:text-gray-400">Salary information</p>
                     </div>
-                    <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
-                      <span className="font-medium text-gray-900 dark:text-white">date_posted</span>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">When the job was posted</p>
+                    <div className="bg-gray-50 dark:bg-gray-700 p-2 sm:p-3 rounded-lg">
+                      <span className="font-medium text-mobile-sm text-gray-900 dark:text-white">date_posted</span>
+                      <p className="text-mobile-xs text-gray-600 dark:text-gray-400">When the job was posted</p>
                     </div>
-                    <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
-                      <span className="font-medium text-gray-900 dark:text-white">notes</span>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">Your personal notes</p>
+                    <div className="bg-gray-50 dark:bg-gray-700 p-2 sm:p-3 rounded-lg">
+                      <span className="font-medium text-mobile-sm text-gray-900 dark:text-white">notes</span>
+                      <p className="text-mobile-xs text-gray-600 dark:text-gray-400">Your personal notes</p>
                     </div>
-                    <div className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg">
-                      <span className="font-medium text-gray-900 dark:text-white">url</span>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">Link to the job posting</p>
+                    <div className="bg-gray-50 dark:bg-gray-700 p-2 sm:p-3 rounded-lg">
+                      <span className="font-medium text-mobile-sm text-gray-900 dark:text-white">url</span>
+                      <p className="text-mobile-xs text-gray-600 dark:text-gray-400">Link to the job posting</p>
                     </div>
                   </div>
 
-                  <div className="bg-blue-50 dark:bg-blue-900/20 p-5 rounded-lg border border-blue-100 dark:border-blue-800">
-                    <h4 className="text-lg font-medium text-blue-800 dark:text-blue-300 mb-2">Ready to get started?</h4>
-                    <p className="text-blue-700 dark:text-blue-400 mb-3">
+                  <div className="bg-blue-50 dark:bg-blue-900/20 p-3 sm:p-5 rounded-lg border border-blue-100 dark:border-blue-800">
+                    <h4 className="text-base sm:text-lg font-medium text-blue-800 dark:text-blue-300 mb-2">Ready to get started?</h4>
+                    <p className="text-mobile-sm text-blue-700 dark:text-blue-400 mb-2 sm:mb-3">
                       Enter your Google Sheets URL above. The app will remember your sheet for future visits.
                     </p>
-                    <p className="text-sm text-blue-600 dark:text-blue-500">
+                    <p className="text-mobile-xs text-blue-600 dark:text-blue-500">
                       Note: Your Google Sheet must be publicly accessible or shared with view access.
                     </p>
                   </div>
 
                   {/* Quick Setup Guide */}
-                  <div className="mt-10 mb-8">
-                    <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Quick Setup Guide</h3>
+                  <div className="mt-6 sm:mt-10 mb-4 sm:mb-8">
+                    <h3 className="text-lg sm:text-xl font-semibold text-gray-800 dark:text-white mb-3 sm:mb-4">Quick Setup Guide</h3>
                     
-                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 border border-gray-100 dark:border-gray-700">
-                      <ol className="space-y-6">
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-3 sm:p-6 border border-gray-100 dark:border-gray-700">
+                      <ol className="space-y-4 sm:space-y-6">
                         <li className="flex">
                           <div className="flex-shrink-0">
-                            <div className="flex items-center justify-center h-8 w-8 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300 font-bold">
+                            <div className="flex items-center justify-center h-6 w-6 sm:h-8 sm:w-8 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300 font-bold text-sm sm:text-base">
                               1
                             </div>
                           </div>
-                          <div className="ml-4">
-                            <h4 className="text-lg font-medium text-gray-900 dark:text-white">Create a Google Sheet</h4>
-                            <p className="mt-1 text-gray-600 dark:text-gray-400">
+                          <div className="ml-3 sm:ml-4">
+                            <h4 className="text-base sm:text-lg font-medium text-gray-900 dark:text-white">Create a Google Sheet</h4>
+                            <p className="mt-1 text-mobile-xs text-gray-600 dark:text-gray-400">
                               Create a new Google Sheet or use an existing one to store your job listings. Add column headers like those listed above.
                             </p>
                           </div>
@@ -864,13 +864,13 @@ export default function Home() {
                         
                         <li className="flex">
                           <div className="flex-shrink-0">
-                            <div className="flex items-center justify-center h-8 w-8 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300 font-bold">
+                            <div className="flex items-center justify-center h-6 w-6 sm:h-8 sm:w-8 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300 font-bold text-sm sm:text-base">
                               2
                             </div>
                           </div>
-                          <div className="ml-4">
-                            <h4 className="text-lg font-medium text-gray-900 dark:text-white">Make Your Sheet Public</h4>
-                            <p className="mt-1 text-gray-600 dark:text-gray-400">
+                          <div className="ml-3 sm:ml-4">
+                            <h4 className="text-base sm:text-lg font-medium text-gray-900 dark:text-white">Make Your Sheet Public</h4>
+                            <p className="mt-1 text-mobile-xs text-gray-600 dark:text-gray-400">
                               Click the "Share" button in Google Sheets and change access to "Anyone with the link" with "Viewer" permissions.
                             </p>
                           </div>
@@ -878,15 +878,15 @@ export default function Home() {
                         
                         <li className="flex">
                           <div className="flex-shrink-0">
-                            <div className="flex items-center justify-center h-8 w-8 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300 font-bold">
+                            <div className="flex items-center justify-center h-6 w-6 sm:h-8 sm:w-8 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300 font-bold text-sm sm:text-base">
                               3
                             </div>
                           </div>
-                          <div className="ml-4">
-                            <h4 className="text-lg font-medium text-gray-900 dark:text-white">Copy Your Sheet URL</h4>
-                            <p className="mt-1 text-gray-600 dark:text-gray-400">
+                          <div className="ml-3 sm:ml-4">
+                            <h4 className="text-base sm:text-lg font-medium text-gray-900 dark:text-white">Copy Your Sheet URL</h4>
+                            <p className="mt-1 text-mobile-xs text-gray-600 dark:text-gray-400">
                               Copy the URL from your browser's address bar while viewing your Sheet. It should look like:
-                              <code className="ml-1 px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-sm">
+                              <code className="ml-1 px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-xs sm:text-sm">
                                 https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/edit
                               </code>
                             </p>
@@ -895,13 +895,13 @@ export default function Home() {
                         
                         <li className="flex">
                           <div className="flex-shrink-0">
-                            <div className="flex items-center justify-center h-8 w-8 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300 font-bold">
+                            <div className="flex items-center justify-center h-6 w-6 sm:h-8 sm:w-8 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300 font-bold text-sm sm:text-base">
                               4
                             </div>
                           </div>
-                          <div className="ml-4">
-                            <h4 className="text-lg font-medium text-gray-900 dark:text-white">Paste URL Above</h4>
-                            <p className="mt-1 text-gray-600 dark:text-gray-400">
+                          <div className="ml-3 sm:ml-4">
+                            <h4 className="text-base sm:text-lg font-medium text-gray-900 dark:text-white">Paste URL Above</h4>
+                            <p className="mt-1 text-mobile-xs text-gray-600 dark:text-gray-400">
                               Paste your Sheet URL into the form above and click "Load Jobs" to connect your data. 
                               The app will remember your sheet for future visits.
                             </p>
@@ -918,78 +918,78 @@ export default function Home() {
       </div>
 
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6 flex items-start">
-          <AlertCircle className="w-5 h-5 mr-2 mt-0.5 flex-shrink-0" />
-          <p>{error}</p>
+        <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 sm:px-4 sm:py-3 rounded-lg mb-4 sm:mb-6 flex items-start">
+          <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 mr-2 mt-0.5 flex-shrink-0" />
+          <p className="text-mobile-sm">{error}</p>
         </div>
       )}
 
       {data.length > 0 && (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-5 border border-gray-100 dark:border-gray-700">
-              <div className="flex items-center mb-3">
-                <div className="bg-blue-100 dark:bg-blue-900/30 p-2 rounded-lg mr-3">
-                  <FileSpreadsheet className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 mb-4 sm:mb-8">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-3 sm:p-5 border border-gray-100 dark:border-gray-700">
+              <div className="flex items-center mb-2 sm:mb-3">
+                <div className="bg-blue-100 dark:bg-blue-900/30 p-1.5 sm:p-2 rounded-lg mr-2 sm:mr-3">
+                  <FileSpreadsheet className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600 dark:text-blue-400" />
                 </div>
-                <h3 className="font-medium text-gray-900 dark:text-white">Total Jobs</h3>
+                <h3 className="font-medium text-mobile-sm text-gray-900 dark:text-white">Total Jobs</h3>
               </div>
-              <p className="text-3xl font-bold text-gray-900 dark:text-white">{rows.length}</p>
+              <p className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">{rows.length}</p>
               {totalSheetRows > rows.length && (
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                <p className="text-mobile-xs text-gray-500 dark:text-gray-400 mt-1">
                   {totalSheetRows - rows.length} filtered out
                 </p>
               )}
             </div>
             
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-5 border border-gray-100 dark:border-gray-700">
-              <div className="flex items-center mb-3">
-                <div className="bg-green-100 dark:bg-green-900/30 p-2 rounded-lg mr-3">
-                  <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-3 sm:p-5 border border-gray-100 dark:border-gray-700">
+              <div className="flex items-center mb-2 sm:mb-3">
+                <div className="bg-green-100 dark:bg-green-900/30 p-1.5 sm:p-2 rounded-lg mr-2 sm:mr-3">
+                  <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5 text-green-600 dark:text-green-400" />
                 </div>
-                <h3 className="font-medium text-gray-900 dark:text-white">Applied</h3>
+                <h3 className="font-medium text-mobile-sm text-gray-900 dark:text-white">Applied</h3>
               </div>
-              <p className="text-3xl font-bold text-gray-900 dark:text-white">{appliedJobs.length}</p>
+              <p className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">{appliedJobs.length}</p>
               {rows.length > 0 && (
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                <p className="text-mobile-xs text-gray-500 dark:text-gray-400 mt-1">
                   {Math.round((appliedJobs.length / rows.length) * 100)}% application rate
                 </p>
               )}
             </div>
             
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-5 border border-gray-100 dark:border-gray-700">
-              <div className="flex items-center mb-3">
-                <div className="bg-purple-100 dark:bg-purple-900/30 p-2 rounded-lg mr-3">
-                  <Users className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-3 sm:p-5 border border-gray-100 dark:border-gray-700">
+              <div className="flex items-center mb-2 sm:mb-3">
+                <div className="bg-purple-100 dark:bg-purple-900/30 p-1.5 sm:p-2 rounded-lg mr-2 sm:mr-3">
+                  <Users className="w-4 h-4 sm:w-5 sm:h-5 text-purple-600 dark:text-purple-400" />
                 </div>
-                <h3 className="font-medium text-gray-900 dark:text-white">Remaining</h3>
+                <h3 className="font-medium text-mobile-sm text-gray-900 dark:text-white">Remaining</h3>
               </div>
-              <p className="text-3xl font-bold text-gray-900 dark:text-white">
+              <p className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">
                 {rows.length - appliedJobs.length}
               </p>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              <p className="text-mobile-xs text-gray-500 dark:text-gray-400 mt-1">
                 Jobs to apply for
               </p>
             </div>
           </div>
 
           {/* Job Filters - Improved Layout */}
-          <div className="mb-6">
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">Job Listings</h2>
+          <div className="mb-4 sm:mb-6">
+            <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 mb-3 sm:mb-4">
+              <h2 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-white">Job Listings</h2>
               
               <div className="flex flex-wrap items-center gap-2">
                 {/* Quick filter input */}
                 <div className="relative w-full sm:w-auto">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Search className="h-4 w-4 text-gray-400 dark:text-gray-500" />
+                    <Search className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-400 dark:text-gray-500" />
                   </div>
                   <input
                     type="text"
                     value={filterText}
                     onChange={(e) => setFilterText(e.target.value)}
                     placeholder="Search jobs..."
-                    className="pl-10 pr-3 py-2 w-full sm:w-48 md:w-64 rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm dark:bg-gray-700 dark:text-white"
+                    className="pl-8 sm:pl-10 pr-3 py-1.5 sm:py-2 w-full sm:w-48 md:w-64 rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm dark:bg-gray-700 dark:text-white"
                   />
                 </div>
                 
@@ -997,26 +997,26 @@ export default function Home() {
                   {/* Filter buttons */}
                   <button 
                     onClick={() => setShowFilters(!showFilters)}
-                    className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="inline-flex items-center px-2 sm:px-3 py-1.5 sm:py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
-                    <Sliders className="w-4 h-4 mr-2" />
-                    {showFilters ? 'Hide Filters' : 'Filters'}
+                    <Sliders className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
+                    {showFilters ? 'Hide' : 'Filters'}
                   </button>
                   
                   {/* List/Card View Toggle */}
                   <button
                     onClick={toggleViewMode}
-                    className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="inline-flex items-center px-2 sm:px-3 py-1.5 sm:py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     {viewMode === 'card' ? (
                       <>
-                        <List className="w-4 h-4 mr-2" />
+                        <List className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
                         <span className="hidden sm:inline">List View</span>
                         <span className="inline sm:hidden">List</span>
                       </>
                     ) : (
                       <>
-                        <Grid className="w-4 h-4 mr-2" />
+                        <Grid className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
                         <span className="hidden sm:inline">Card View</span>
                         <span className="inline sm:hidden">Cards</span>
                       </>
@@ -1027,20 +1027,20 @@ export default function Home() {
             </div>
             
             {showFilters && (
-              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-5 border border-gray-100 dark:border-gray-700 mb-4 animate-fade-in">
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-3 sm:p-5 border border-gray-100 dark:border-gray-700 mb-3 sm:mb-4 animate-fade-in">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
                   {/* Location filter */}
                   <div>
-                    <label htmlFor="location-filter" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Location</label>
+                    <label htmlFor="location-filter" className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Location</label>
                     <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <MapPin className="h-4 w-4 text-gray-400 dark:text-gray-500" />
+                      <div className="absolute inset-y-0 left-0 pl-2 sm:pl-3 flex items-center pointer-events-none">
+                        <MapPin className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-400 dark:text-gray-500" />
                       </div>
                       <select
                         id="location-filter"
                         value={selectedLocation}
                         onChange={(e) => setSelectedLocation(e.target.value)}
-                        className="pl-10 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm dark:bg-gray-700 dark:text-white"
+                        className="pl-7 sm:pl-10 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-xs sm:text-sm dark:bg-gray-700 dark:text-white"
                       >
                         <option value="">Any Location</option>
                         <option value="Remote">Remote Only</option>
@@ -1064,18 +1064,18 @@ export default function Home() {
                   
                   {/* Last day filter */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Posting Date</label>
-                    <div className="flex items-center h-10">
+                    <label className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Posting Date</label>
+                    <div className="flex items-center h-9 sm:h-10">
                       <div className="relative flex items-center">
                         <input
                           id="last-day-filter"
                           type="checkbox"
                           checked={showLastDayOnly}
                           onChange={(e) => setShowLastDayOnly(e.target.checked)}
-                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                         />
-                        <label htmlFor="last-day-filter" className="ml-2 block text-sm text-gray-700 dark:text-gray-300 flex items-center">
-                          <Calendar className="w-4 h-4 mr-1 text-gray-500" />
+                        <label htmlFor="last-day-filter" className="ml-1.5 sm:ml-2 block text-xs sm:text-sm text-gray-700 dark:text-gray-300 flex items-center">
+                          <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1 text-gray-500" />
                           Last 24 Hours Only
                         </label>
                       </div>
@@ -1084,24 +1084,24 @@ export default function Home() {
                   
                   {/* Salary filter */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Minimum Salary</label>
+                    <label className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Minimum Salary</label>
                     <div className="flex space-x-2">
                       <div className="relative flex-grow">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                          <DollarSign className="h-4 w-4 text-gray-400 dark:text-gray-500" />
+                        <div className="absolute inset-y-0 left-0 pl-2 sm:pl-3 flex items-center pointer-events-none">
+                          <DollarSign className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-400 dark:text-gray-500" />
                         </div>
                         <input
                           type="number"
                           value={minSalary}
                           onChange={(e) => setMinSalary(e.target.value)}
                           placeholder="Min salary"
-                          className="pl-10 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm dark:bg-gray-700 dark:text-white"
+                          className="pl-7 sm:pl-10 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-xs sm:text-sm dark:bg-gray-700 dark:text-white"
                         />
                       </div>
                       <select
                         value={salaryType}
                         onChange={(e) => setSalaryType(e.target.value as "any" | "yearly" | "hourly")}
-                        className="w-24 rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm dark:bg-gray-700 dark:text-white"
+                        className="w-16 sm:w-24 rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-xs sm:text-sm dark:bg-gray-700 dark:text-white"
                       >
                         <option value="any">Any</option>
                         <option value="yearly">Yearly</option>
@@ -1112,11 +1112,11 @@ export default function Home() {
                   
                   {/* Excluded Words filter */}
                   <div className="sm:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Exclude Jobs Containing</label>
+                    <label className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Exclude Jobs Containing</label>
                     <div className="flex">
                       <div className="relative flex-grow">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                          <Ban className="h-4 w-4 text-gray-400 dark:text-gray-500" />
+                        <div className="absolute inset-y-0 left-0 pl-2 sm:pl-3 flex items-center pointer-events-none">
+                          <Ban className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-400 dark:text-gray-500" />
                         </div>
                         <input
                           type="text"
@@ -1129,12 +1129,12 @@ export default function Home() {
                             }
                           }}
                           placeholder="senior, sr, lead, etc."
-                          className="pl-10 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm dark:bg-gray-700 dark:text-white"
+                          className="pl-7 sm:pl-10 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-xs sm:text-sm dark:bg-gray-700 dark:text-white"
                         />
                       </div>
                       <button
                         onClick={handleAddExcludedWord}
-                        className="ml-2 inline-flex items-center px-3 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                        className="ml-2 inline-flex items-center px-2 sm:px-3 py-1 sm:py-2 border border-transparent rounded-md shadow-sm text-xs sm:text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                       >
                         Add
                       </button>
@@ -1142,15 +1142,15 @@ export default function Home() {
                     
                     {/* Display excluded words as tags */}
                     {excludedWords.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mt-2">
+                      <div className="flex flex-wrap gap-1 sm:gap-2 mt-2">
                         {excludedWords.map((word) => (
-                          <div key={word} className="inline-flex items-center px-2 py-1 rounded text-sm bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">
+                          <div key={word} className="inline-flex items-center px-1.5 sm:px-2 py-0.5 sm:py-1 rounded text-xs bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">
                             {word}
                             <button
                               onClick={() => handleRemoveExcludedWord(word)}
-                              className="ml-1.5 text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                              className="ml-1 sm:ml-1.5 text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
                             >
-                              <X className="h-3 w-3" />
+                              <X className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
                             </button>
                           </div>
                         ))}
@@ -1160,20 +1160,20 @@ export default function Home() {
                 </div>
                 
                 {/* Filter buttons */}
-                <div className="mt-4 flex justify-end space-x-2">
+                <div className="mt-3 sm:mt-4 flex justify-end space-x-2">
                   <button
                     onClick={saveFilters}
-                    className="inline-flex items-center px-3 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                    className="inline-flex items-center px-2 sm:px-3 py-1 sm:py-2 border border-transparent rounded-md shadow-sm text-xs sm:text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
                   >
-                    <CheckCircle className="h-4 w-4 mr-2" />
-                    Save Filters
+                    <CheckCircle className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                    Save
                   </button>
                   <button
                     onClick={clearFilters}
-                    className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700"
+                    className="inline-flex items-center px-2 sm:px-3 py-1 sm:py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700"
                   >
-                    <X className="h-4 w-4 mr-2" />
-                    Clear Filters
+                    <X className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                    Clear
                   </button>
                 </div>
               </div>
@@ -1181,14 +1181,14 @@ export default function Home() {
           </div>
 
           {/* Swipe Instructions */}
-          <div className="mb-6 bg-blue-50 dark:bg-blue-900/20 rounded-xl shadow-md p-4 border border-blue-100 dark:border-blue-800">
-            <div className="flex items-center gap-2 mb-2">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-500 dark:text-blue-400" viewBox="0 0 20 20" fill="currentColor">
+          <div className="mb-4 sm:mb-6 bg-blue-50 dark:bg-blue-900/20 rounded-xl shadow-md p-3 sm:p-4 border border-blue-100 dark:border-blue-800">
+            <div className="flex items-center gap-1.5 sm:gap-2 mb-1 sm:mb-2">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 sm:h-5 sm:w-5 text-blue-500 dark:text-blue-400" viewBox="0 0 20 20" fill="currentColor">
                 <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
               </svg>
-              <h3 className="text-sm sm:text-base font-medium text-blue-700 dark:text-blue-300">Job Card Navigation</h3>
+              <h3 className="text-xs sm:text-sm font-medium text-blue-700 dark:text-blue-300">Job Card Navigation</h3>
             </div>
-            <p className="text-xs sm:text-sm text-blue-600 dark:text-blue-400">
+            <p className="text-mobile-xs text-blue-600 dark:text-blue-400">
               <span className="hidden sm:inline">Swipe left or right on job cards to navigate between jobs. </span>
               <span>Use the arrow buttons below the card to view previous or next job listings. </span>
               <span>Toggle between card and list views using the view button above. In list view, click on a job to see full details. </span>
@@ -1197,11 +1197,11 @@ export default function Home() {
           </div>
 
           {rows.length === 0 ? (
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-8 text-center border border-gray-100 dark:border-gray-700">
-              <p className="text-gray-600 dark:text-gray-400 mb-2">No jobs match your current filters</p>
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 sm:p-8 text-center border border-gray-100 dark:border-gray-700">
+              <p className="text-mobile-sm text-gray-600 dark:text-gray-400 mb-2">No jobs match your current filters</p>
               <button
                 onClick={clearFilters}
-                className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                className="inline-flex items-center px-3 py-1.5 sm:px-4 sm:py-2 border border-transparent rounded-md shadow-sm text-xs sm:text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
               >
                 Clear All Filters
               </button>
