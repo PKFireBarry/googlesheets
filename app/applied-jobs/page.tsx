@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Cookies from "js-cookie";
 import JobCardGrid from "../components/JobCardGrid";
-import { CheckCircle, FileSpreadsheet, Briefcase } from "lucide-react";
+import { CheckCircle, FileSpreadsheet, Briefcase, AlertCircle } from "lucide-react";
 
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY;
 const RANGE = process.env.NEXT_PUBLIC_RANGE;
@@ -43,6 +43,11 @@ export default function AppliedJobsPage() {
   });
   const [rowIndices, setRowIndices] = useState<number[]>([]);
   const [totalSheetRows, setTotalSheetRows] = useState<number>(0);
+  const [viewMode, setViewMode] = useState<'card' | 'list'>(() => {
+    // Try to get viewMode from cookie to maintain consistency between pages
+    const savedViewMode = Cookies.get("viewMode");
+    return savedViewMode === 'list' ? 'list' : 'card';
+  });
 
   useEffect(() => {
     const savedSheetUrl = Cookies.get("lastSheetUrl");
@@ -261,6 +266,13 @@ export default function AppliedJobsPage() {
     }
   };
 
+  const toggleViewMode = () => {
+    const newViewMode = viewMode === 'card' ? 'list' : 'card';
+    setViewMode(newViewMode);
+    // Save viewMode in cookie for consistency between pages
+    Cookies.set("viewMode", newViewMode, { expires: 30 });
+  };
+
   // Function to find column index by name
   const findColumnIndex = (fieldName: string) => {
     if (!headers || headers.length === 0) return -1;
@@ -421,6 +433,9 @@ export default function AppliedJobsPage() {
             onApply={handleToggleApplied}
             onDelete={handleDeleteJob}
             onUpdateNote={handleUpdateNote}
+            viewMode={viewMode}
+            onToggleViewMode={toggleViewMode}
+            hideViewToggle={false}
           />
         </>
       ) : (
@@ -435,26 +450,5 @@ export default function AppliedJobsPage() {
         </div>
       )}
     </div>
-  );
-}
-
-function AlertCircle(props: any) {
-  return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <circle cx="12" cy="12" r="10" />
-      <line x1="12" y1="8" x2="12" y2="12" />
-      <line x1="12" y1="16" x2="12.01" y2="16" />
-    </svg>
   );
 } 

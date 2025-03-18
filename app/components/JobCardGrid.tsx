@@ -11,6 +11,9 @@ interface JobCardGridProps {
   onApply: (jobId: string) => void;
   onDelete: (rowIndex: number) => void;
   onUpdateNote: (rowIndex: number, note: string, columnIndex: number) => void;
+  viewMode?: 'card' | 'list'; // Optional prop to control view mode externally
+  onToggleViewMode?: () => void; // Optional callback for view mode toggle
+  hideViewToggle?: boolean; // Whether to hide the internal view toggle
 }
 
 export default function JobCardGrid({
@@ -19,7 +22,10 @@ export default function JobCardGrid({
   appliedJobs,
   onApply,
   onDelete,
-  onUpdateNote
+  onUpdateNote,
+  viewMode: externalViewMode,
+  onToggleViewMode,
+  hideViewToggle = false
 }: JobCardGridProps) {
   const [currentIndex, setCurrentIndex] = useState(0)
   const [touchStart, setTouchStart] = useState<number | null>(null)
@@ -28,8 +34,11 @@ export default function JobCardGrid({
   const [isAnimating, setIsAnimating] = useState(false)
   const [direction, setDirection] = useState<'left' | 'right' | null>(null)
   const cardRef = useRef<HTMLDivElement>(null)
-  const [viewMode, setViewMode] = useState<'card' | 'list'>('card')
+  const [internalViewMode, setInternalViewMode] = useState<'card' | 'list'>('card')
   const [selectedJobForDetail, setSelectedJobForDetail] = useState<any>(null)
+  
+  // Determine which view mode to use (external or internal)
+  const viewMode = externalViewMode !== undefined ? externalViewMode : internalViewMode;
   
   // Minimum swipe distance (in px)
   const minSwipeDistance = 50
@@ -301,8 +310,14 @@ export default function JobCardGrid({
   }
 
   const toggleViewMode = () => {
-    setViewMode(viewMode === 'card' ? 'list' : 'card')
-    setSelectedJobForDetail(null)
+    if (onToggleViewMode) {
+      // Use external toggle if provided
+      onToggleViewMode();
+    } else {
+      // Otherwise use internal toggle
+      setInternalViewMode(viewMode === 'card' ? 'list' : 'card');
+    }
+    setSelectedJobForDetail(null);
   }
 
   const handleListItemClick = (job: any, index: number) => {
@@ -344,24 +359,26 @@ export default function JobCardGrid({
 
   // View mode toggle button
   const ViewToggle = () => (
-    <div className="flex justify-end mb-4">
-      <button
-        onClick={toggleViewMode}
-        className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-      >
-        {viewMode === 'card' ? (
-          <>
-            <List className="w-4 h-4 mr-2" />
-            Show as List
-          </>
-        ) : (
-          <>
-            <Grid className="w-4 h-4 mr-2" />
-            Show as Cards
-          </>
-        )}
-      </button>
-    </div>
+    !hideViewToggle ? (
+      <div className="flex justify-end mb-4">
+        <button
+          onClick={toggleViewMode}
+          className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          {viewMode === 'card' ? (
+            <>
+              <List className="w-4 h-4 mr-2" />
+              Show as List
+            </>
+          ) : (
+            <>
+              <Grid className="w-4 h-4 mr-2" />
+              Show as Cards
+            </>
+          )}
+        </button>
+      </div>
+    ) : null
   )
   
   // When in list view mode

@@ -88,25 +88,41 @@ const JobSourceBreakdown = ({ data }: { data: any[] }) => {
   const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#0088FE', '#00C49F']
   
   return (
-    <ResponsiveContainer width="100%" height={200}>
-      <PieChart>
-        <Pie
-          data={sourceData}
-          cx="50%"
-          cy="50%"
-          labelLine={false}
-          outerRadius={80}
-          fill="#8884d8"
-          dataKey="value"
-          label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-        >
-          {sourceData.map((entry, index) => (
-            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-          ))}
-        </Pie>
-        <Tooltip contentStyle={{ backgroundColor: '#333', border: 'none' }} itemStyle={{ color: '#fff' }} />
-      </PieChart>
-    </ResponsiveContainer>
+    <div>
+      <ResponsiveContainer width="100%" height={200}>
+        <PieChart>
+          <Pie
+            data={sourceData}
+            cx="50%"
+            cy="50%"
+            labelLine={false}
+            outerRadius={80}
+            fill="#8884d8"
+            dataKey="value"
+          >
+            {sourceData.map((entry, index) => (
+              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+            ))}
+          </Pie>
+          <Tooltip contentStyle={{ backgroundColor: '#333', border: 'none' }} itemStyle={{ color: '#fff' }} />
+          <Legend layout="horizontal" verticalAlign="bottom" align="center" />
+        </PieChart>
+      </ResponsiveContainer>
+      
+      {/* Custom legend for better visibility */}
+      <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+        {sourceData.map((entry, index) => (
+          <div key={`legend-${index}`} className="flex items-center">
+            <div 
+              className="w-3 h-3 mr-2" 
+              style={{ backgroundColor: COLORS[index % COLORS.length] }}
+            ></div>
+            <span className="truncate">{entry.name}</span>
+            <span className="ml-1 text-gray-400">({entry.value})</span>
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -275,15 +291,29 @@ const ExperienceLevelsChart = ({ experienceData }: { experienceData: any[] }) =>
             fill="#8884d8"
             dataKey="count"
             nameKey="name"
-            label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
           >
             {experienceData.filter(d => d.name !== 'Not Specified').map((entry, index) => (
               <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
             ))}
           </Pie>
           <Tooltip contentStyle={{ backgroundColor: '#333', border: 'none' }} itemStyle={{ color: '#fff' }} />
+          <Legend layout="horizontal" verticalAlign="bottom" align="center" />
         </PieChart>
       </ResponsiveContainer>
+      
+      {/* Custom legend for better visibility */}
+      <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+        {experienceData.filter(d => d.name !== 'Not Specified').map((entry, index) => (
+          <div key={`legend-${index}`} className="flex items-center">
+            <div 
+              className="w-3 h-3 mr-2" 
+              style={{ backgroundColor: COLORS[index % COLORS.length] }}
+            ></div>
+            <span>{entry.name}</span>
+            <span className="ml-1 text-gray-400">({entry.count})</span>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -754,8 +784,8 @@ export default function AnalyticsPage() {
             description="Distribution of job types"
             icon={<Briefcase className="h-5 w-5 text-purple-400" />}
           >
-            <div className="h-56 sm:h-64">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="h-auto">
+              <ResponsiveContainer width="100%" height={200}>
                 <PieChart>
                   <Pie
                     data={jobTypeStats}
@@ -766,15 +796,29 @@ export default function AnalyticsPage() {
                     fill="#8884d8"
                     dataKey="count"
                     nameKey="name"
-                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                   >
                     {jobTypeStats.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                     ))}
                   </Pie>
                   <Tooltip contentStyle={{ backgroundColor: '#333', border: 'none' }} itemStyle={{ color: '#fff' }} />
+                  <Legend layout="horizontal" verticalAlign="bottom" align="center" />
                 </PieChart>
               </ResponsiveContainer>
+              
+              {/* Custom legend for better visibility */}
+              <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                {jobTypeStats.map((entry, index) => (
+                  <div key={`legend-${index}`} className="flex items-center">
+                    <div 
+                      className="w-3 h-3 mr-2" 
+                      style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                    ></div>
+                    <span>{entry.name}</span>
+                    <span className="ml-1 text-gray-400">({entry.count})</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </Card>
 
@@ -808,39 +852,6 @@ export default function AnalyticsPage() {
                   <Bar dataKey="count" name="Job Count" fill="#00C49F" radius={[4, 4, 0, 0]}>
                     {locationStats.slice(0, 5).map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={`hsl(${160 - index * 8}, 70%, 50%)`} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </Card>
-
-          {/* Companies Chart */}
-          <Card 
-            title="Top Companies" 
-            description="Companies with the most job listings"
-            icon={<Building className="h-5 w-5 text-blue-400" />}
-          >
-            <div className="h-56 sm:h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={companyStats}
-                  margin={{ top: 10, right: 5, left: 5, bottom: 5 }}
-                  layout="vertical"
-                >
-                  <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                  <XAxis type="number" tick={{ fontSize: 10, fill: '#999' }} />
-                  <YAxis 
-                    dataKey="name" 
-                    type="category"
-                    width={100}
-                    tick={{ fontSize: 10, fill: '#999' }}
-                    tickFormatter={(value) => value.length > 12 ? `${value.substring(0, 12)}...` : value}
-                  />
-                  <Tooltip contentStyle={{ backgroundColor: '#333', border: 'none' }} itemStyle={{ color: '#fff' }} />
-                  <Bar dataKey="count" name="Job Count" fill="#0088FE" radius={[0, 4, 4, 0]}>
-                    {companyStats.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                     ))}
                   </Bar>
                 </BarChart>

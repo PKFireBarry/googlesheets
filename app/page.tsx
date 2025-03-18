@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Cookies from "js-cookie";
 import SheetUrlForm from "./components/SheetUrlForm";
 import JobCardGrid from "./components/JobCardGrid";
-import { FileSpreadsheet, Users, CheckCircle, AlertCircle, Search, X, Sliders, Calendar, MapPin, DollarSign } from "lucide-react";
+import { FileSpreadsheet, Users, CheckCircle, AlertCircle, Search, X, Sliders, Calendar, MapPin, DollarSign, Ban, List, Grid } from "lucide-react";
 import ClientSkillsFilter from "./components/ClientSkillsFilter";
 
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY;
@@ -61,6 +61,32 @@ export default function Home() {
   const [uniqueSkills, setUniqueSkills] = useState<string[]>([]);
   const [minSalary, setMinSalary] = useState<string>("");
   const [salaryType, setSalaryType] = useState<"any" | "yearly" | "hourly">("any");
+  const [excludedWords, setExcludedWords] = useState<string[]>([]);
+  const [newExcludeWord, setNewExcludeWord] = useState<string>("");
+  const [viewMode, setViewMode] = useState<'card' | 'list'>(() => {
+    // Try to get viewMode from cookie
+    const savedViewMode = Cookies.get("viewMode");
+    return savedViewMode === 'list' ? 'list' : 'card';
+  });
+
+  // Load saved filters on initial render
+  useEffect(() => {
+    const savedFilters = Cookies.get("savedFilters");
+    if (savedFilters) {
+      try {
+        const filters = JSON.parse(savedFilters);
+        setFilterText(filters.filterText || "");
+        setSelectedLocation(filters.selectedLocation || "");
+        setSkillFilter(filters.skillFilter || "");
+        setShowLastDayOnly(filters.showLastDayOnly || false);
+        setMinSalary(filters.minSalary || "");
+        setSalaryType(filters.salaryType || "any");
+        setExcludedWords(filters.excludedWords || []);
+      } catch (e) {
+        console.error("Error loading saved filters:", e);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     const savedSheetUrl = Cookies.get("lastSheetUrl");
@@ -139,6 +165,16 @@ export default function Home() {
         const title = (getFieldValue("title") || "").toLowerCase();
         if (!title.includes(filterText.toLowerCase())) {
           return false;
+        }
+      }
+      
+      // Excluded words filter
+      if (excludedWords.length > 0) {
+        const title = (getFieldValue("title") || "").toLowerCase();
+        for (const word of excludedWords) {
+          if (title.includes(word.toLowerCase())) {
+            return false; // Exclude this job if title contains any excluded word
+          }
         }
       }
       
@@ -298,7 +334,7 @@ export default function Home() {
     }));
     
     setFilteredRows(filteredWithIndices);
-  }, [data, filterText, selectedLocation, skillFilter, showLastDayOnly, minSalary, salaryType]);
+  }, [data, filterText, selectedLocation, skillFilter, showLastDayOnly, minSalary, salaryType, excludedWords]);
 
   const handleUrlSubmit = (url: string) => {
     const id = extractSpreadsheetId(url);
@@ -596,6 +632,33 @@ export default function Home() {
     }
   };
 
+  // Add new excluded word
+  const handleAddExcludedWord = () => {
+    if (newExcludeWord.trim() !== "" && !excludedWords.includes(newExcludeWord.trim())) {
+      setExcludedWords([...excludedWords, newExcludeWord.trim()]);
+      setNewExcludeWord("");
+    }
+  };
+
+  // Remove excluded word
+  const handleRemoveExcludedWord = (word: string) => {
+    setExcludedWords(excludedWords.filter(w => w !== word));
+  };
+
+  // Save filters to cookies
+  const saveFilters = () => {
+    const filters = {
+      filterText,
+      selectedLocation,
+      skillFilter,
+      showLastDayOnly,
+      minSalary,
+      salaryType,
+      excludedWords,
+    };
+    Cookies.set("savedFilters", JSON.stringify(filters), { expires: 30 }); // Save for 30 days
+  };
+
   // Clear all filters
   const clearFilters = () => {
     setFilterText("");
@@ -604,6 +667,17 @@ export default function Home() {
     setShowLastDayOnly(false);
     setMinSalary("");
     setSalaryType("any");
+    setExcludedWords([]);
+    // Also clear saved filters from cookies
+    Cookies.remove("savedFilters");
+  };
+
+  // Toggle between card and list view
+  const toggleViewMode = () => {
+    const newViewMode = viewMode === 'card' ? 'list' : 'card';
+    setViewMode(newViewMode);
+    // Save viewMode in cookie for consistency between pages
+    Cookies.set("viewMode", newViewMode, { expires: 30 });
   };
 
   // Extract headers and rows from data
@@ -696,40 +770,62 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Job Filters */}
+          {/* Job Filters - Improved Layout */}
           <div className="mb-6">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
               <h2 className="text-xl font-bold text-gray-900 dark:text-white">Job Listings</h2>
-              <button 
-                onClick={() => setShowFilters(!showFilters)}
-                className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <Sliders className="w-4 h-4 mr-2" />
-                {showFilters ? 'Hide Filters' : 'Show Filters'}
-              </button>
+              
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Quick filter input */}
+                <div className="relative w-full sm:w-auto">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Search className="h-4 w-4 text-gray-400 dark:text-gray-500" />
+                  </div>
+                  <input
+                    type="text"
+                    value={filterText}
+                    onChange={(e) => setFilterText(e.target.value)}
+                    placeholder="Search jobs..."
+                    className="pl-10 pr-3 py-2 w-full sm:w-48 md:w-64 rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm dark:bg-gray-700 dark:text-white"
+                  />
+                </div>
+                
+                <div className="flex items-center gap-2 ml-auto">
+                  {/* Filter buttons */}
+                  <button 
+                    onClick={() => setShowFilters(!showFilters)}
+                    className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <Sliders className="w-4 h-4 mr-2" />
+                    {showFilters ? 'Hide Filters' : 'Filters'}
+                  </button>
+                  
+                  {/* List/Card View Toggle */}
+                  <button
+                    onClick={toggleViewMode}
+                    className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {viewMode === 'card' ? (
+                      <>
+                        <List className="w-4 h-4 mr-2" />
+                        <span className="hidden sm:inline">List View</span>
+                        <span className="inline sm:hidden">List</span>
+                      </>
+                    ) : (
+                      <>
+                        <Grid className="w-4 h-4 mr-2" />
+                        <span className="hidden sm:inline">Card View</span>
+                        <span className="inline sm:hidden">Cards</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
             </div>
             
             {showFilters && (
-              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-4 border border-gray-100 dark:border-gray-700 mb-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {/* Title filter */}
-                  <div>
-                    <label htmlFor="title-filter" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Title Keywords</label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <Search className="h-4 w-4 text-gray-400 dark:text-gray-500" />
-                      </div>
-                      <input
-                        id="title-filter"
-                        type="text"
-                        value={filterText}
-                        onChange={(e) => setFilterText(e.target.value)}
-                        placeholder="Software Engineer, React, etc."
-                        className="pl-10 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm dark:bg-gray-700 dark:text-white"
-                      />
-                    </div>
-                  </div>
-                  
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-5 border border-gray-100 dark:border-gray-700 mb-4 animate-fade-in">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
                   {/* Location filter */}
                   <div>
                     <label htmlFor="location-filter" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Location</label>
@@ -763,34 +859,6 @@ export default function Home() {
                     uniqueSkills={uniqueSkills}
                   />
                   
-                  {/* Salary filter */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Minimum Salary</label>
-                    <div className="flex flex-col space-y-2">
-                      <div className="relative">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                          <DollarSign className="h-4 w-4 text-gray-400 dark:text-gray-500" />
-                        </div>
-                        <input
-                          type="number"
-                          value={minSalary}
-                          onChange={(e) => setMinSalary(e.target.value)}
-                          placeholder="Minimum salary"
-                          className="pl-10 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm dark:bg-gray-700 dark:text-white"
-                        />
-                      </div>
-                      <select
-                        value={salaryType}
-                        onChange={(e) => setSalaryType(e.target.value as "any" | "yearly" | "hourly")}
-                        className="block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm dark:bg-gray-700 dark:text-white"
-                      >
-                        <option value="any">Any Format</option>
-                        <option value="yearly">Yearly Salary</option>
-                        <option value="hourly">Hourly Rate</option>
-                      </select>
-                    </div>
-                  </div>
-                  
                   {/* Last day filter */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Posting Date</label>
@@ -810,10 +878,93 @@ export default function Home() {
                       </div>
                     </div>
                   </div>
+                  
+                  {/* Salary filter */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Minimum Salary</label>
+                    <div className="flex space-x-2">
+                      <div className="relative flex-grow">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <DollarSign className="h-4 w-4 text-gray-400 dark:text-gray-500" />
+                        </div>
+                        <input
+                          type="number"
+                          value={minSalary}
+                          onChange={(e) => setMinSalary(e.target.value)}
+                          placeholder="Min salary"
+                          className="pl-10 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm dark:bg-gray-700 dark:text-white"
+                        />
+                      </div>
+                      <select
+                        value={salaryType}
+                        onChange={(e) => setSalaryType(e.target.value as "any" | "yearly" | "hourly")}
+                        className="w-24 rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm dark:bg-gray-700 dark:text-white"
+                      >
+                        <option value="any">Any</option>
+                        <option value="yearly">Yearly</option>
+                        <option value="hourly">Hourly</option>
+                      </select>
+                    </div>
+                  </div>
+                  
+                  {/* Excluded Words filter */}
+                  <div className="sm:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Exclude Jobs Containing</label>
+                    <div className="flex">
+                      <div className="relative flex-grow">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <Ban className="h-4 w-4 text-gray-400 dark:text-gray-500" />
+                        </div>
+                        <input
+                          type="text"
+                          value={newExcludeWord}
+                          onChange={(e) => setNewExcludeWord(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleAddExcludedWord();
+                            }
+                          }}
+                          placeholder="senior, sr, lead, etc."
+                          className="pl-10 block w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm dark:bg-gray-700 dark:text-white"
+                        />
+                      </div>
+                      <button
+                        onClick={handleAddExcludedWord}
+                        className="ml-2 inline-flex items-center px-3 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                      >
+                        Add
+                      </button>
+                    </div>
+                    
+                    {/* Display excluded words as tags */}
+                    {excludedWords.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {excludedWords.map((word) => (
+                          <div key={word} className="inline-flex items-center px-2 py-1 rounded text-sm bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">
+                            {word}
+                            <button
+                              onClick={() => handleRemoveExcludedWord(word)}
+                              className="ml-1.5 text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 
-                {/* Clear filters button */}
-                <div className="mt-4 flex justify-end">
+                {/* Filter buttons */}
+                <div className="mt-4 flex justify-end space-x-2">
+                  <button
+                    onClick={saveFilters}
+                    className="inline-flex items-center px-3 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                  >
+                    <CheckCircle className="h-4 w-4 mr-2" />
+                    Save Filters
+                  </button>
                   <button
                     onClick={clearFilters}
                     className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700"
@@ -860,6 +1011,9 @@ export default function Home() {
               onApply={handleToggleApplied}
               onDelete={handleDeleteJob}
               onUpdateNote={handleUpdateNote}
+              viewMode={viewMode}
+              onToggleViewMode={toggleViewMode}
+              hideViewToggle={true}
             />
           )}
         </>
