@@ -5,17 +5,271 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  
+  /* Brand colors */
+  --primary: #3b82f6;
+  --primary-foreground: #ffffff;
+  --primary-hover: #2563eb;
+  
+  /* UI colors */
+  --card-background: #ffffff;
+  --card-foreground: #171717;
+  --card-border: #e5e7eb;
+  
+  /* Animation speeds */
+  --transition-slow: 0.3s;
+  --transition-medium: 0.2s;
+  --transition-fast: 0.1s;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+    
+    /* Dark mode brand colors */
+    --primary: #3b82f6;
+    --primary-foreground: #ffffff;
+    --primary-hover: #60a5fa;
+    
+    /* Dark mode UI colors */
+    --card-background: #1f2937;
+    --card-foreground: #f3f4f6;
+    --card-border: #374151;
   }
 }
 
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+@layer base {
+  html {
+    touch-action: manipulation;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  
+  body {
+    color: var(--foreground);
+    background: var(--background);
+    font-family: var(--font-inter), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+    overflow-x: hidden;
+    width: 100%;
+    position: relative;
+    font-size: 14px;
+    line-height: 1.4;
+  }
+  
+  img, svg, video {
+    max-width: 100%;
+    height: auto;
+    display: block;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    font-weight: 600;
+    line-height: 1.2;
+  }
+  
+  @media (max-width: 640px) {
+    h1 {
+      font-size: 1.75rem; /* Smaller heading on mobile */
+    }
+    
+    h2 {
+      font-size: 1.25rem;
+    }
+    
+    h3 {
+      font-size: 1.125rem;
+    }
+    
+    h4, h5, h6 {
+      font-size: 1rem;
+    }
+    
+    p, li, div {
+      font-size: 0.9375rem;
+    }
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center rounded-lg font-medium transition-colors;
+  }
+  
+  .btn-primary {
+    @apply bg-blue-600 hover:bg-blue-700 text-white px-4 py-2;
+  }
+  
+  .btn-secondary {
+    @apply bg-gray-100 hover:bg-gray-200 text-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-200 px-4 py-2;
+  }
+  
+  .btn-danger {
+    @apply bg-red-100 hover:bg-red-200 text-red-800 dark:bg-red-900/30 dark:hover:bg-red-900/50 dark:text-red-400 px-4 py-2;
+  }
+  
+  .card {
+    @apply bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-100 dark:border-gray-700 overflow-hidden;
+  }
+  
+  .badge {
+    @apply inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium;
+  }
+  
+  .badge-blue {
+    @apply bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400;
+  }
+  
+  .badge-green {
+    @apply bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400;
+  }
+  
+  .badge-purple {
+    @apply bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400;
+  }
+  
+  .badge-gray {
+    @apply bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300;
+  }
+  
+  /* Mobile-friendly container */
+  .mobile-container {
+    @apply w-full max-w-full overflow-x-hidden px-4;
+  }
+  
+  /* Mobile-optimized card with reduced padding */
+  .card-mobile {
+    @apply p-3 sm:p-5;
+  }
+  
+  /* Compact spacing for mobile */
+  .mobile-spacing {
+    @apply mb-3 sm:mb-5;
+  }
+  
+  /* Compact section spacing */
+  .mobile-section {
+    @apply mb-4 sm:mb-8;
+  }
+}
+
+@layer utilities {
+  .animate-fade-in {
+    animation: fadeIn 0.5s ease-in-out;
+  }
+  
+  .animate-slide-up {
+    animation: slideUp 0.3s ease-out;
+  }
+  
+  .animate-pulse-subtle {
+    animation: pulseSubtle 2s infinite;
+  }
+  
+  .animate-slide-out-left {
+    animation: slideOutLeft 0.2s ease-out;
+  }
+  
+  .animate-slide-out-right {
+    animation: slideOutRight 0.2s ease-out;
+  }
+  
+  /* Custom scrollbar styling */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background-color: rgba(156, 163, 175, 0.5);
+    border-radius: 4px;
+  }
+  
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(107, 114, 128, 0.7);
+  }
+  
+  /* For Firefox */
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(156, 163, 175, 0.5) transparent;
+  }
+  
+  /* Prevent content overflow */
+  .no-overflow {
+    @apply max-w-full overflow-x-hidden;
+  }
+  
+  /* Responsive text sizing */
+  .text-responsive {
+    @apply text-sm sm:text-base md:text-lg;
+  }
+  
+  /* Text size utilities for mobile */
+  .text-mobile-xs {
+    @apply text-xs sm:text-sm;
+  }
+  
+  .text-mobile-sm {
+    @apply text-sm sm:text-base;
+  }
+  
+  .text-mobile-base {
+    @apply text-base sm:text-lg;
+  }
+  
+  .text-mobile-lg {
+    @apply text-lg sm:text-xl;
+  }
+  
+  .text-mobile-xl {
+    @apply text-xl sm:text-2xl;
+  }
+  
+  /* Compact padding for mobile */
+  .p-mobile {
+    @apply p-2 sm:p-4;
+  }
+  
+  .px-mobile {
+    @apply px-2 sm:px-4;
+  }
+  
+  .py-mobile {
+    @apply py-2 sm:py-4;
+  }
+  
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  
+  @keyframes slideUp {
+    from { transform: translateY(10px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  
+  @keyframes pulseSubtle {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.8; }
+  }
+  
+  @keyframes slideOutLeft {
+    from { transform: translateX(0); opacity: 1; }
+    to { transform: translateX(-100%); opacity: 0; }
+  }
+  
+  @keyframes slideOutRight {
+    from { transform: translateX(0); opacity: 1; }
+    to { transform: translateX(100%); opacity: 0; }
+  }
+  
+  /* Gradient text */
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600;
+  }
 }

@@ -34,6 +34,11 @@ export async function POST(request: Request) {
 
     const { spreadsheetId, rowIndex } = await request.json();
     
+    console.log('Delete request received for:', {
+      spreadsheetId: spreadsheetId ? `${spreadsheetId.substring(0, 5)}...` : 'missing',
+      rowIndex
+    });
+    
     if (!spreadsheetId || rowIndex === undefined) {
       return NextResponse.json(
         { error: 'Missing required parameters' },
@@ -41,8 +46,16 @@ export async function POST(request: Request) {
       );
     }
 
-    // Add 1 because Google Sheets uses 1-based indexing
-    const actualRowIndex = rowIndex + 1;
+    // Google Sheets API uses 0-based indexing for startIndex and endIndex
+    // But the rowIndex we receive is already the actual row number in the sheet (1-based)
+    const startIndex = rowIndex - 1;
+    const endIndex = rowIndex;
+    
+    console.log('Attempting to delete row:', {
+      sheetId: 0,
+      startIndex: startIndex,
+      endIndex: endIndex
+    });
 
     const result = await sheets.spreadsheets.batchUpdate({
       spreadsheetId,
@@ -52,12 +65,17 @@ export async function POST(request: Request) {
             range: {
               sheetId: 0,
               dimension: 'ROWS',
-              startIndex: actualRowIndex - 1,  // Convert to 0-based for the API
-              endIndex: actualRowIndex  // This will delete one row
+              startIndex: startIndex,
+              endIndex: endIndex
             }
           }
         }]
       }
+    });
+
+    console.log('Delete operation result:', {
+      status: result.status,
+      statusText: result.statusText
     });
 
     return NextResponse.json({ 
@@ -77,4 +95,4 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
-} 
+}
