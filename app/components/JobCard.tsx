@@ -18,7 +18,8 @@ import {
   X,
   Linkedin,
   Search,
-  Link2
+  Link2,
+  EyeOff
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
@@ -46,6 +47,7 @@ interface JobCardProps {
   isApplied: boolean;
   onApply: () => void;
   onDelete: () => void;
+  onHide?: () => void; // Add new prop for hiding jobs
   onUpdateNote: (note: string) => void;
 }
 
@@ -54,6 +56,7 @@ export default function JobCard({
   isApplied, 
   onApply, 
   onDelete, 
+  onHide,
   onUpdateNote 
 }: JobCardProps) {
   const [showFullDescription, setShowFullDescription] = useState(false)
@@ -199,10 +202,13 @@ export default function JobCard({
           
           <div className="flex flex-wrap gap-2 mt-2 sm:mt-0">
             {isApplied ? (
-              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+              <button
+                onClick={onApply}
+                className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors"
+              >
                 <CheckCircle className="w-3.5 h-3.5 mr-1" />
                 Applied
-              </span>
+              </button>
             ) : (
               <button 
                 onClick={onApply}
@@ -417,13 +423,57 @@ export default function JobCard({
             </a>
           )}
           
-          <button
-            onClick={onDelete}
-            className="inline-flex items-center px-3 py-2 border border-red-300 dark:border-red-800 rounded-md text-sm font-medium text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/40 ml-auto"
-          >
-            <Trash2 className="w-4 h-4 mr-2 text-red-500 dark:text-red-400" />
-            Remove
-          </button>
+          <div className="flex gap-2 mt-4 justify-end">
+            {isEditingNote ? (
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setIsEditingNote(false)}
+                  className="rounded-md px-3 py-1.5 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleNoteSubmit}
+                  className="rounded-md px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700"
+                >
+                  Save Note
+                </button>
+              </div>
+            ) : (
+              <>
+                <button
+                  onClick={() => setIsEditingNote(true)}
+                  className="rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
+                >
+                  <MessageSquare className="w-4 h-4 mr-1.5 inline-block" />
+                  {job.notes ? 'Edit Note' : 'Add Note'}
+                </button>
+                <button
+                  onClick={handleLinkedInLookup}
+                  className="rounded-md px-3 py-1.5 text-sm font-medium text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30"
+                >
+                  <Linkedin className="w-4 h-4 mr-1.5 inline-block" />
+                  Find Contact
+                </button>
+                {onHide && (
+                  <button
+                    onClick={onHide}
+                    className="rounded-md px-3 py-1.5 text-sm font-medium text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                  >
+                    <EyeOff className="w-4 h-4 mr-1.5 inline-block" />
+                    Hide
+                  </button>
+                )}
+                <button
+                  onClick={onDelete}
+                  className="rounded-md px-3 py-1.5 text-sm font-medium text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30"
+                >
+                  <Trash2 className="w-4 h-4 mr-1.5 inline-block" />
+                  Delete
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -47,6 +47,7 @@ export default function AppliedJobsPage() {
     const savedViewMode = Cookies.get("viewMode");
     return savedViewMode === 'list' ? 'list' : 'card';
   });
+  const [filteredRows, setFilteredRows] = useState<any[]>([]);
 
   useEffect(() => {
     const savedSheetUrl = Cookies.get("lastSheetUrl");
@@ -93,6 +94,53 @@ export default function AppliedJobsPage() {
       }
     }
   }, []);
+
+  useEffect(() => {
+    if (data.length <= 1) return; // No data or just headers
+    
+    const headers = data[0];
+    const rows = data.slice(1);
+    
+    console.log("Total rows from fetched data:", rows.length);
+    console.log("Applied jobs IDs:", appliedJobs);
+    
+    // Filter rows to show only applied jobs
+    const appliedJobRows = rows.filter((row) => {
+      try {
+        const titleIndex = findColumnIndex("title");
+        const companyIndex = findColumnIndex("company_name");
+        
+        let title, company;
+        if (Array.isArray(row)) {
+          title = titleIndex !== -1 ? row[titleIndex] : "";
+          company = companyIndex !== -1 ? row[companyIndex] : "";
+        } else {
+          title = titleIndex !== -1 ? row.data[titleIndex] : "";
+          company = companyIndex !== -1 ? row.data[companyIndex] : "";
+        }
+        
+        // Generate job ID to match against applied jobs list
+        const jobId = `${title}-${company}`.replace(/\s+/g, '-');
+        
+        // Check if this job is in the applied jobs list in any format:
+        // 1. As a compound ID (title-company)
+        // 2. Just by title (older format)
+        // 3. With additional suffix like title-company-index
+        return appliedJobs.includes(jobId) || 
+               appliedJobs.includes(title) || 
+               appliedJobs.some(id => id.startsWith(`${title}-${company}`));
+      } catch (e) {
+        console.error("Error filtering applied job:", e);
+        return false;
+      }
+    });
+    
+    console.log("Applied job rows found:", appliedJobRows.length);
+    
+    // Unlike the main page, we don't apply any filters here
+    // We want to show ALL applied jobs regardless of other criteria
+    setFilteredRows(appliedJobRows);
+  }, [data, appliedJobs]);
 
   const fetchData = async (id: string) => {
     setLoading(true);
@@ -414,20 +462,20 @@ export default function AppliedJobsPage() {
         <div className="flex justify-center items-center py-12">
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
         </div>
-      ) : uniqueAppliedJobRows.length > 0 ? (
+      ) : filteredRows.length > 0 ? (
         <>
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center text-gray-700 dark:text-gray-300">
               <CheckCircle className="w-5 h-5 mr-2 text-green-600 dark:text-green-500" />
               <span className="text-lg font-medium">
-                {uniqueAppliedJobRows.length} Applied Job{uniqueAppliedJobRows.length !== 1 ? "s" : ""}
+                {filteredRows.length} Applied Job{filteredRows.length !== 1 ? "s" : ""}
               </span>
             </div>
           </div>
 
           <JobCardGrid
             headers={headers}
-            jobs={uniqueAppliedJobRows}
+            jobs={filteredRows}
             appliedJobs={appliedJobs}
             onApply={handleToggleApplied}
             onDelete={handleDeleteJob}

@@ -1,16 +1,7 @@
-// Webhook utility functions
-
-// Hardcoded webhook URL - use the same one across the application
-export const WEBHOOK_URL = 'http://localhost:5678/webhook/1f50d8b8-820e-43b4-91a5-5cc31014fc8a';
-
-// Default timeout for webhook requests (in milliseconds)
-const DEFAULT_TIMEOUT = 30000; // 30 seconds
-
-// Longer timeout for LinkedIn lookups (in milliseconds)
-const LINKEDIN_LOOKUP_TIMEOUT = 180000; // 3 minutes
+// LinkedIn lookup utility functions
 
 /**
- * Ensures the webhook URL has the proper protocol
+ * Ensures the URL has the proper protocol
  * @param url The URL to process
  * @returns The URL with the proper protocol
  */
@@ -31,19 +22,6 @@ export const ensureProperProtocol = (url: string): string => {
   }
   
   return url;
-};
-
-/**
- * Creates a promise that rejects after a specified timeout
- * @param ms Timeout in milliseconds
- * @returns A promise that rejects after the timeout
- */
-const timeoutPromise = (ms: number) => {
-  return new Promise((_, reject) => {
-    setTimeout(() => {
-      reject(new Error(`Request timed out after ${ms}ms`));
-    }, ms);
-  });
 };
 
 /**
@@ -102,18 +80,14 @@ const poll = async <T>(
       });
     }
     
-    const result = await fn();
-    if (result) {
-      // Final update with 100% progress
-      if (onUpdate) {
-        onUpdate({
-          status: 'complete',
-          progress: 100,
-          elapsedTime: Math.round((Date.now() - startTime) / 1000),
-          message: 'Task completed successfully'
-        });
+    try {
+      const result = await fn();
+      if (result) {
+        return result;
       }
-      return result;
+    } catch (error) {
+      console.error('Poll function error:', error);
+      // Continue despite errors
     }
     
     await delay(interval);
@@ -123,111 +97,9 @@ const poll = async <T>(
 };
 
 /**
- * Sends data to the webhook with a timeout
- * @param type The type of data being sent
- * @param data The data to send
- * @param timeout Optional timeout in milliseconds (defaults to 30 seconds)
- * @param webhookUrl Optional custom webhook URL (overrides the default)
- * @returns Promise that resolves when the data is sent
- */
-export const sendToWebhook = async (type: string, data: Record<string, unknown>, timeout = DEFAULT_TIMEOUT, webhookUrl = WEBHOOK_URL) => {
-  try {
-    console.log(`Sending ${type} data to webhook:`, data);
-    
-    // Use our API route instead of calling the webhook directly
-    const apiUrl = '/api/webhook';
-    
-    // Create the fetch request
-    const fetchPromise = fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        webhookUrl: webhookUrl,
-        type,
-        data,
-        timestamp: new Date().toISOString(),
-      }),
-    });
-    
-    // Race the fetch against a timeout
-    const response = await Promise.race([
-      fetchPromise,
-      timeoutPromise(timeout)
-    ]) as Response;
-    
-    if (!response.ok) {
-      console.error('Failed to send data to webhook:', response.statusText);
-      return false;
-    } else {
-      console.log('Data successfully sent to webhook');
-      return true;
-    }
-  } catch (error) {
-    console.error('Error sending data to webhook:', error);
-    return false;
-  }
-};
-
-/**
- * Tests the webhook connection
- * @param webhookUrl The webhook URL to test
- * @param timeout Optional timeout in milliseconds (defaults to 30 seconds)
- * @returns Promise that resolves with the test result
- */
-export const testWebhook = async (webhookUrl: string, timeout = DEFAULT_TIMEOUT) => {
-  try {
-    console.log(`Testing webhook connection: ${webhookUrl}`);
-    
-    const processedUrl = ensureProperProtocol(webhookUrl);
-    
-    // Use our API route instead of calling the webhook directly
-    const apiUrl = '/api/webhook';
-    
-    // Create the fetch request
-    const fetchPromise = fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        webhookUrl: processedUrl,
-        type: 'test_connection',
-        timestamp: new Date().toISOString(),
-      }),
-    });
-    
-    // Race the fetch against a timeout
-    const response = await Promise.race([
-      fetchPromise,
-      timeoutPromise(timeout)
-    ]) as Response;
-    
-    if (!response.ok) {
-      throw new Error(`Test failed: ${response.statusText}`);
-    }
-    
-    // Try to parse the response as JSON
-    try {
-      const responseData = await response.json();
-      console.log('Webhook test response:', responseData);
-      return { success: true, data: responseData };
-    } catch {
-      // If we can't parse the response as JSON, that's okay
-      console.log('Webhook test successful (no JSON response)');
-      return { success: true, data: null };
-    }
-  } catch (error) {
-    console.error('Webhook test failed:', error);
-    throw error;
-  }
-};
-
-/**
  * Interface for LinkedIn contact data
  */
-interface LinkedInContactData {
+export interface LinkedInContactData {
   name: string;
   title: string;
   email: string;
@@ -241,39 +113,39 @@ interface LinkedInContactData {
 }
 
 /**
- * Looks up HR contacts for a company using LinkedIn via CORS bypass and Gemini processing
- * Uses polling to handle long-running browser automation tasks
+ * Looks up HR contacts at a company using the LinkedIn API and Gemini for processing
  * @param company The company name to look up
- * @param apiKey Optional Gemini API key (will fall back to environment variable if not provided)
- * @param timeout Optional timeout in milliseconds (defaults to 3 minutes)
- * @param onStatusUpdate Optional callback for task status updates
- * @returns Promise that resolves with the HR contacts
+ * @param apiKey Optional Gemini API key
+ * @param timeout Timeout in milliseconds
+ * @param onStatusUpdate Optional callback for status updates
+ * @returns Array of contact data objects
  */
 export const lookupLinkedInHR = async (
   company: string, 
   apiKey?: string, 
-  timeout = LINKEDIN_LOOKUP_TIMEOUT,
+  timeout = 180000, // 3 minutes default timeout
   onStatusUpdate?: TaskStatusCallback
 ): Promise<LinkedInContactData[]> => {
+  const startTime = Date.now();
+  
+  if (!company) {
+    throw new Error('Company name is required');
+  }
+  
   try {
-    console.log(`Looking up LinkedIn HR contacts for company: ${company}`);
+    // Start the LinkedIn lookup task
+    onStatusUpdate?.({
+      status: 'starting',
+      progress: 5,
+      elapsedTime: 0,
+      message: 'Starting LinkedIn HR contact search...'
+    });
     
-    // Notify of task starting
-    if (onStatusUpdate) {
-      onStatusUpdate({
-        status: 'starting',
-        progress: 0,
-        elapsedTime: 0,
-        message: 'Starting LinkedIn browser automation'
-      });
-    }
-    
-    // Step 1: Start the LinkedIn task via the API route
-    console.log('Starting LinkedIn lookup task via API');
-    const startTaskResponse = await fetch('/api/linkedin', {
+    // Call the LinkedIn API to start a lookup task
+    const startResponse = await fetch('/api/linkedin', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({ 
         company,
@@ -281,306 +153,145 @@ export const lookupLinkedInHR = async (
       })
     });
     
-    if (!startTaskResponse.ok) {
-      throw new Error(`LinkedIn lookup failed to start: ${startTaskResponse.statusText}`);
+    if (!startResponse.ok) {
+      const error = await startResponse.json();
+      throw new Error(error.message || 'Failed to start LinkedIn search');
     }
     
-    // Get the task information including the task ID
-    const taskInfo = await startTaskResponse.json();
-    console.log('LinkedIn task started:', taskInfo);
+    const { taskId } = await startResponse.json();
     
-    if (!taskInfo.task_id) {
-      throw new Error('Task ID not found in response');
+    if (!taskId) {
+      throw new Error('No task ID returned from LinkedIn API');
     }
     
-    const taskId = taskInfo.task_id;
+    console.log(`Started LinkedIn lookup task with ID: ${taskId}`);
     
-    // Notify that task has been created
-    if (onStatusUpdate) {
-      onStatusUpdate({
-        status: 'created',
-        progress: 5,
-        elapsedTime: 0,
-        message: 'Browser automation task created'
-      });
-    }
-    
-    // Step 2: Poll for task completion
-    console.log(`Polling for task ${taskId} completion...`);
-    
-    // Define the polling function
-    const pollTaskStatus = async () => {
-      const statusResponse = await fetch(`/api/linkedin?taskId=${taskId}`);
-      
-      if (!statusResponse.ok) {
-        console.error(`Error checking task status: ${statusResponse.statusText}`);
-        return null;
-      }
-      
-      const statusData = await statusResponse.json();
-      console.log(`Task ${taskId} status: ${statusData.status}, elapsed: ${statusData.elapsed_seconds}s`);
-      
-      // Update the progress based on elapsed time if task is still running
-      if (statusData.status === 'running' && onStatusUpdate && statusData.elapsed_seconds) {
-        // Calculate a progress value that slowly increases over time
-        // Start at 10% when task begins, max out at 90% after 2.5 minutes
-        const progressPercent = Math.min(
-          10 + Math.round((statusData.elapsed_seconds / 150) * 80),  // 150 seconds (2.5 min) to reach ~90%
-          90
-        );
-        
-        onStatusUpdate({
-          status: 'running',
-          progress: progressPercent,
-          elapsedTime: statusData.elapsed_seconds,
-          message: `Browser automation in progress (${statusData.elapsed_seconds}s elapsed)`
-        });
-      }
-      
-      // Only return when the task is completed
-      if (statusData.status === 'completed') {
-        return statusData;
-      } else if (statusData.status === 'failed') {
-        throw new Error(`Task failed: ${statusData.error || 'Unknown error'}`);
-      }
-      
-      // Still running, return null to continue polling
-      return null;
-    };
-    
-    // Start polling with a reasonable interval (every 3 seconds)
-    const completedTask = await poll(pollTaskStatus, 3000, timeout, onStatusUpdate);
-    console.log('Task completed, result received:', completedTask.result ? 'yes' : 'no');
-    
-    if (!completedTask.result) {
-      throw new Error('Task completed but no result was returned');
-    }
-    
-    // Notify that we're starting Gemini processing
-    if (onStatusUpdate) {
-      onStatusUpdate({
-        status: 'processing',
-        progress: 95,
-        elapsedTime: Math.round((Date.now() - new Date(completedTask.start_time).getTime()) / 1000),
-        message: 'Processing results with Gemini AI'
-      });
-    }
-    
-    // Step 3: Process the result with Gemini through our API route
-    console.log('Calling Gemini API route for processing');
-    
-    // Use the provided API key or fall back to the environment variable
-    const geminiApiKey = apiKey || process.env.NEXT_PUBLIC_GEMINI_API_KEY || '';
-    
-    const geminiResponse = await fetch('/api/gemini', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        rawData: completedTask.result,
-        company,
-        apiKey: geminiApiKey
-      })
+    // Update status to show we're now polling
+    onStatusUpdate?.({
+      status: 'polling',
+      progress: 10,
+      elapsedTime: Math.round((Date.now() - startTime) / 1000),
+      message: 'Search started, waiting for results...'
     });
     
-    // Parse the response from the Gemini API
-    const processedResult = await geminiResponse.json();
-    
-    // Final status update
-    if (onStatusUpdate) {
-      onStatusUpdate({
-        status: 'complete',
-        progress: 100,
-        elapsedTime: Math.round((Date.now() - new Date(completedTask.start_time).getTime()) / 1000),
-        message: 'LinkedIn search complete'
-      });
-    }
-    
-    // Check if there's an error in the response
-    if (!geminiResponse.ok || processedResult.error) {
-      console.error('Gemini processing failed:', processedResult);
-      
-      // Even if there's an error, if we have a fallback structure, use it
-      if (processedResult.name && processedResult.company) {
-        console.log('Using fallback contact data despite error');
-        return [processedResult as LinkedInContactData];
+    // Poll the task status until it's complete
+    const pollTaskStatus = async () => {
+      try {
+        const statusResponse = await fetch(`/api/linkedin?taskId=${encodeURIComponent(taskId)}`);
+        
+        if (!statusResponse.ok) {
+          console.error(`Error checking task status: ${statusResponse.statusText}`);
+          return null;
+        }
+        
+        const statusData = await statusResponse.json();
+        
+        // Check if the task is still running
+        if (statusData.status === 'running') {
+          return null;
+        }
+        
+        // Check if the task is complete with results
+        if (statusData.status === 'completed' && statusData.results) {
+          // Update the status to show we're processing the results
+          onStatusUpdate?.({
+            status: 'processing',
+            progress: 80,
+            elapsedTime: Math.round((Date.now() - startTime) / 1000),
+            message: 'Processing search results with AI...'
+          });
+          
+          // Process the results with Gemini
+          const contacts = await processContactsWithGemini(statusData.results, company, apiKey);
+          
+          return contacts;
+        }
+        
+        // If the task completed but with an error
+        if (statusData.status === 'error') {
+          throw new Error(statusData.message || 'LinkedIn search failed');
+        }
+        
+        return null;
+      } catch (error) {
+        console.error('Error polling task status:', error);
+        throw error;
       }
-      
-      // If it's a severe error with no usable data, throw an error
-      throw new Error(processedResult.error || `Gemini processing failed: ${geminiResponse.statusText}`);
-    }
-    
-    console.log('Processed data received from Gemini:', processedResult);
-    
-    // Step 4: Validate the processed data before returning
-    // Ensure we have the minimum required fields
-    if (!processedResult.name || processedResult.name === 'Error parsing response') {
-      throw new Error('Failed to extract valid contact information');
-    }
-    
-    // Create a standardized contact object to ensure consistent structure
-    const contactData: LinkedInContactData = {
-      name: processedResult.name || 'n/a',
-      title: processedResult.title || 'n/a',
-      email: processedResult.email || 'n/a',
-      linkedinUrl: processedResult.linkedinUrl || 'n/a',
-      website: processedResult.website || 'n/a',
-      profileImage: processedResult.profileImage || 'n/a',
-      company: company,
-      phone: processedResult.phone || 'n/a',
-      location: processedResult.location || 'n/a'
     };
     
-    // Step 5: Return the processed result as an array for consistency with the existing API
-    return [contactData];
-  } catch (error) {
-    // Final error status update
-    if (onStatusUpdate) {
-      onStatusUpdate({
-        status: 'error',
-        progress: 0,
-        elapsedTime: 0,
-        message: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
+    // Poll the task status until it's complete or times out
+    const results = await poll(
+      pollTaskStatus,
+      3000, // Poll every 3 seconds
+      timeout, // Use the provided timeout
+      onStatusUpdate
+    );
     
-    console.error('Error in LinkedIn HR lookup:', error);
+    // Final success status update
+    onStatusUpdate?.({
+      status: 'completed',
+      progress: 100,
+      elapsedTime: Math.round((Date.now() - startTime) / 1000),
+      message: 'LinkedIn search completed successfully!'
+    });
+    
+    return results || [];
+  } catch (error) {
+    console.error('LinkedIn lookup error:', error);
+    
+    // Final error status update
+    onStatusUpdate?.({
+      status: 'error',
+      progress: 100,
+      elapsedTime: Math.round((Date.now() - startTime) / 1000),
+      message: error instanceof Error ? error.message : 'Unknown error occurred'
+    });
+    
     throw error;
   }
 };
 
 /**
- * Looks up HR contacts for a company
- * @param company The company name to look up
- * @param timeout Optional timeout in milliseconds (defaults to 60 seconds)
- * @param webhookUrl Optional custom webhook URL (overrides the default)
- * @returns Promise that resolves with the HR contacts
+ * Processes LinkedIn contact data with the Gemini API
+ * @param rawData The raw contact data from LinkedIn
+ * @param company The company name
+ * @param apiKey Optional Gemini API key
+ * @returns Array of processed contact data objects
  */
-export const lookupHRContacts = async (company: string, timeout = 60000, webhookUrl = WEBHOOK_URL) => {
+async function processContactsWithGemini(
+  rawData: Record<string, unknown>, 
+  company: string, 
+  apiKey?: string
+): Promise<LinkedInContactData[]> {
   try {
-    console.log(`Looking up HR contacts for company: ${company}`);
+    console.log('Processing LinkedIn results with Gemini AI...');
     
-    // Use our API route instead of calling the webhook directly
-    const apiUrl = '/api/webhook';
-    
-    // Prepare the payload
-    const payload = {
-      webhookUrl: webhookUrl, // Use the provided webhook URL or default
-      type: 'hr_contact_search',
-      company: company,
-      timestamp: new Date().toISOString(),
-    };
-    
-    console.log('Sending lookup request with payload:', payload);
-    
-    // Create the fetch request
-    const fetchPromise = fetch(apiUrl, {
+    // Call the Gemini API to process the results
+    const response = await fetch('/api/gemini', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/json'
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        rawData,
+        company,
+        apiKey
+      })
     });
     
-    // Race the fetch against a timeout
-    const response = await Promise.race([
-      fetchPromise,
-      timeoutPromise(timeout)
-    ]) as Response;
-    
     if (!response.ok) {
-      throw new Error(`Webhook request failed: ${response.statusText}`);
+      throw new Error('Failed to process results with Gemini');
     }
     
-    console.log('Webhook response received:', response.status);
+    // The response should be a single contact object
+    const data = await response.json();
     
-    // Wait for the response from the webhook
-    const responseData = await response.json();
-    console.log('Webhook response data:', responseData);
+    // The API returns a single contact, make it an array for consistency
+    const contacts = [data].filter(contact => contact && contact.name && contact.name !== 'n/a');
     
-    // Handle different response formats
-    if (responseData.output) {
-      // Single contact in output property
-      const contact = responseData.output;
-      return [contact];
-    } else if (Array.isArray(responseData)) {
-      // Array of contacts
-      return responseData;
-    } else if (responseData.data && Array.isArray(responseData.data)) {
-      // Array in data property
-      return responseData.data;
-    } else if (responseData.body && typeof responseData.body === 'object') {
-      // The data is in the body property (common in webhook test responses)
-      console.log('Found data in body property:', responseData.body);
-      
-      // If the body contains the type and company, it might be the request object
-      // In that case, we need to look for the actual data elsewhere
-      if (responseData.body.type === 'hr_contact_search' && responseData.body.company) {
-        console.log('Body appears to be the request object, looking for data elsewhere');
-        
-        // Check if there's any other property that might contain the data
-        for (const key in responseData) {
-          if (key !== 'body' && typeof responseData[key] === 'object' && responseData[key] !== null) {
-            console.log(`Checking property ${key} for contact data`);
-            const possibleData = responseData[key];
-            
-            // If it has properties that look like contact data
-            if (possibleData.name || possibleData.email || possibleData.linkedin_url) {
-              console.log(`Found potential contact data in ${key} property`);
-              return [possibleData];
-            }
-          }
-        }
-        
-        // If we couldn't find anything useful, return the whole response
-        return [responseData];
-      }
-      
-      return [responseData.body];
-    } else if (responseData.executionMode === 'test' && responseData.body) {
-      // This is a test execution with data in the body
-      console.log('Received test execution with data in body');
-      return [responseData.body];
-    } else if (responseData.webhookUrl && responseData.body) {
-      // Response includes webhookUrl and body with the actual data
-      console.log('Received response with webhookUrl and body data');
-      return [responseData.body];
-    } else if (responseData.executionMode === 'test' || responseData.webhookUrl) {
-      // This might be just an acknowledgment, check if there's any useful data
-      console.log('Received response with executionMode or webhookUrl');
-      
-      // Try to find any data that looks like contact information
-      for (const key in responseData) {
-        if (typeof responseData[key] === 'object' && responseData[key] !== null) {
-          console.log(`Checking property ${key} for contact data`);
-          const possibleData = responseData[key];
-          
-          // If it has company or type properties, it might be our data
-          if (possibleData.name || possibleData.email || possibleData.linkedin_url) {
-            console.log(`Found potential contact data in ${key} property`);
-            return [possibleData];
-          }
-        }
-      }
-      
-      // If we couldn't find anything useful, return the whole response as a last resort
-      console.log('No specific contact data found, returning whole response');
-      return [responseData];
-    } else {
-      // Try to extract any contact-like object
-      const possibleContact = responseData;
-      if (possibleContact.name || possibleContact.email || possibleContact.linkedin_url) {
-        return [possibleContact];
-      }
-      
-      // No recognizable data format, but return the response anyway
-      // This ensures we don't lose any data that might be useful
-      console.log('No recognizable contact data in response, returning raw response');
-      return [responseData];
-    }
+    return contacts;
   } catch (error) {
-    console.error('Error looking up HR contacts:', error);
+    console.error('Error processing contacts with Gemini:', error);
     throw error;
   }
-}; 
+} 

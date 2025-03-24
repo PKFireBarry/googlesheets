@@ -11,6 +11,7 @@ interface JobCardGridProps {
   onApply: (jobId: string) => void;
   onDelete: (rowIndex: number) => void;
   onUpdateNote: (rowIndex: number, note: string, columnIndex: number) => void;
+  onHide?: (jobId: string, title: string, company: string) => void;
   viewMode?: 'card' | 'list'; // Optional prop to control view mode externally
   onToggleViewMode?: () => void; // Optional callback for view mode toggle
   hideViewToggle?: boolean; // Whether to hide the internal view toggle
@@ -23,6 +24,7 @@ export default function JobCardGrid({
   onApply,
   onDelete,
   onUpdateNote,
+  onHide,
   viewMode: externalViewMode,
   onToggleViewMode,
   hideViewToggle = false
@@ -353,6 +355,14 @@ export default function JobCardGrid({
     }
   }
   
+  // Function to handle hiding a job
+  const handleHide = (job: any) => {
+    if (onHide) {
+      const jobData = prepareJobData(job, currentIndex);
+      onHide(jobData.id, jobData.title, jobData.company_name);
+    }
+  };
+  
   if (sortedJobs.length === 0) {
     return <div className="text-center py-8 text-gray-500">No job listings found</div>
   }
@@ -610,6 +620,7 @@ export default function JobCardGrid({
           isApplied={isJobApplied}
           onApply={handleApply}
           onDelete={handleDelete}
+          onHide={() => handleHide(currentJob)}
           onUpdateNote={handleUpdateNote}
         />
       </div>

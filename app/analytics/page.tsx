@@ -6,7 +6,6 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import { Loader2, Database, Briefcase, Code, Building, MapPin, TrendingUp } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { sendToWebhook } from '../utils/webhook'
 
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY
 const RANGE = process.env.NEXT_PUBLIC_RANGE

@@ -32,7 +32,7 @@ const validateJobListing = (row: string[], headers: string[]) => {
 interface RowData {
   data: string[];
   originalIndex: number;
-  [key: string]: any; // Allow for additional properties
+  [key: string]: unknown; // Allow for additional properties
 }
 
 export default function Home() {
@@ -43,6 +43,10 @@ export default function Home() {
   const [spreadsheetId, setSpreadsheetId] = useState("");
   const [appliedJobs, setAppliedJobs] = useState<string[]>(() => {
     const saved = Cookies.get("appliedJobs");
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [hiddenJobs, setHiddenJobs] = useState<string[]>(() => {
+    const saved = Cookies.get("hiddenJobs");
     return saved ? JSON.parse(saved) : [];
   });
   const [rowIndices, setRowIndices] = useState<number[]>([]);
@@ -149,38 +153,104 @@ export default function Home() {
     const rows = data.slice(1) as unknown as RowData[];
     
     // Apply all filters
-    const filtered = rows.filter((row) => {
-      const rowData = Array.isArray(row) ? row : row.data;
-      if (!rowData) return false;
-      
-      // Get field values
-      const getFieldValue = (fieldName: string) => {
-        const index = headers.findIndex(
-          (header) => header.toLowerCase() === fieldName.toLowerCase()
-        );
-        return index !== -1 ? rowData[index] || "" : "";
-      };
-      
-      // Title filter
-      if (filterText) {
-        const title = (getFieldValue("title") || "").toLowerCase();
-        if (!title.includes(filterText.toLowerCase())) {
+    console.log("Applying filters to", rows.length, "jobs");
+    
+    let filtered = [...rows];
+    
+    // Filter out applied jobs - they should only appear on the Applied page
+    filtered = filtered.filter((row) => {
+      const job = prepareJobData(row, 0);
+      return !appliedJobs.includes(job.id);
+    });
+    
+    // Filter out hidden jobs
+    filtered = filtered.filter((row) => {
+      const job = prepareJobData(row, 0);
+      return !hiddenJobs.some((hiddenId) => {
+        // Check if job is hidden by exact ID
+        if (hiddenId === job.id) return true;
+        
+        // Check if job is hidden by matching title+company (for duplicate listings)
+        try {
+          // Hidden job IDs that represent titles+companies are prefixed with "hide:"
+          if (hiddenId.startsWith('hide:')) {
+            const [hiddenTitle, hiddenCompany] = hiddenId.substring(5).split('::');
+            return job.title === hiddenTitle && job.company_name === hiddenCompany;
+          }
+          return false;
+        } catch (e) {
+          console.error('Error checking hidden job match:', e);
           return false;
         }
-      }
-      
-      // Excluded words filter
-      if (excludedWords.length > 0) {
+      });
+    });
+    
+    // Text search filter
+    if (filterText) {
+      filtered = filtered.filter((row) => {
+        const rowData = Array.isArray(row) ? row : row.data;
+        if (!rowData) return false;
+        
+        const getFieldValue = (fieldName: string) => {
+          const index = headers.findIndex(
+            (header) => header.toLowerCase() === fieldName.toLowerCase()
+          );
+          return index !== -1 ? rowData[index] || "" : "";
+        };
+        
         const title = (getFieldValue("title") || "").toLowerCase();
-        for (const word of excludedWords) {
-          if (title.includes(word.toLowerCase())) {
-            return false; // Exclude this job if title contains any excluded word
+        if (title.includes(filterText.toLowerCase())) {
+          return true;
+        }
+        
+        // Excluded words filter
+        if (excludedWords.length > 0) {
+          for (const word of excludedWords) {
+            if (title.includes(word.toLowerCase())) {
+              return false; // Exclude this job if title contains any excluded word
+            }
           }
         }
-      }
-      
-      // Location filter
-      if (selectedLocation) {
+        
+        // Location filter
+        if (selectedLocation) {
+          const location = (getFieldValue("location") || "").toLowerCase();
+          
+          if (selectedLocation.toLowerCase() === "remote") {
+            // Special case for remote
+            const isRemote = 
+              location.includes("remote") || 
+              location.includes("work from home") || 
+              location.includes("wfh");
+            
+            if (!isRemote) {
+              return false;
+            }
+          } else {
+            // Specific city
+            if (!location.toLowerCase().includes(selectedLocation.toLowerCase())) {
+              return false;
+            }
+          }
+        }
+        
+        return true;
+      });
+    }
+    
+    // Location filter
+    if (selectedLocation) {
+      filtered = filtered.filter((row) => {
+        const rowData = Array.isArray(row) ? row : row.data;
+        if (!rowData) return false;
+        
+        const getFieldValue = (fieldName: string) => {
+          const index = headers.findIndex(
+            (header) => header.toLowerCase() === fieldName.toLowerCase()
+          );
+          return index !== -1 ? rowData[index] || "" : "";
+        };
+        
         const location = (getFieldValue("location") || "").toLowerCase();
         
         if (selectedLocation.toLowerCase() === "remote") {
@@ -199,105 +269,136 @@ export default function Home() {
             return false;
           }
         }
-      }
-      
-      // Salary filter
-      if (minSalary) {
-        try {
-          const salary = getFieldValue("salary") || "";
-          
-          if (!salary) return false;
-          
-          // Normalize salary string - remove currency symbols and whitespace
-          const normalizedSalary = salary.replace(/[$,\s]/g, '');
-          
-          // Function to extract number ranges from salary string
-          const extractSalaryRange = (salaryStr: string) => {
-            // Try to match "X - Y" or "X to Y" patterns
-            const rangeMatch = salaryStr.match(/(\d+(?:\.\d+)?)\s*[-–—to]\s*(\d+(?:\.\d+)?)/i);
-            if (rangeMatch) {
-              return {
-                min: parseFloat(rangeMatch[1]),
-                max: parseFloat(rangeMatch[2])
-              };
-            }
-            
-            // Try to match just a single number
-            const singleMatch = salaryStr.match(/(\d+(?:\.\d+)?)/);
-            if (singleMatch) {
-              const value = parseFloat(singleMatch[1]);
-              return { min: value, max: value };
-            }
-            
-            return null;
-          };
-          
-          // Extract salary range
-          const range = extractSalaryRange(normalizedSalary);
-          if (!range) return false;
-          
-          // Determine if salary is hourly or yearly based solely on the value range
-          // If the number is small (under 100), it's likely hourly
-          // If the number is large (over 1000), it's likely yearly
-          const isHourly = range.min < 100;
-          const isYearly = range.min >= 1000;
-          
-          // Check if we should filter based on salary type
-          if (salaryType !== "any") {
-            if (salaryType === "hourly" && !isHourly) return false;
-            if (salaryType === "yearly" && !isYearly) return false;
+        
+        return true;
+      });
+    }
+    
+    // Salary filter
+    if (minSalary) {
+      filtered = filtered.filter((row) => {
+        const rowData = Array.isArray(row) ? row : row.data;
+        if (!rowData) return false;
+        
+        const getFieldValue = (fieldName: string) => {
+          const index = headers.findIndex(
+            (header) => header.toLowerCase() === fieldName.toLowerCase()
+          );
+          return index !== -1 ? rowData[index] || "" : "";
+        };
+        
+        const salary = getFieldValue("salary") || "";
+        
+        if (!salary) return false;
+        
+        // Normalize salary string - remove currency symbols and whitespace
+        const normalizedSalary = salary.replace(/[$,\s]/g, '');
+        
+        // Function to extract number ranges from salary string
+        const extractSalaryRange = (salaryStr: string) => {
+          // Try to match "X - Y" or "X to Y" patterns
+          const rangeMatch = salaryStr.match(/(\d+(?:\.\d+)?)\s*[-–—to]\s*(\d+(?:\.\d+)?)/i);
+          if (rangeMatch) {
+            return {
+              min: parseFloat(rangeMatch[1]),
+              max: parseFloat(rangeMatch[2])
+            };
           }
           
-          // Apply minimum salary filter
-          if (minSalary && !isNaN(parseFloat(minSalary))) {
-            const minFilter = parseFloat(minSalary);
-            
-            // Convert for comparison if needed
-            if (isHourly && salaryType !== "hourly") {
-              // Convert hourly to yearly for comparison (40hr * 52 weeks)
-              const yearlyMin = range.min * 40 * 52;
-              if (yearlyMin < minFilter) return false;
-            } 
-            else if (!isHourly && salaryType === "hourly") {
-              // Convert yearly to hourly for comparison
-              const hourlyMin = range.min / (40 * 52);
-              if (hourlyMin < minFilter) return false;
-            } 
-            else {
-              // Direct comparison (both same type)
-              if (range.min < minFilter) return false;
-            }
+          // Try to match just a single number
+          const singleMatch = salaryStr.match(/(\d+(?:\.\d+)?)/);
+          if (singleMatch) {
+            const value = parseFloat(singleMatch[1]);
+            return { min: value, max: value };
           }
           
-        } catch (e) {
-          console.error("Error in salary filter:", e);
+          return null;
+        };
+        
+        // Extract salary range
+        const range = extractSalaryRange(normalizedSalary);
+        if (!range) return false;
+        
+        // Determine if salary is hourly or yearly based solely on the value range
+        // If the number is small (under 100), it's likely hourly
+        // If the number is large (over 1000), it's likely yearly
+        const isHourly = range.min < 100;
+        const isYearly = range.min >= 1000;
+        
+        // Check if we should filter based on salary type
+        if (salaryType !== "any") {
+          if (salaryType === "hourly" && !isHourly) return false;
+          if (salaryType === "yearly" && !isYearly) return false;
+        }
+        
+        // Apply minimum salary filter
+        if (minSalary && !isNaN(parseFloat(minSalary))) {
+          const minFilter = parseFloat(minSalary);
+          
+          // Convert for comparison if needed
+          if (isHourly && salaryType !== "hourly") {
+            // Convert hourly to yearly for comparison (40hr * 52 weeks)
+            const yearlyMin = range.min * 40 * 52;
+            if (yearlyMin < minFilter) return false;
+          } 
+          else if (!isHourly && salaryType === "hourly") {
+            // Convert yearly to hourly for comparison
+            const hourlyMin = range.min / (40 * 52);
+            if (hourlyMin < minFilter) return false;
+          } 
+          else {
+            // Direct comparison (both same type)
+            if (range.min < minFilter) return false;
+          }
+        }
+        
+        return true;
+      });
+    }
+    
+    // Skills filter
+    if (skillFilter) {
+      filtered = filtered.filter((row) => {
+        const rowData = Array.isArray(row) ? row : row.data;
+        if (!rowData) return false;
+        
+        const getFieldValue = (fieldName: string) => {
+          const index = headers.findIndex(
+            (header) => header.toLowerCase() === fieldName.toLowerCase()
+          );
+          return index !== -1 ? rowData[index] || "" : "";
+        };
+        
+        const skills = (getFieldValue("skills") || "").toLowerCase();
+        const description = (getFieldValue("description") || "").toLowerCase();
+        const title = (getFieldValue("title") || "").toLowerCase();
+        
+        const skillMatch = 
+          skills.includes(skillFilter.toLowerCase()) || 
+          description.includes(skillFilter.toLowerCase()) ||
+          title.includes(skillFilter.toLowerCase());
+        
+        if (!skillMatch) {
           return false;
         }
-      }
-      
-      // Skills filter
-      if (skillFilter) {
-        try {
-          const skills = (getFieldValue("skills") || "").toLowerCase();
-          const description = (getFieldValue("description") || "").toLowerCase();
-          const title = (getFieldValue("title") || "").toLowerCase();
-          
-          const skillMatch = 
-            skills.includes(skillFilter.toLowerCase()) || 
-            description.includes(skillFilter.toLowerCase()) ||
-            title.includes(skillFilter.toLowerCase());
-          
-          if (!skillMatch) {
-            return false;
-          }
-        } catch (e) {
-          console.error("Error in skills filter:", e);
-          return false;
-        }
-      }
-      
-      // Last day filter
-      if (showLastDayOnly) {
+        
+        return true;
+      });
+    }
+    
+    // Last day filter
+    if (showLastDayOnly) {
+      filtered = filtered.filter((row) => {
+        const rowData = Array.isArray(row) ? row : row.data;
+        if (!rowData) return false;
+        
+        const getFieldValue = (fieldName: string) => {
+          const index = headers.findIndex(
+            (header) => header.toLowerCase() === fieldName.toLowerCase()
+          );
+          return index !== -1 ? rowData[index] || "" : "";
+        };
+        
         const datePosted = getFieldValue("date_posted") || getFieldValue("currentdate") || getFieldValue("currentDate");
         
         if (!datePosted) return false;
@@ -323,10 +424,10 @@ export default function Home() {
           // If date parsing fails, exclude the job
           return false;
         }
-      }
-      
-      return true;
-    });
+        
+        return true;
+      });
+    }
     
     // Maintain the data structure with originalIndex
     const filteredWithIndices = filtered.map((row, index) => ({
@@ -335,7 +436,7 @@ export default function Home() {
     }));
     
     setFilteredRows(filteredWithIndices);
-  }, [data, filterText, selectedLocation, skillFilter, showLastDayOnly, minSalary, salaryType, excludedWords]);
+  }, [data, filterText, selectedLocation, skillFilter, showLastDayOnly, minSalary, salaryType, excludedWords, appliedJobs, hiddenJobs]);
 
   const handleUrlSubmit = (url: string) => {
     const id = extractSpreadsheetId(url);
@@ -483,81 +584,102 @@ export default function Home() {
   };
 
   const handleToggleApplied = (jobId: string) => {
-    console.log("Toggling applied status for job ID:", jobId);
-    
-    // Find the job title from the job ID if possible
-    const headers = data.length > 0 ? data[0] : [];
-    const titleIndex = headers.findIndex(
-      (header) => header.toLowerCase() === "title"
-    );
-    
-    if (titleIndex !== -1) {
-      // Try to find the job with this ID
-      const rowsWithIndices = data.slice(1);
-      const job = rowsWithIndices.find((row) => {
-        const rowData = (row as any).data;
-        if (!rowData) return false;
-        
-        // Check if this is the job with the given ID
-        const idIndex = headers.findIndex(
-          (header) => header.toLowerCase() === "id"
-        );
-        
-        if (idIndex !== -1 && rowData[idIndex] === jobId) {
-          return true;
-        }
-        
-        // If no ID match, try to match by title-company-index pattern
-        const companyIndex = headers.findIndex(
-          (header) => header.toLowerCase() === "company_name"
-        );
+    console.log("Toggle applied for job ID:", jobId);
+
+    // If we have the row index, use it to find the job data
+    const jobIndex = rowIndices.findIndex(index => index.toString() === jobId)
+    if (jobIndex !== -1) {
+      // This was called with the row index as jobId
+      const rowIndex = parseInt(jobId)
+      const rowData = data[rowIndex]
+      
+      if (rowData) {
+        const titleIndex = headers.findIndex(h => h.toLowerCase() === 'title')
+        const companyIndex = headers.findIndex(h => h.toLowerCase() === 'company_name')
         
         if (titleIndex !== -1 && companyIndex !== -1) {
-          const title = rowData[titleIndex];
-          const company = rowData[companyIndex];
+          const title = rowData[titleIndex]
+          const company = rowData[companyIndex]
           
-          // Check if jobId matches the pattern
-          if (jobId.startsWith(`${title}-${company}-`)) {
-            return true;
+          // Create a consistent job ID from title and company
+          const consistentJobId = `${title}-${company}`.replace(/\s+/g, '-')
+          
+          // Check if this job is already in applied jobs
+          const isCurrentlyApplied = appliedJobs.includes(consistentJobId) || 
+                                    appliedJobs.includes(title) ||
+                                    appliedJobs.some(id => id.startsWith(`${title}-${company}`))
+          
+          // Create a new array without any variations of this job ID
+          let newAppliedJobs = appliedJobs.filter(id => 
+            id !== consistentJobId && 
+            id !== title && 
+            !id.startsWith(`${title}-${company}`))
+          
+          // If it wasn't applied, add it with the consistent ID format
+          if (!isCurrentlyApplied) {
+            newAppliedJobs.push(consistentJobId)
           }
+          
+          console.log("New applied jobs list:", newAppliedJobs);
+          setAppliedJobs(newAppliedJobs);
+          Cookies.set("appliedJobs", JSON.stringify(newAppliedJobs), { expires: 30 });
+          return;
         }
-        
-        return false;
-      });
-      
-      if (job && (job as any).data) {
-        const jobTitle = (job as any).data[titleIndex];
-        console.log("Job title being toggled:", jobTitle);
-        
-        // Store the job title in the cookie instead of the ID
-        let newAppliedJobs;
-        
-        if (appliedJobs.includes(jobTitle)) {
-          // Remove the job title if it exists
-          newAppliedJobs = appliedJobs.filter((title) => title !== jobTitle);
-        } else {
-          // Add the job title if it doesn't exist (no duplicates)
-          if (!appliedJobs.includes(jobTitle)) {
-            newAppliedJobs = [...appliedJobs, jobTitle];
-          } else {
-            newAppliedJobs = [...appliedJobs]; // No change needed
-          }
-        }
-        
-        console.log("New applied jobs (titles):", newAppliedJobs);
-        
-        setAppliedJobs(newAppliedJobs);
-        Cookies.set("appliedJobs", JSON.stringify(newAppliedJobs), { expires: 30 });
-        return;
       }
     }
     
-    // Fallback to the original behavior if we couldn't find the job title
+    // Try to find job by the new jobId format (which might be title-company or just title)
+    const jobFromFilteredData = filteredRows.find(job => {
+      const titleIndex = headers.findIndex(h => h.toLowerCase() === 'title')
+      const companyIndex = headers.findIndex(h => h.toLowerCase() === 'company_name')
+      
+      if (titleIndex === -1 || companyIndex === -1) return false;
+      
+      let jobTitle, jobCompany;
+      
+      if (job && (job as any).data) {
+        jobTitle = (job as any).data[titleIndex];
+        jobCompany = (job as any).data[companyIndex];
+        
+        // Check if this matches the provided jobId
+        if (jobId === jobTitle || 
+            jobId === `${jobTitle}-${jobCompany}`.replace(/\s+/g, '-') ||
+            jobId.startsWith(`${jobTitle}-${jobCompany}`)) {
+          
+          // Create a consistent job ID
+          const consistentJobId = `${jobTitle}-${jobCompany}`.replace(/\s+/g, '-');
+          
+          // Remove any variations of this job from applied jobs
+          let newAppliedJobs = appliedJobs.filter(id => 
+            id !== consistentJobId && 
+            id !== jobTitle && 
+            !id.startsWith(`${jobTitle}-${jobCompany}`));
+          
+          // If it wasn't in the list (after filtering), add it with the consistent format
+          if (newAppliedJobs.length === appliedJobs.length) {
+            newAppliedJobs.push(consistentJobId);
+          }
+          
+          console.log("New applied jobs list (from filtered data):", newAppliedJobs);
+          setAppliedJobs(newAppliedJobs);
+          Cookies.set("appliedJobs", JSON.stringify(newAppliedJobs), { expires: 30 });
+          return true;
+        }
+      }
+      
+      return false;
+    });
+    
+    if (jobFromFilteredData) {
+      return; // We've already handled this job
+    }
+    
+    // Fallback to the original behavior if we couldn't handle it more precisely
     const newAppliedJobs = appliedJobs.includes(jobId)
       ? appliedJobs.filter((id) => id !== jobId)
       : [...appliedJobs, jobId];
 
-    console.log("New applied jobs (IDs):", newAppliedJobs);
+    console.log("New applied jobs (fallback):", newAppliedJobs);
     
     setAppliedJobs(newAppliedJobs);
     Cookies.set("appliedJobs", JSON.stringify(newAppliedJobs), { expires: 30 });
@@ -679,6 +801,98 @@ export default function Home() {
     setViewMode(newViewMode);
     // Save viewMode in cookie for consistency between pages
     Cookies.set("viewMode", newViewMode, { expires: 30 });
+  };
+
+  // Function to hide a job
+  const handleHideJob = (jobId: string, jobTitle: string, companyName: string) => {
+    // Add the job ID to hidden jobs
+    const newHiddenJobs = [...hiddenJobs, jobId];
+    
+    // Also add a special hidden job identifier that will match any job with the same title and company
+    // This helps hide duplicate listings that might have different URLs
+    const hiddenIdentifier = `hide:${jobTitle}::${companyName}`;
+    newHiddenJobs.push(hiddenIdentifier);
+    
+    setHiddenJobs(newHiddenJobs);
+    Cookies.set("hiddenJobs", JSON.stringify(newHiddenJobs), { expires: 30 });
+    
+    console.log(`Job hidden: ${jobTitle} at ${companyName}`);
+  };
+
+  // Function to prepare job data from row data
+  const prepareJobData = (row: any, index: number): any => {
+    // Existing function implementation...
+    // We need to add this function if it doesn't exist already in your code
+    const getFieldValue = (fieldName: string) => {
+      const columnIndex = findColumnIndex(fieldName);
+      if (columnIndex === -1) return "";
+      
+      const rowData = Array.isArray(row) ? row : row.data;
+      return rowData[columnIndex] || "";
+    };
+    
+    const title = getFieldValue("title");
+    const company = getFieldValue("company_name");
+    const location = getFieldValue("location");
+    const jobType = getFieldValue("job_type") || getFieldValue("type");
+    const salary = getFieldValue("salary");
+    const datePosted = getFieldValue("date_posted") || getFieldValue("currentdate");
+    const description = getFieldValue("description");
+    const url = getFieldValue("url");
+    const companyWebsite = getFieldValue("company_website");
+    const companyImage = getFieldValue("company_image");
+    const experience = getFieldValue("experience");
+    const skills = getFieldValue("skills");
+    const notes = getFieldValue("notes");
+    
+    // Generate a unique ID for the job
+    const id = generateJobId(row, index);
+    
+    return {
+      title,
+      company_name: company,
+      location,
+      job_type: jobType,
+      salary,
+      date_posted: datePosted,
+      description,
+      url,
+      company_website: companyWebsite,
+      company_image: companyImage,
+      experience,
+      skills,
+      notes,
+      id
+    };
+  };
+
+  const findColumnIndex = (fieldName: string) => {
+    if (!data[0]) return -1;
+    
+    return data[0].findIndex(
+      (header) => header.toLowerCase() === fieldName.toLowerCase()
+    );
+  };
+
+  const generateJobId = (row: any, index: number): string => {
+    const titleIndex = findColumnIndex("title");
+    const companyIndex = findColumnIndex("company_name");
+    
+    let title, company;
+    
+    if (Array.isArray(row)) {
+      title = titleIndex >= 0 ? row[titleIndex] : "";
+      company = companyIndex >= 0 ? row[companyIndex] : "";
+    } else if (row.data) {
+      title = titleIndex >= 0 ? row.data[titleIndex] : "";
+      company = companyIndex >= 0 ? row.data[companyIndex] : "";
+    } else {
+      return `job-${index}`;
+    }
+    
+    // We use the title+company as the job ID because it's unique enough
+    // for our purposes and allows us to identify duplicates
+    return `${title}-${company}`.replace(/\s+/g, '-');
   };
 
   // Extract headers and rows from data
@@ -1212,10 +1426,10 @@ export default function Home() {
               appliedJobs={appliedJobs}
               onApply={handleToggleApplied}
               onDelete={handleDeleteJob}
+              onHide={(jobId, title, company) => handleHideJob(jobId, title, company)}
               onUpdateNote={handleUpdateNote}
               viewMode={viewMode}
               onToggleViewMode={toggleViewMode}
-              hideViewToggle={true}
             />
           )}
         </>
