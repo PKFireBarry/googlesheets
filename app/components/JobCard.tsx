@@ -1,11 +1,10 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import Image from 'next/image'
 import { 
   MapPin, 
   Building, 
-  Clock, 
   Briefcase, 
   DollarSign, 
   Trash2, 
@@ -17,8 +16,8 @@ import {
   ChevronRight,
   X,
   Linkedin,
-  Search,
-  Link2
+  Link2,
+  EyeOff
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
@@ -40,12 +39,13 @@ interface JobCardProps {
     skills: string;
     notes: string;
     id: string;
-    source?: string; // Added source field which may be passed from JobCardGrid
-    [key: string]: string | undefined; // Allow for additional fields
+    source?: string;
+    [key: string]: string | undefined;
   };
   isApplied: boolean;
   onApply: () => void;
   onDelete: () => void;
+  onHide?: () => void;
   onUpdateNote: (note: string) => void;
 }
 
@@ -54,6 +54,7 @@ export default function JobCard({
   isApplied, 
   onApply, 
   onDelete, 
+  onHide,
   onUpdateNote 
 }: JobCardProps) {
   const [showFullDescription, setShowFullDescription] = useState(false)
@@ -63,21 +64,9 @@ export default function JobCard({
   const [imageError, setImageError] = useState(false)
   const router = useRouter()
   
-  // Log job data for debugging
-  useEffect(() => {
-    console.log("Job data in JobCard:", job);
-  }, [job]);
-  
   const truncateDescription = (text: string, maxLength = 150) => {
     if (!text || text.length <= maxLength) return text
     return text.substring(0, maxLength) + '...'
-  }
-  
-  // Helper function to clean skill text from junk characters
-  const cleanSkillText = (skill: string): string => {
-    return skill
-      .replace(/[\[\]"']/g, '') // Remove brackets and quotes
-      .trim();                   // Remove extra whitespace
   }
   
   const handleNoteSubmit = () => {
@@ -86,41 +75,32 @@ export default function JobCard({
   }
   
   const handleLinkedInLookup = () => {
-    // Store the company name in a cookie for the LinkedIn lookup page
     const companyName = job.company_name
     if (companyName) {
-      // Navigate to the LinkedIn lookup page
       router.push(`/linkedin-lookup?company=${encodeURIComponent(companyName)}`)
     }
   }
   
-  const formatDate = (dateString: string) => {
-    console.log('Formatting date string:', dateString);
+  const formatDate = (dateString: string | undefined) => {
     if (!dateString) return "Unknown";
     
     try {
-      // Try to parse the date
       const date = new Date(dateString);
       
-      // Check if the date is valid
       if (isNaN(date.getTime())) {
-        console.log('Invalid date:', dateString);
         return dateString;
       }
       
-      console.log('Parsed date object:', date);
       return date.toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'short',
         day: 'numeric'
       });
-    } catch (e) {
-      console.error('Error parsing date:', e);
+    } catch {
       return dateString;
     }
   }
   
-  // Extract source from URL if not already provided
   const getJobSource = (): string => {
     if (job.source) return job.source;
     
@@ -128,13 +108,9 @@ export default function JobCard({
     if (!url) return 'Unknown';
     
     try {
-      // Remove protocol and www. prefix
       let domain = url.replace(/^(https?:\/\/)?(www\.)?/i, '');
-      
-      // Get domain name without path
       domain = domain.split('/')[0];
       
-      // Special case handling for common job sites
       if (domain.includes('linkedin')) return 'LinkedIn';
       if (domain.includes('indeed')) return 'Indeed';
       if (domain.includes('ziprecruiter')) return 'ZipRecruiter';
@@ -144,24 +120,11 @@ export default function JobCard({
       if (domain.includes('simplyhired')) return 'SimplyHired';
       if (domain.includes('careerbuilder')) return 'CareerBuilder';
       
-      // Return just the domain part
       return domain;
-    } catch (error) {
-      console.error('Error extracting source:', error);
+    } catch {
       return 'Unknown';
     }
   }
-  
-  // Debug logs to see what date values we're getting
-  useEffect(() => {
-    if (job) {
-      console.log('Job date fields:', {
-        date_posted: job.date_posted,
-        currentDate: job.currentDate,
-        currentdate: job.currentdate
-      });
-    }
-  }, [job]);
   
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-100 dark:border-gray-700 transition-all hover:shadow-xl">
@@ -199,10 +162,15 @@ export default function JobCard({
           
           <div className="flex flex-wrap gap-2 mt-2 sm:mt-0">
             {isApplied ? (
-              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
-                <CheckCircle className="w-3.5 h-3.5 mr-1" />
-                Applied
-              </span>
+              <button
+                onClick={onApply}
+                className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-800 dark:hover:text-red-400 transition-colors group"
+              >
+                <CheckCircle className="w-3.5 h-3.5 mr-1 group-hover:hidden" />
+                <X className="w-3.5 h-3.5 mr-1 hidden group-hover:block" />
+                <span className="group-hover:hidden">Applied</span>
+                <span className="hidden group-hover:block">Remove</span>
+              </button>
             ) : (
               <button 
                 onClick={onApply}
@@ -417,13 +385,57 @@ export default function JobCard({
             </a>
           )}
           
-          <button
-            onClick={onDelete}
-            className="inline-flex items-center px-3 py-2 border border-red-300 dark:border-red-800 rounded-md text-sm font-medium text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/40 ml-auto"
-          >
-            <Trash2 className="w-4 h-4 mr-2 text-red-500 dark:text-red-400" />
-            Remove
-          </button>
+          <div className="flex gap-2 mt-4 justify-end">
+            {isEditingNote ? (
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setIsEditingNote(false)}
+                  className="rounded-md px-3 py-1.5 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleNoteSubmit}
+                  className="rounded-md px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700"
+                >
+                  Save Note
+                </button>
+              </div>
+            ) : (
+              <>
+                <button
+                  onClick={() => setIsEditingNote(true)}
+                  className="rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
+                >
+                  <MessageSquare className="w-4 h-4 mr-1.5 inline-block" />
+                  {job.notes ? 'Edit Note' : 'Add Note'}
+                </button>
+                <button
+                  onClick={handleLinkedInLookup}
+                  className="rounded-md px-3 py-1.5 text-sm font-medium text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30"
+                >
+                  <Linkedin className="w-4 h-4 mr-1.5 inline-block" />
+                  Find Contact
+                </button>
+                {onHide && (
+                  <button
+                    onClick={onHide}
+                    className="rounded-md px-3 py-1.5 text-sm font-medium text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                  >
+                    <EyeOff className="w-4 h-4 mr-1.5 inline-block" />
+                    Hide
+                  </button>
+                )}
+                <button
+                  onClick={onDelete}
+                  className="rounded-md px-3 py-1.5 text-sm font-medium text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30"
+                >
+                  <Trash2 className="w-4 h-4 mr-1.5 inline-block" />
+                  Delete
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </div>
     </div>

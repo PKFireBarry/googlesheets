@@ -3,19 +3,16 @@
 import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import CookieUtil from '../utils/cookies'
-import { Loader2, Search, Linkedin, Globe, Settings, ArrowRight, Plus } from 'lucide-react'
-import WebhookTestButton from '../components/WebhookTestButton'
-import { WEBHOOK_URL, ensureProperProtocol, lookupHRContacts, testWebhook } from '../utils/webhook'
+import { Loader2, Search, Linkedin, Globe, Settings, ArrowRight, Plus, Key } from 'lucide-react'
+import { lookupLinkedInHR } from '../utils/webhook'
 
+// Import LinkedInContactData type from webhook.ts
+import type { LinkedInContactData } from '../utils/webhook'
+
+// Helper function to extract spreadsheet ID from URL
 const extractSpreadsheetId = (url: string) => {
   const match = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/)
   return match ? match[1] : null
-}
-
-// Extract workflow ID from n8n webhook URL
-const extractWorkflowId = (url: string): string => {
-  const match = url.match(/\/webhook\/([^\/]+)\/([^\/]+)/)
-  return match ? match[2] : ''
 }
 
 // Helper function to ensure URLs have the proper protocol prefix
@@ -48,29 +45,24 @@ function LinkedInLookupContent() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [companies, setCompanies] = useState<string[]>([])
-  const [webhookUrl, setWebhookUrl] = useState(WEBHOOK_URL)
   const [selectedCompany, setSelectedCompany] = useState(companyParam || '')
   const [customCompany, setCustomCompany] = useState('')
-  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [useCustomCompany, setUseCustomCompany] = useState(false)
+  const [searchResults, setSearchResults] = useState<LinkedInContactData[]>([])
   const [isSearching, setIsSearching] = useState(false)
-  const [n8nWorkflowId, setN8nWorkflowId] = useState('')
-  const [savedWebhook, setSavedWebhook] = useState('http://localhost:5678/webhook/1f50d8b8-820e-43b4-91a5-5cc31014fc8a')
-  const [useCustomCompany, setUseCustomCompany] = useState(!companyParam)
   const [autoSearchDone, setAutoSearchDone] = useState(false) // Track if auto-search has been done
+  const [geminiApiKey, setGeminiApiKey] = useState('')
+  
+  // Add state variables for tracking the task status
+  const [taskStatus, setTaskStatus] = useState<string | null>(null)
+  const [taskProgress, setTaskProgress] = useState<number>(0)
+  const [taskElapsedTime, setTaskElapsedTime] = useState<number>(0)
+  const [statusMessage, setStatusMessage] = useState<string>('')
   
   useEffect(() => {
-    // Load saved webhook URL from cookies, or use hardcoded URL if none exists
-    const savedUrl = CookieUtil.get("linkedinWebhookUrl") || WEBHOOK_URL;
-    const processedUrl = ensureProperProtocol(savedUrl);
-    
-    console.log('Setting webhook URL:', processedUrl);
-    setWebhookUrl(processedUrl);
-    setSavedWebhook(processedUrl);
-    
-    const savedWorkflowId = CookieUtil.get("n8nWorkflowId");
-    if (savedWorkflowId) {
-      setN8nWorkflowId(savedWorkflowId);
-    }
+    // Load Gemini API key from cookies
+    const savedApiKey = CookieUtil.get("geminiApiKey") || process.env.NEXT_PUBLIC_GEMINI_API_KEY || '';
+    setGeminiApiKey(savedApiKey);
     
     // Load companies from Google Sheet
     const savedSheetUrl = CookieUtil.get("lastSheetUrl")
@@ -95,18 +87,15 @@ function LinkedInLookupContent() {
     }
   }, [searchResults]);
   
-  // Auto-trigger search when company is provided in URL and webhook is available
-  // But only if explicitly requested via URL parameter
+  // Auto-trigger search when company is provided in URL
   useEffect(() => {
     // Only auto-search if:
     // 1. We have a company parameter
-    // 2. We have a saved webhook
-    // 3. We're not already searching
-    // 4. We haven't done an auto-search yet
-    // 5. The URL has an 'autoSearch=true' parameter
+    // 2. We're not already searching
+    // 3. We haven't done an auto-search yet
+    // 4. The URL has an 'autoSearch=true' parameter
     const shouldAutoSearch = 
       companyParam && 
-      savedWebhook && 
       !isSearching && 
       !autoSearchDone && 
       searchParams.get('autoSearch') === 'true';
@@ -116,7 +105,8 @@ function LinkedInLookupContent() {
       handleSearch();
       setAutoSearchDone(true); // Mark auto-search as done
     }
-  }, [companyParam, savedWebhook, isSearching, autoSearchDone, searchParams]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [companyParam, isSearching, autoSearchDone, searchParams]);
   
   const fetchCompanies = async (spreadsheetId: string) => {
     setLoading(true)
@@ -156,11 +146,10 @@ function LinkedInLookupContent() {
       // Extract unique company names
       const uniqueCompanies = Array.from(new Set(
         rows
-          .map((row: any) => row[companyIndex])
+          .map((row: string[]) => row[companyIndex])
           .filter(Boolean)
           .sort()
       ))
-      
       setCompanies(uniqueCompanies as string[])
       
     } catch (error: any) {
@@ -171,34 +160,22 @@ function LinkedInLookupContent() {
     }
   }
   
-  const handleSaveWebhook = () => {
+  const handleSaveSettings = () => {
     try {
-      if (!webhookUrl) {
-        setError('Please enter a webhook URL')
-        return
-      }
-      
-      // Validate URL format
-      new URL(webhookUrl)
-      
-      // Process the URL to ensure it has the proper protocol
-      const processedUrl = ensureProperProtocol(webhookUrl)
-      
-      // Save to cookies
-      CookieUtil.set("linkedinWebhookUrl", processedUrl, { expires: 30 })
-      setSavedWebhook(processedUrl)
-      
-      if (n8nWorkflowId) {
-        CookieUtil.set("n8nWorkflowId", n8nWorkflowId, { expires: 30 })
+      // Save Gemini API key if provided
+      if (geminiApiKey) {
+        CookieUtil.set("geminiApiKey", geminiApiKey, { expires: 30 })
       }
       
       // Clear any previous errors
       setError(null)
       
-      console.log('Webhook URL saved:', processedUrl)
-    } catch (e) {
-      // Invalid URL format
-      setError('Please enter a valid URL')
+      console.log('Settings saved:', {
+        geminiApiKey: geminiApiKey ? '[API KEY SET]' : '[NOT SET]'
+      })
+    } catch (error) {
+      // Invalid settings
+      setError('Failed to save settings')
     }
   }
   
@@ -206,169 +183,85 @@ function LinkedInLookupContent() {
     // Use either the selected company from dropdown or the custom company input
     const companyToSearch = useCustomCompany ? customCompany : selectedCompany
     
-    if (!companyToSearch || !savedWebhook) return
+    if (!companyToSearch) return
+    
+    // For LinkedIn direct method, we need a Gemini API key
+    if (!geminiApiKey && !process.env.NEXT_PUBLIC_GEMINI_API_KEY) {
+      setError('Please configure the Gemini API key first')
+      return
+    }
     
     setIsSearching(true)
     setSearchResults([])
     setError(null) // Clear any previous errors
     
+    // Reset task status tracking
+    setTaskStatus('preparing')
+    setTaskProgress(0)
+    setTaskElapsedTime(0)
+    setStatusMessage('Preparing search...')
+    
     try {
-      console.log(`Starting search for company: ${companyToSearch} using webhook: ${savedWebhook}`);
+      console.log(`Starting search for company: ${companyToSearch}`);
       
-      // Pass the saved webhook URL to override the default
-      const responseData = await lookupHRContacts(companyToSearch, 60000, savedWebhook);
-      
-      console.log('Search completed, processing response data:', responseData);
-      
-      // Check if we got valid results
-      if (responseData) {
-        // Map the webhook response data to our expected format
-        // The webhook returns data in the format:
-        // { name, title, email, linkedin_url, website, profile_image, birthday }
-        
-        // Handle different response formats:
-        // 1. Array of contacts
-        // 2. Object with contacts array property
-        // 3. Single contact object
-        // 4. String response that might be JSON
-        
-        let contacts: any[] = []
-        
-        if (Array.isArray(responseData)) {
-          // Direct array of contacts
-          console.log('Response is an array with', responseData.length, 'items');
-          contacts = responseData
-        } else if (typeof responseData === 'object') {
-          // Check for nested arrays in common properties
-          if (responseData.data && Array.isArray(responseData.data)) {
-            console.log('Found data array in data property');
-            contacts = responseData.data
-          } else if (responseData.output && Array.isArray(responseData.output)) {
-            console.log('Found data array in output property');
-            contacts = responseData.output
-          } else if (responseData.result && Array.isArray(responseData.result)) {
-            console.log('Found data array in result property');
-            contacts = responseData.result
-          } else if (responseData.contacts && Array.isArray(responseData.contacts)) {
-            console.log('Found data array in contacts property');
-            contacts = responseData.contacts
-          } else if (responseData.body && typeof responseData.body === 'object') {
-            // Data is in the body property (common in webhook test responses)
-            console.log('Found data in body property');
-            contacts = [responseData.body]
-          } else {
-            // Single contact object
-            console.log('Treating response as a single contact object');
-            contacts = [responseData]
+      try {
+        // Define the status update callback
+        const statusUpdateCallback = (update: { 
+          status: string; 
+          progress: number; 
+          elapsedTime: number; 
+          message?: string;
+        }) => {
+          console.log('Status update:', update);
+          setTaskStatus(update.status);
+          setTaskProgress(update.progress);
+          setTaskElapsedTime(update.elapsedTime);
+          if (update.message) {
+            setStatusMessage(update.message);
           }
-        } else if (typeof responseData === 'string') {
-          // Try to parse as JSON
-          try {
-            console.log('Response is a string, attempting to parse as JSON');
-            const parsed = JSON.parse(responseData)
-            if (Array.isArray(parsed)) {
-              contacts = parsed
-            } else if (parsed && typeof parsed === 'object') {
-              contacts = [parsed]
-            }
-          } catch (e) {
-            console.error('Failed to parse string response as JSON:', e)
-          }
-        }
+        };
         
-        console.log('Extracted contacts:', contacts);
+        // Use the direct LinkedIn lookup method with polling and status updates
+        const responseData = await lookupLinkedInHR(
+          companyToSearch, 
+          geminiApiKey,
+          180000, // 3 minutes timeout
+          statusUpdateCallback
+        );
+        console.log('LinkedIn search completed, response data:', responseData);
         
-        // Map the webhook data to our component's expected format
-        const formattedContacts = contacts.map(contact => {
-          // For debugging
-          console.log('Processing contact:', contact);
-          
-          // Handle the case where the contact might be in a nested property
-          let contactData = contact;
-          
-          // If the contact has a body property that looks like our data, use that
-          if (contact.body && typeof contact.body === 'object') {
-            console.log('Contact has body property, using that');
-            contactData = contact.body;
-          }
-          
-          // If the contact has a type property that indicates it's our search request, not the result
-          if (contactData.type === 'hr_contact_search' && contactData.company) {
-            console.log('This appears to be the request object, not the result');
-            // Try to find any properties that might contain the actual data
-            for (const key in contactData) {
-              if (typeof contactData[key] === 'object' && contactData[key] !== null) {
-                if (contactData[key].name || contactData[key].email || contactData[key].linkedin_url) {
-                  console.log(`Found contact data in ${key} property`);
-                  contactData = contactData[key];
-                  break;
-                }
-              }
-            }
-          }
-          
-          // If we still have the request object, try to extract any useful information
-          if (contactData.type === 'hr_contact_search' && !contactData.name) {
-            console.log('Still have request object, creating placeholder contact');
-            return {
-              name: `HR Contact at ${companyToSearch}`,
-              title: 'Human Resources',
-              email: '',
-              linkedinUrl: '',
-              website: '',
-              profileImage: '',
-              company: companyToSearch,
-              phone: '',
-              location: '',
-              _note: 'Contact details pending - webhook processing'
-            };
-          }
-          
-          return {
-            name: contactData.name || '',
-            title: contactData.title || '',
-            email: contactData.email || '',
-            linkedinUrl: contactData.linkedin_url || contactData.linkedinUrl || '',
-            website: contactData.website || '',
-            profileImage: contactData.profile_image || contactData.profileImage || '',
-            company: companyToSearch,
-            phone: contactData.phone || '',  // Not usually provided in the webhook response
-            location: contactData.location || '',  // Not usually provided in the webhook response
-          }
-        })
-        
-        console.log('Formatted contacts:', formattedContacts);
-        
-        if (formattedContacts.length > 0) {
-          setSearchResults(formattedContacts)
+        // Check if we got valid results
+        if (responseData && responseData.length > 0) {
+          setSearchResults(responseData);
         } else {
-          throw new Error('No valid contacts found for this company')
+          throw new Error('No valid contacts found for this company');
         }
-      } else {
-        throw new Error('Invalid webhook response format')
+      } catch (lookupError: any) {
+        console.error('LinkedIn lookup error:', lookupError);
+        
+        // Check if this is a timeout or network error
+        if (lookupError.message && (
+            lookupError.message.includes('timeout') || 
+            lookupError.message.includes('Gateway Timeout') ||
+            lookupError.message.includes('network') ||
+            lookupError.message.includes('failed to fetch')
+        )) {
+          // This is likely a timeout issue on Vercel - show a more helpful message
+          throw new Error(
+            'The search is taking longer than expected. This might be due to server timeout limits. ' +
+            'The search may still be running in the background. You can try refreshing the page in a few minutes to see results.'
+          );
+        }
+        
+        // For other errors, just rethrow
+        throw lookupError;
+      } finally {
+        // Reset task status on completion or error
+        setTaskStatus('done');
       }
     } catch (error) {
       console.error('Error searching for HR contacts:', error)
       setError(error instanceof Error ? error.message : 'Unknown error occurred')
-    } finally {
-      setIsSearching(false)
-    }
-  }
-  
-  // Update the Test Connection button to use our improved testWebhook function
-  const handleTestConnection = async () => {
-    try {
-      setIsSearching(true)
-      setError(null)
-      
-      // Use the testWebhook function from the webhook utility
-      await testWebhook(savedWebhook, 60000)
-      
-      console.log('Webhook test successful')
-      alert('Webhook connection successful!')
-    } catch (error) {
-      console.error('Webhook test failed:', error)
-      setError(`Webhook test failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsSearching(false)
     }
@@ -401,61 +294,42 @@ function LinkedInLookupContent() {
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="md:col-span-1">
-          {/* Webhook Configuration */}
+          {/* API Key Configuration */}
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
             <div className="flex items-center mb-4">
               <Settings className="w-5 h-5 mr-2 text-blue-600 dark:text-blue-400" />
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">Webhook Configuration</h2>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white">LinkedIn Lookup Configuration</h2>
             </div>
             
             <div className="mb-4">
-              <label htmlFor="webhook-url" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                n8n Webhook URL
+              <label htmlFor="gemini-api-key" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Gemini API Key
               </label>
-              <input
-                id="webhook-url"
-                type="text"
-                value={webhookUrl}
-                onChange={(e) => setWebhookUrl(e.target.value)}
-                placeholder="https://your-n8n-instance.com/webhook/..."
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              />
+              <div className="relative">
+                <input
+                  id="gemini-api-key"
+                  type="password"
+                  value={geminiApiKey}
+                  onChange={(e) => setGeminiApiKey(e.target.value)}
+                  placeholder="Enter your Google Gemini API key"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white pr-10"
+                />
+                <div className="absolute inset-y-0 right-0 flex items-center pr-3">
+                  <Key className="h-4 w-4 text-gray-500" />
+                </div>
+              </div>
               <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                Enter your n8n webhook URL for LinkedIn lookups
-              </p>
-            </div>
-            
-            <div className="mb-4">
-              <label htmlFor="workflow-id" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Workflow ID (Optional)
-              </label>
-              <input
-                id="workflow-id"
-                type="text"
-                value={n8nWorkflowId}
-                onChange={(e) => setN8nWorkflowId(e.target.value)}
-                placeholder="Optional: Your n8n workflow ID"
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              />
-              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                Optional: Specify a workflow ID to use
+                Required for LinkedIn search with Gemini Flash 2.0 parsing
               </p>
             </div>
             
             <div className="flex space-x-2">
               <button
-                onClick={handleSaveWebhook}
+                onClick={handleSaveSettings}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md"
               >
                 Save Configuration
               </button>
-              
-              {savedWebhook && (
-                <WebhookTestButton 
-                  webhookUrl={savedWebhook} 
-                  className="mt-0" 
-                />
-              )}
             </div>
           </div>
           
@@ -484,30 +358,62 @@ function LinkedInLookupContent() {
               </div>
             ) : (
               <>
-                <div className="mb-4">
-                  <label htmlFor="company-select" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Select Company
-                  </label>
-                  <select
-                    id="company-select"
-                    value={selectedCompany}
-                    onChange={(e) => setSelectedCompany(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  >
-                    <option value="">Select a company...</option>
-                    {companies.map((company) => (
-                      <option key={company} value={company}>
-                        {company}
-                      </option>
-                    ))}
-                  </select>
+                <div className="space-y-4">
+                  <h2 className="text-lg font-medium text-gray-900 dark:text-white">LinkedIn Lookup</h2>
+                  
+                  <div className="space-y-4">
+                    {/* Company Selection */}
+                    <div>
+                      <label htmlFor="company" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Company
+                      </label>
+                      
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1">
+                          {useCustomCompany ? (
+                            <input
+                              type="text"
+                              id="customCompany"
+                              value={customCompany}
+                              onChange={(e) => setCustomCompany(e.target.value)}
+                              placeholder="Enter company name"
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:text-white"
+                            />
+                          ) : (
+                            <select
+                              id="company"
+                              value={selectedCompany}
+                              onChange={(e) => setSelectedCompany(e.target.value)}
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:text-white"
+                            >
+                              <option value="">Select a company</option>
+                              {companies.map((company) => (
+                                <option key={company} value={company}>
+                                  {company}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+                        
+                        <button
+                          type="button"
+                          onClick={() => setUseCustomCompany(!useCustomCompany)}
+                          className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-700 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700"
+                        >
+                          <Plus className="w-4 h-4 mr-1.5" />
+                          {useCustomCompany ? "Use List" : "Custom"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
                 
                 <button
                   onClick={handleSearch}
-                  disabled={!selectedCompany || !savedWebhook || isSearching}
+                  disabled={!selectedCompany || isSearching}
                   className={`w-full px-4 py-2 rounded-md font-medium flex items-center justify-center ${
-                    !selectedCompany || !savedWebhook || isSearching
+                    !selectedCompany || isSearching
                       ? 'bg-gray-400 cursor-not-allowed text-gray-200'
                       : 'bg-blue-600 hover:bg-blue-700 text-white'
                   }`}
@@ -537,21 +443,63 @@ function LinkedInLookupContent() {
               <h2 className="text-xl font-bold text-gray-900 dark:text-white">LinkedIn HR Contacts</h2>
             </div>
             
-            {!savedWebhook ? (
+            {/* Display based on search state */}
+            {!geminiApiKey && !process.env.NEXT_PUBLIC_GEMINI_API_KEY ? (
               <div className="bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-400 text-yellow-700 dark:text-yellow-300 px-4 py-3 rounded-md">
-                <p className="font-medium">Webhook not configured</p>
-                <p className="mt-2 text-sm">Please enter and save your n8n webhook URL to enable LinkedIn lookups.</p>
+                <p className="font-medium">Gemini API Key not configured</p>
+                <p className="mt-2 text-sm">Please enter and save your Google Gemini API key to enable LinkedIn lookups.</p>
               </div>
             ) : isSearching ? (
               <div className="flex flex-col items-center justify-center py-12">
                 <Loader2 className="w-12 h-12 animate-spin text-blue-600 mb-4" />
                 <p className="text-gray-700 dark:text-gray-300">Searching for HR contacts at {selectedCompany}...</p>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">This may take a few moments</p>
+                
+                {/* Show current task status */}
+                <p className="text-sm text-blue-600 dark:text-blue-400 mt-2">
+                  {statusMessage || 'Initializing search...'}
+                </p>
+                
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                  {taskElapsedTime > 0 ? `${taskElapsedTime} seconds elapsed` : 'This may take 2-3 minutes to complete'}
+                </p>
+                
+                {/* Progress bar */}
+                <div className="mt-4 w-64 bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
+                  <div 
+                    className="bg-blue-600 h-2.5 rounded-full transition-all duration-300 ease-in-out" 
+                    style={{ width: `${Math.min(taskProgress, 100)}%` }}
+                  ></div>
+                </div>
+                
+                {/* Show additional status info based on current stage */}
+                {taskStatus === 'polling' && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                    Checking if browser automation is complete...
+                  </p>
+                )}
+                
+                {taskStatus === 'processing' && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                    Browser automation complete! Processing data with AI...
+                  </p>
+                )}
               </div>
             ) : error ? (
               <div className="bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-300 px-4 py-3 rounded-md">
                 <p className="font-medium">Lookup unsuccessful</p>
-                <p className="mt-2 text-sm">We couldn't find HR contacts for {selectedCompany}. Please try another company or try again later.</p>
+                <p className="mt-2 text-sm">{error}</p>
+                {error.includes('timeout') && (
+                  <div className="mt-4">
+                    <p className="font-medium">What happened?</p>
+                    <p className="text-sm mt-1">
+                      The search is still running, but our server timed out waiting for a response.
+                      This happens because free Vercel hosting has a 10-second timeout limit.
+                    </p>
+                    <p className="text-sm mt-1">
+                      Your search might complete in the background. You can try again in a few minutes.
+                    </p>
+                  </div>
+                )}
               </div>
             ) : searchResults.length > 0 ? (
               <div className="space-y-4">
@@ -560,6 +508,7 @@ function LinkedInLookupContent() {
                     <div className="flex justify-between items-start">
                       <div className="flex items-start">
                         {contact.profileImage && (
+                          // eslint-disable-next-line @next/next/no-img-element
                           <img 
                             src={contact.profileImage} 
                             alt={`${contact.name} profile`}
@@ -584,9 +533,6 @@ function LinkedInLookupContent() {
                           target="_blank" 
                           rel="noopener noreferrer"
                           className="flex items-center text-blue-600 dark:text-blue-400 text-sm hover:underline"
-                          onClick={(e) => {
-                            console.log('Opening LinkedIn profile URL:', contact.linkedinUrl);
-                          }}
                         >
                           View Profile
                           <ArrowRight className="w-3 h-3 ml-1" />
@@ -641,19 +587,36 @@ function LinkedInLookupContent() {
                         <span className="text-gray-600 dark:text-gray-400">{contact.birthday}</span>
                       </div>
                     )}
+                    
+                    <div className="border-t border-gray-200 dark:border-gray-700 mt-4 pt-4">
+                      <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Contact Actions</h3>
+                      <div className="flex flex-wrap gap-2">
+                        {contact.linkedinUrl && contact.linkedinUrl !== 'n/a' && (
+                          <a 
+                            href={formatUrl(contact.linkedinUrl)} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900/50"
+                          >
+                            <Linkedin className="w-3.5 h-3.5 mr-1.5" />
+                            View Profile
+                          </a>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>
             ) : selectedCompany ? (
               <div className="bg-blue-100 dark:bg-blue-900/30 border border-blue-400 text-blue-700 dark:text-blue-300 px-4 py-3 rounded-md">
-                <p>Click "Find HR Contacts" to search for HR personnel at {selectedCompany}</p>
+                <p>Click &quot;Find HR Contacts" to search for HR personnel at {selectedCompany}</p>
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <Search className="w-12 h-12 text-gray-400 dark:text-gray-600 mb-4" />
                 <p className="text-gray-700 dark:text-gray-300">Select a company and click "Find HR Contacts"</p>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-                  This will use n8n and browser automation to find HR contacts on LinkedIn
+                  This will use browser automation to find HR contacts on LinkedIn
                 </p>
               </div>
             )}
@@ -662,14 +625,15 @@ function LinkedInLookupContent() {
           {/* How It Works */}
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mt-6">
             <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">How It Works</h2>
+            
             <div className="space-y-4">
               <div className="flex items-start">
                 <div className="flex-shrink-0 bg-blue-100 dark:bg-blue-900/30 rounded-full p-2 mr-3">
                   <span className="text-blue-600 dark:text-blue-400 font-bold">1</span>
                 </div>
                 <div>
-                  <h3 className="font-medium text-gray-900 dark:text-white">Configure Webhook</h3>
-                  <p className="text-gray-600 dark:text-gray-400">Set up your n8n webhook URL to enable LinkedIn automation</p>
+                  <h3 className="font-medium text-gray-900 dark:text-white">Configure API Key</h3>
+                  <p className="text-gray-600 dark:text-gray-400">Set up your Google Gemini API key to enable AI processing</p>
                 </div>
               </div>
               
@@ -688,8 +652,18 @@ function LinkedInLookupContent() {
                   <span className="text-blue-600 dark:text-blue-400 font-bold">3</span>
                 </div>
                 <div>
-                  <h3 className="font-medium text-gray-900 dark:text-white">Find HR Contacts</h3>
-                  <p className="text-gray-600 dark:text-gray-400">The system will search LinkedIn for HR personnel at the selected company</p>
+                  <h3 className="font-medium text-gray-900 dark:text-white">Automated Search</h3>
+                  <p className="text-gray-600 dark:text-gray-400">The system uses browser automation to search LinkedIn for HR personnel</p>
+                </div>
+              </div>
+              
+              <div className="flex items-start">
+                <div className="flex-shrink-0 bg-blue-100 dark:bg-blue-900/30 rounded-full p-2 mr-3">
+                  <span className="text-blue-600 dark:text-blue-400 font-bold">4</span>
+                </div>
+                <div>
+                  <h3 className="font-medium text-gray-900 dark:text-white">AI Processing</h3>
+                  <p className="text-gray-600 dark:text-gray-400">Google's Gemini Flash 2.0 processes the results into structured data</p>
                 </div>
               </div>
             </div>

@@ -2,15 +2,44 @@
 
 import { useState, useEffect, useRef, TouchEvent } from 'react'
 import JobCard from './JobCard'
-import { ChevronLeft, ChevronRight, Grid, List, MapPin, Calendar, Link2, CheckCircle } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Grid, List, MapPin, Calendar, Link2, CheckCircle, Filter, ArrowUpDown } from 'lucide-react'
+
+// Define types for job data
+interface JobData {
+  [key: number]: string | number | boolean | null;
+  data?: string[];
+  originalIndex?: number;
+}
+
+interface PreparedJob {
+  id: string;
+  originalIndex: number;
+  is_applied: boolean;
+  title: string;
+  company_name: string;
+  location?: string;
+  description?: string;
+  skills?: string;
+  date_posted?: string;
+  currentDate?: string;
+  currentdate?: string;
+  url?: string;
+  company_website?: string;
+  company_image?: string;
+  experience?: string;
+  notes?: string;
+  source: string;
+  [key: string]: any;
+}
 
 interface JobCardGridProps {
-  jobs: Array<any>;
+  jobs: JobData[];
   headers: string[];
   appliedJobs: string[];
   onApply: (jobId: string) => void;
   onDelete: (rowIndex: number) => void;
   onUpdateNote: (rowIndex: number, note: string, columnIndex: number) => void;
+  onHide?: (jobId: string, title: string, company: string) => void;
   viewMode?: 'card' | 'list'; // Optional prop to control view mode externally
   onToggleViewMode?: () => void; // Optional callback for view mode toggle
   hideViewToggle?: boolean; // Whether to hide the internal view toggle
@@ -23,6 +52,7 @@ export default function JobCardGrid({
   onApply,
   onDelete,
   onUpdateNote,
+  onHide,
   viewMode: externalViewMode,
   onToggleViewMode,
   hideViewToggle = false
@@ -30,12 +60,14 @@ export default function JobCardGrid({
   const [currentIndex, setCurrentIndex] = useState(0)
   const [touchStart, setTouchStart] = useState<number | null>(null)
   const [touchEnd, setTouchEnd] = useState<number | null>(null)
-  const [sortedJobs, setSortedJobs] = useState<any[]>([])
+  const [sortedJobs, setSortedJobs] = useState<JobData[]>([])
   const [isAnimating, setIsAnimating] = useState(false)
   const [direction, setDirection] = useState<'left' | 'right' | null>(null)
   const cardRef = useRef<HTMLDivElement>(null)
   const [internalViewMode, setInternalViewMode] = useState<'card' | 'list'>('card')
-  const [selectedJobForDetail, setSelectedJobForDetail] = useState<any>(null)
+  const [selectedJobForDetail, setSelectedJobForDetail] = useState<PreparedJob | null>(null)
+  const [keyboardListIndex, setKeyboardListIndex] = useState<number>(-1)
+  const keyboardSelectedRef = useRef<HTMLDivElement | HTMLTableRowElement | null>(null)
   
   // Determine which view mode to use (external or internal)
   const viewMode = externalViewMode !== undefined ? externalViewMode : internalViewMode;
@@ -80,6 +112,7 @@ export default function JobCardGrid({
       
       setSortedJobs(sortedJobsCopy)
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobs, headers])
   
   const findColumnIndex = (fieldName: string) => {
@@ -157,16 +190,16 @@ export default function JobCardGrid({
     }
   }
   
-  const generateJobId = (job: any, index: number) => {
+  const generateJobId = (job: JobData, index: number) => {
     // Try to use a unique identifier from the job data
-    const jobData = Array.isArray(job) ? job : job.data
+    const jobData = Array.isArray(job) ? job : job.data || []
     
     // Check if there's an ID field
     const idIndex = findColumnIndex('id')
     if (idIndex !== -1 && jobData[idIndex]) {
       const id = jobData[idIndex];
       console.log(`Generated job ID from ID field: ${id} for job at index ${index}`);
-      return id;
+      return id.toString();
     }
     
     // Use a combination of title and company name if available
@@ -185,7 +218,37 @@ export default function JobCardGrid({
     return id;
   }
   
-  const prepareJobData = (job: any, index: number) => {
+  // Check if a job is applied using all possible ID formats
+  const isJobInAppliedList = (job: JobData, index: number): boolean => {
+    // Get the job title and company
+    const titleIndex = findColumnIndex('title');
+    const companyIndex = findColumnIndex('company_name');
+    
+    // Extract job data depending on format
+    const jobData = Array.isArray(job) ? job : (job.data || []);
+    
+    // Get title and company name
+    const title = titleIndex !== -1 ? jobData[titleIndex] || '' : '';
+    const company = companyIndex !== -1 ? jobData[companyIndex] || '' : '';
+    
+    if (!title) return false;
+    
+    // Create the consistent ID format
+    const consistentJobId = title && company ? 
+      `${title}-${company}`.replace(/\s+/g, '-') : title;
+    
+    // Check all possible formats:
+    // 1. As the consistent ID (title-company)
+    // 2. Just by the title (older format)
+    // 3. With the title-company prefix (may have additional suffix)
+    return (
+      appliedJobs.includes(consistentJobId) ||
+      appliedJobs.includes(title) ||
+      (company && appliedJobs.some(id => id.startsWith(`${title}-${company}`)))
+    );
+  };
+  
+  const prepareJobData = (job: JobData, index: number): PreparedJob => {
     // Ensure we have valid job data
     if (!job) {
       console.error('Invalid job data:', job);
@@ -205,7 +268,8 @@ export default function JobCardGrid({
         company_image: '',
         experience: '',
         notes: '',
-        source: 'Unknown'
+        source: 'Unknown',
+        is_applied: false
       };
     }
 
@@ -216,9 +280,13 @@ export default function JobCardGrid({
     const originalIndex = job.originalIndex || index + 2;
     
     // Create a structured job object
-    const structuredJob: any = {
+    const structuredJob: PreparedJob = {
       id: generateJobId(job, index),
-      originalIndex
+      originalIndex,
+      is_applied: isJobInAppliedList(job, index), // Add applied status
+      title: '',
+      company_name: '',
+      source: 'Unknown'
     };
     
     // Map all available fields from the headers
@@ -277,22 +345,32 @@ export default function JobCardGrid({
     
     const job = sortedJobs[currentIndex]
     
-    // Get the job title to use for marking as applied
+    // Get the job title and company to use for marking as applied
     const titleIndex = findColumnIndex('title')
+    const companyIndex = findColumnIndex('company_name')
+    
     const jobTitle = titleIndex !== -1 ? 
       (Array.isArray(job) ? job[titleIndex] : 
        ((job as any).data ? (job as any).data[titleIndex] : '')) : ''
+       
+    const jobCompany = companyIndex !== -1 ? 
+      (Array.isArray(job) ? job[companyIndex] : 
+       ((job as any).data ? (job as any).data[companyIndex] : '')) : ''
     
-    // Use the job title if available, otherwise fall back to ID
-    const jobId = jobTitle || generateJobId(job, currentIndex)
+    // Create a consistent job ID from title and company
+    const consistentJobId = jobTitle && jobCompany ? 
+      `${jobTitle}-${jobCompany}`.replace(/\s+/g, '-') : 
+      jobTitle // Fall back to just the title if no company
     
     console.log("Marking job as applied:", {
       index: currentIndex,
       title: jobTitle,
-      company: Array.isArray(job) ? job[findColumnIndex('company_name')] : 
-               ((job as any).data ? (job as any).data[findColumnIndex('company_name')] : 'Unknown'),
-      jobId
+      company: jobCompany,
+      consistentJobId
     });
+    
+    // Use the consistent job ID if available, otherwise fall back to title or generated ID
+    const jobId = consistentJobId || generateJobId(job, currentIndex)
     
     onApply(jobId)
   }
@@ -320,7 +398,7 @@ export default function JobCardGrid({
     setSelectedJobForDetail(null);
   }
 
-  const handleListItemClick = (job: any, index: number) => {
+  const handleListItemClick = (job: JobData, index: number) => {
     const preparedJob = prepareJobData(job, index)
     setSelectedJobForDetail(preparedJob)
   }
@@ -353,6 +431,71 @@ export default function JobCardGrid({
     }
   }
   
+  // Function to handle hiding a job
+  const handleHide = (job: JobData) => {
+    if (onHide) {
+      const jobData = prepareJobData(job, currentIndex);
+      onHide(jobData.id, jobData.title, jobData.company_name);
+    }
+  };
+  
+  // Add keyboard navigation event listeners
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (sortedJobs.length === 0) return;
+      
+      // Handle arrow keys for card view
+      if (viewMode === 'card') {
+        if (e.key === 'ArrowRight') {
+          goToNextJob();
+        } else if (e.key === 'ArrowLeft') {
+          goToPrevJob();
+        }
+      } 
+      // Handle arrow keys for list view
+      else if (viewMode === 'list') {
+        if (selectedJobForDetail) {
+          // If in detail view, allow Escape or left arrow to go back to list
+          if (e.key === 'Escape' || e.key === 'ArrowLeft') {
+            handleBackToList();
+          }
+        } else {
+          // Up and down navigation in list view
+          if (e.key === 'ArrowDown') {
+            e.preventDefault(); // Prevent page scrolling
+            setKeyboardListIndex(prev => {
+              const newIndex = prev < sortedJobs.length - 1 ? prev + 1 : prev;
+              // If first selection, start from the beginning
+              if (prev === -1) return 0;
+              return newIndex;
+            });
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault(); // Prevent page scrolling
+            setKeyboardListIndex(prev => prev > 0 ? prev - 1 : prev);
+          } else if (e.key === 'Enter' && keyboardListIndex >= 0) {
+            // Select the currently highlighted job on Enter
+            handleListItemClick(sortedJobs[keyboardListIndex], keyboardListIndex);
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [viewMode, sortedJobs.length, selectedJobForDetail, keyboardListIndex]);
+
+  // Scroll the selected item into view when using keyboard navigation
+  useEffect(() => {
+    if (keyboardListIndex >= 0 && keyboardSelectedRef.current) {
+      keyboardSelectedRef.current.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest'
+      });
+    }
+  }, [keyboardListIndex]);
+
   if (sortedJobs.length === 0) {
     return <div className="text-center py-8 text-gray-500">No job listings found</div>
   }
@@ -360,23 +503,33 @@ export default function JobCardGrid({
   // View mode toggle button
   const ViewToggle = () => (
     !hideViewToggle ? (
-      <div className="flex justify-end mb-4">
-        <button
-          onClick={toggleViewMode}
-          className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          {viewMode === 'card' ? (
-            <>
-              <List className="w-4 h-4 mr-2" />
-              Show as List
-            </>
-          ) : (
-            <>
-              <Grid className="w-4 h-4 mr-2" />
-              Show as Cards
-            </>
-          )}
-        </button>
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100">
+          {sortedJobs.length} Job Listings
+        </h2>
+        <div className="flex gap-2">
+          <button
+            onClick={toggleViewMode}
+            className="inline-flex items-center px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-md shadow-sm text-sm font-medium 
+                      text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 
+                      hover:bg-gray-50 dark:hover:bg-gray-700 
+                      focus:outline-none focus:ring-2 focus:ring-blue-500 
+                      transition-all duration-200 ease-in-out"
+            aria-label={viewMode === 'card' ? "Switch to list view" : "Switch to card view"}
+          >
+            {viewMode === 'card' ? (
+              <>
+                <List className="w-4 h-4 mr-2" />
+                <span className="hidden sm:inline">List View</span>
+              </>
+            ) : (
+              <>
+                <Grid className="w-4 h-4 mr-2" />
+                <span className="hidden sm:inline">Card View</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
     ) : null
   )
@@ -385,26 +538,53 @@ export default function JobCardGrid({
   if (viewMode === 'list') {
     if (selectedJobForDetail) {
       // Show detail view for selected job
-      const isJobApplied = appliedJobs.includes(selectedJobForDetail.id) || 
-                          appliedJobs.includes(selectedJobForDetail.title)
+      const isJobApplied = isJobInAppliedList(selectedJobForDetail, 0) || 
+                          appliedJobs.includes(selectedJobForDetail.id) || 
+                          appliedJobs.includes(selectedJobForDetail.title);
 
       return (
-        <div>
+        <div className="animate-fade-in">
           <ViewToggle />
           <div className="flex items-center mb-4">
             <button
               onClick={handleBackToList}
-              className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700"
+              className="inline-flex items-center px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-md shadow-sm text-sm font-medium 
+                       text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 
+                       hover:bg-gray-50 dark:hover:bg-gray-700 
+                       focus:outline-none focus:ring-2 focus:ring-blue-500 
+                       transition-all duration-200 ease-in-out"
             >
               <ChevronLeft className="w-4 h-4 mr-1" />
               Back to List
             </button>
+            <div className="ml-3 text-sm text-gray-500 dark:text-gray-400">
+              <span className="hidden sm:inline">Tip: </span>
+              Press <kbd className="px-1.5 py-0.5 mx-1 text-xs font-semibold border border-gray-300 dark:border-gray-600 rounded bg-gray-100 dark:bg-gray-800">Esc</kbd> 
+              or <kbd className="px-1.5 py-0.5 mx-1 text-xs font-semibold border border-gray-300 dark:border-gray-600 rounded bg-gray-100 dark:bg-gray-800">←</kbd> 
+              to go back
+            </div>
           </div>
           <JobCard
             job={selectedJobForDetail}
             isApplied={isJobApplied}
             onApply={() => {
-              onApply(selectedJobForDetail.id || selectedJobForDetail.title)
+              // Generate a consistent job ID from title and company if possible
+              const title = selectedJobForDetail.title;
+              const company = selectedJobForDetail.company_name;
+              
+              // Create a consistent job ID
+              const consistentJobId = title && company ? 
+                `${title}-${company}`.replace(/\s+/g, '-') : 
+                title; // Fall back to just the title if no company
+              
+              console.log("List view - toggling job as applied:", {
+                title,
+                company,
+                consistentJobId
+              });
+              
+              // Use the consistent job ID, or fall back to id or title
+              onApply(consistentJobId || selectedJobForDetail.id || selectedJobForDetail.title)
             }}
             onDelete={() => {
               onDelete(selectedJobForDetail.originalIndex)
@@ -422,16 +602,25 @@ export default function JobCardGrid({
     }
 
     return (
-      <div>
+      <div className="animate-fade-in transition-opacity duration-300 ease-in-out">
         <ViewToggle />
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-100 dark:border-gray-700 h-[calc(100vh-250px)] min-h-[500px] flex flex-col">
-          <div className="p-3 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
-            <div className="text-sm text-gray-500 dark:text-gray-400">
-              {sortedJobs.length} job listings
+          <div className="p-3 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between bg-gray-50 dark:bg-gray-800/60">
+            <div className="text-sm text-gray-600 dark:text-gray-300 font-medium flex items-center">
+              <Filter className="w-4 h-4 mr-1.5 text-gray-500 dark:text-gray-400" />
+              <span>{sortedJobs.length} job listings</span>
             </div>
-            <div className="text-xs text-gray-400 dark:text-gray-500 flex items-center">
-              <span className="animate-pulse mr-1">•</span> 
-              Scroll to view more
+            <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2">
+              <div>
+                <ArrowUpDown className="w-3.5 h-3.5 mr-1 text-gray-400 inline-block" />
+                <span>Sorted by date</span>
+              </div>
+              <div className="hidden md:block">
+                <span>Use </span>
+                <kbd className="px-1.5 py-0.5 mx-0.5 text-xs font-semibold border border-gray-300 dark:border-gray-600 rounded bg-gray-100 dark:bg-gray-800">↑</kbd>
+                <kbd className="px-1.5 py-0.5 mx-0.5 text-xs font-semibold border border-gray-300 dark:border-gray-600 rounded bg-gray-100 dark:bg-gray-800">↓</kbd>
+                <span> to navigate</span>
+              </div>
             </div>
           </div>
           
@@ -440,14 +629,18 @@ export default function JobCardGrid({
             <div className="grid gap-3 overflow-y-auto px-3 py-2 h-full custom-scrollbar">
               {sortedJobs.map((job, index) => {
                 const preparedJob = prepareJobData(job, index);
-                const isJobApplied = appliedJobs.includes(preparedJob.id) || 
+                const isJobApplied = isJobInAppliedList(job, index) || 
+                                  appliedJobs.includes(preparedJob.id) || 
                                   appliedJobs.includes(preparedJob.title);
                 
                 return (
                   <div 
                     key={preparedJob.id || index}
+                    ref={keyboardListIndex === index ? keyboardSelectedRef : null}
                     onClick={() => handleListItemClick(job, index)}
-                    className="hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer p-4 border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg shadow-sm transition-all hover:shadow-md animate-fade-in"
+                    className={`hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer p-4 border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg shadow-sm transition-all hover:shadow-md animate-fade-in ${
+                      keyboardListIndex === index ? 'ring-2 ring-blue-500 bg-blue-50 dark:bg-blue-900/20' : ''
+                    }`}
                   >
                     <div className="flex justify-between items-start mb-2">
                       <h3 className="font-medium text-gray-900 dark:text-white text-sm line-clamp-2 mr-2">
@@ -495,8 +688,8 @@ export default function JobCardGrid({
 
           {/* Desktop table view */}
           <div className="hidden md:block h-full overflow-y-auto custom-scrollbar">
-            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 table-fixed">
-              <thead className="bg-gray-50 dark:bg-gray-900 sticky top-0 z-10 shadow-sm">
+            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+              <thead className="bg-gray-50 dark:bg-gray-800/60">
                 <tr>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-1/3">
                     Job Title
@@ -507,25 +700,30 @@ export default function JobCardGrid({
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-1/5">
                     Location
                   </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-1/8">
-                    Date Posted
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-1/5">
+                    Date
                   </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-1/8">
+                  <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Status
                   </th>
                 </tr>
               </thead>
+              
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                 {sortedJobs.map((job, index) => {
                   const preparedJob = prepareJobData(job, index);
-                  const isJobApplied = appliedJobs.includes(preparedJob.id) || 
+                  const isJobApplied = isJobInAppliedList(job, index) || 
+                                    appliedJobs.includes(preparedJob.id) || 
                                     appliedJobs.includes(preparedJob.title);
                   
                   return (
                     <tr 
                       key={preparedJob.id || index}
+                      ref={keyboardListIndex === index ? keyboardSelectedRef : null}
                       onClick={() => handleListItemClick(job, index)}
-                      className="hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors"
+                      className={`hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors ${
+                        keyboardListIndex === index ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                      }`}
                     >
                       <td className="px-6 py-4 text-sm">
                         <div className="font-medium text-gray-900 dark:text-white line-clamp-2">
@@ -579,15 +777,10 @@ export default function JobCardGrid({
   const currentJob = sortedJobs[currentIndex]
   const preparedJob = prepareJobData(currentJob, currentIndex)
   
-  // Check if the job is applied based on its title
-  const titleIndex = findColumnIndex('title')
-  const jobTitle = titleIndex !== -1 ? 
-    (Array.isArray(currentJob) ? currentJob[titleIndex] : 
-     ((currentJob as any).data ? (currentJob as any).data[titleIndex] : '')) : ''
-  
-  const isJobApplied = 
-    appliedJobs.includes(preparedJob.id) || 
-    appliedJobs.includes(jobTitle)
+  // Replace the existing isJobApplied check with our more robust function
+  const isJobApplied = isJobInAppliedList(currentJob, currentIndex) || 
+                       appliedJobs.includes(preparedJob.id) || 
+                       appliedJobs.includes(preparedJob.title);
   
   const animationClass = direction === 'left' 
     ? 'animate-slide-out-left' 
@@ -596,7 +789,7 @@ export default function JobCardGrid({
       : ''
   
   return (
-    <div className="relative">
+    <div className="relative animate-fade-in transition-opacity duration-300 ease-in-out">
       <ViewToggle />
       <div
         ref={cardRef}
@@ -610,6 +803,7 @@ export default function JobCardGrid({
           isApplied={isJobApplied}
           onApply={handleApply}
           onDelete={handleDelete}
+          onHide={() => handleHide(currentJob)}
           onUpdateNote={handleUpdateNote}
         />
       </div>
@@ -617,25 +811,40 @@ export default function JobCardGrid({
       <div className="flex justify-center mt-6 gap-3">
         <button
           onClick={goToPrevJob}
-          className="inline-flex items-center justify-center p-2 rounded-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none"
+          className="inline-flex items-center justify-center p-2 rounded-full 
+                   bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 
+                   shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 
+                   focus:outline-none focus:ring-2 focus:ring-blue-500
+                   transition-all duration-200 ease-in-out"
           aria-label="Previous job"
         >
           <ChevronLeft className="w-5 h-5 text-gray-600 dark:text-gray-400" />
         </button>
         
         <div className="flex items-center">
-          <span className="text-sm text-gray-500 dark:text-gray-400">
+          <span className="text-sm text-gray-500 dark:text-gray-400 font-medium">
             {currentIndex + 1} of {sortedJobs.length}
           </span>
         </div>
         
         <button
           onClick={goToNextJob}
-          className="inline-flex items-center justify-center p-2 rounded-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none"
+          className="inline-flex items-center justify-center p-2 rounded-full 
+                   bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 
+                   shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 
+                   focus:outline-none focus:ring-2 focus:ring-blue-500
+                   transition-all duration-200 ease-in-out"
           aria-label="Next job"
         >
           <ChevronRight className="w-5 h-5 text-gray-600 dark:text-gray-400" />
         </button>
+      </div>
+      
+      <div className="mt-4 text-center text-sm text-gray-500 dark:text-gray-400">
+        <span>Use </span>
+        <kbd className="px-1.5 py-0.5 mx-0.5 text-xs font-semibold border border-gray-300 dark:border-gray-600 rounded bg-gray-100 dark:bg-gray-800">←</kbd>
+        <kbd className="px-1.5 py-0.5 mx-0.5 text-xs font-semibold border border-gray-300 dark:border-gray-600 rounded bg-gray-100 dark:bg-gray-800">→</kbd>
+        <span> to navigate between jobs</span>
       </div>
     </div>
   )

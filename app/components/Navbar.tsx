@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Home, BarChart2, Linkedin, Menu, X, CheckCircle } from 'lucide-react'
+import { Home, BarChart2, Linkedin, Menu, X, CheckCircle, FileText } from 'lucide-react'
 import { useState } from 'react'
 
 export default function Navbar() {
@@ -49,6 +49,11 @@ export default function Navbar() {
               <Linkedin className="w-4 h-4 mr-2" />
               LinkedIn Lookup
             </NavLink>
+            
+            <NavLink href="/cover-letter" active={pathname === '/cover-letter'}>
+              <FileText className="w-4 h-4 mr-2" />
+              Cover Letters
+            </NavLink>
           </div>
           
           {/* Mobile menu button */}
@@ -88,6 +93,11 @@ export default function Navbar() {
             <MobileNavLink href="/linkedin-lookup" active={pathname === '/linkedin-lookup'}>
               <Linkedin className="w-4 h-4 mr-2" />
               LinkedIn Lookup
+            </MobileNavLink>
+            
+            <MobileNavLink href="/cover-letter" active={pathname === '/cover-letter'}>
+              <FileText className="w-4 h-4 mr-2" />
+              Cover Letters
             </MobileNavLink>
           </div>
         )}
