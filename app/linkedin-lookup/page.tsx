@@ -60,6 +60,12 @@ function LinkedInLookupContent() {
   const [geminiApiKey, setGeminiApiKey] = useState('')
   const [lookupMethod, setLookupMethod] = useState<'webhook' | 'linkedin'>('linkedin') // Default to the new LinkedIn direct method
   
+  // Add new state variables for tracking the task status
+  const [taskStatus, setTaskStatus] = useState<string | null>(null)
+  const [taskProgress, setTaskProgress] = useState<number>(0)
+  const [taskElapsedTime, setTaskElapsedTime] = useState<number>(0)
+  const [statusMessage, setStatusMessage] = useState<string>('')
+  
   useEffect(() => {
     // Load saved webhook URL from cookies, or use hardcoded URL if none exists
     const savedUrl = CookieUtil.get("linkedinWebhookUrl") || WEBHOOK_URL;
@@ -248,6 +254,12 @@ function LinkedInLookupContent() {
     setSearchResults([])
     setError(null) // Clear any previous errors
     
+    // Reset task status tracking
+    setTaskStatus('preparing')
+    setTaskProgress(0)
+    setTaskElapsedTime(0)
+    setStatusMessage('Preparing search...')
+    
     try {
       console.log(`Starting search for company: ${companyToSearch} using method: ${lookupMethod}`);
       
@@ -255,10 +267,54 @@ function LinkedInLookupContent() {
       let responseData;
       
       if (lookupMethod === 'linkedin') {
-        // Use the new direct LinkedIn lookup method
-        // Pass the API key to the lookupLinkedInHR function
-        responseData = await lookupLinkedInHR(companyToSearch, geminiApiKey);
-        console.log('LinkedIn search completed, response data:', responseData);
+        try {
+          // Define the status update callback
+          const statusUpdateCallback = (update: { 
+            status: string; 
+            progress: number; 
+            elapsedTime: number; 
+            message?: string;
+          }) => {
+            console.log('Status update:', update);
+            setTaskStatus(update.status);
+            setTaskProgress(update.progress);
+            setTaskElapsedTime(update.elapsedTime);
+            if (update.message) {
+              setStatusMessage(update.message);
+            }
+          };
+          
+          // Use the new direct LinkedIn lookup method with polling and status updates
+          responseData = await lookupLinkedInHR(
+            companyToSearch, 
+            geminiApiKey,
+            180000, // 3 minutes timeout
+            statusUpdateCallback
+          );
+          console.log('LinkedIn search completed, response data:', responseData);
+        } catch (lookupError: any) {
+          console.error('LinkedIn lookup error:', lookupError);
+          
+          // Check if this is a timeout or network error
+          if (lookupError.message && (
+              lookupError.message.includes('timeout') || 
+              lookupError.message.includes('Gateway Timeout') ||
+              lookupError.message.includes('network') ||
+              lookupError.message.includes('failed to fetch')
+          )) {
+            // This is likely a timeout issue on Vercel - show a more helpful message
+            throw new Error(
+              'The search is taking longer than expected. This might be due to server timeout limits. ' +
+              'The search may still be running in the background. You can try refreshing the page in a few minutes to see results.'
+            );
+          }
+          
+          // For other errors, just rethrow
+          throw lookupError;
+        } finally {
+          // Reset task status on completion or error
+          setTaskStatus('done');
+        }
       } else {
         // Use the traditional webhook method
         responseData = await lookupHRContacts(companyToSearch, 60000, savedWebhook);
@@ -522,21 +578,68 @@ function LinkedInLookupContent() {
               <h2 className="text-xl font-bold text-gray-900 dark:text-white">LinkedIn HR Contacts</h2>
             </div>
             
-            {!savedWebhook ? (
+            {/* Display based on search state */}
+            {!savedWebhook && lookupMethod === 'webhook' ? (
               <div className="bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-400 text-yellow-700 dark:text-yellow-300 px-4 py-3 rounded-md">
                 <p className="font-medium">Webhook not configured</p>
                 <p className="mt-2 text-sm">Please enter and save your n8n webhook URL to enable LinkedIn lookups.</p>
+              </div>
+            ) : lookupMethod === 'linkedin' && !geminiApiKey && !process.env.NEXT_PUBLIC_GEMINI_API_KEY ? (
+              <div className="bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-400 text-yellow-700 dark:text-yellow-300 px-4 py-3 rounded-md">
+                <p className="font-medium">Gemini API Key not configured</p>
+                <p className="mt-2 text-sm">Please enter and save your Google Gemini API key to enable LinkedIn lookups.</p>
               </div>
             ) : isSearching ? (
               <div className="flex flex-col items-center justify-center py-12">
                 <Loader2 className="w-12 h-12 animate-spin text-blue-600 mb-4" />
                 <p className="text-gray-700 dark:text-gray-300">Searching for HR contacts at {selectedCompany}...</p>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">This may take a few moments</p>
+                
+                {/* Show current task status */}
+                <p className="text-sm text-blue-600 dark:text-blue-400 mt-2">
+                  {statusMessage || 'Initializing search...'}
+                </p>
+                
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                  {taskElapsedTime > 0 ? `${taskElapsedTime} seconds elapsed` : 'This may take 2-3 minutes to complete'}
+                </p>
+                
+                {/* Progress bar */}
+                <div className="mt-4 w-64 bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
+                  <div 
+                    className="bg-blue-600 h-2.5 rounded-full transition-all duration-300 ease-in-out" 
+                    style={{ width: `${Math.min(taskProgress, 100)}%` }}
+                  ></div>
+                </div>
+                
+                {/* Show additional status info based on current stage */}
+                {taskStatus === 'polling' && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                    Checking if browser automation is complete...
+                  </p>
+                )}
+                
+                {taskStatus === 'processing' && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                    Browser automation complete! Processing data with AI...
+                  </p>
+                )}
               </div>
             ) : error ? (
               <div className="bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-300 px-4 py-3 rounded-md">
                 <p className="font-medium">Lookup unsuccessful</p>
-                <p className="mt-2 text-sm">We couldn't find HR contacts for {selectedCompany}. Please try another company or try again later.</p>
+                <p className="mt-2 text-sm">{error}</p>
+                {error.includes('timeout') && (
+                  <div className="mt-4">
+                    <p className="font-medium">What happened?</p>
+                    <p className="text-sm mt-1">
+                      The search is still running, but our server timed out waiting for a response.
+                      This happens because free Vercel hosting has a 10-second timeout limit.
+                    </p>
+                    <p className="text-sm mt-1">
+                      Your search might complete in the background. You can try again in a few minutes.
+                    </p>
+                  </div>
+                )}
               </div>
             ) : searchResults.length > 0 ? (
               <div className="space-y-4">
@@ -638,7 +741,7 @@ function LinkedInLookupContent() {
                 <Search className="w-12 h-12 text-gray-400 dark:text-gray-600 mb-4" />
                 <p className="text-gray-700 dark:text-gray-300">Select a company and click "Find HR Contacts"</p>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-                  This will use n8n and browser automation to find HR contacts on LinkedIn
+                  This will use browser automation to find HR contacts on LinkedIn
                 </p>
               </div>
             )}

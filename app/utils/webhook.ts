@@ -47,6 +47,82 @@ const timeoutPromise = (ms: number) => {
 };
 
 /**
+ * Creates a promise that resolves after a specified delay
+ * @param ms Delay in milliseconds
+ * @returns A promise that resolves after the delay
+ */
+const delay = (ms: number): Promise<void> => {
+  return new Promise(resolve => setTimeout(resolve, ms));
+};
+
+/**
+ * Interface for LinkedIn task status updates
+ */
+interface TaskStatusUpdate {
+  status: string;
+  progress: number;
+  elapsedTime: number;
+  message?: string;
+}
+
+/**
+ * Interface for task status update callback
+ */
+type TaskStatusCallback = (update: TaskStatusUpdate) => void;
+
+/**
+ * Polls a function until it returns a truthy value or times out
+ * @param fn The function to poll
+ * @param interval Polling interval in milliseconds
+ * @param timeout Timeout in milliseconds
+ * @param onUpdate Optional callback for status updates
+ * @returns The result of the function when it returns a truthy value
+ */
+const poll = async <T>(
+  fn: () => Promise<T | null>, 
+  interval: number = 2000, 
+  timeout: number = 120000,
+  onUpdate?: TaskStatusCallback
+): Promise<T> => {
+  const startTime = Date.now();
+  
+  while (Date.now() - startTime < timeout) {
+    // Calculate progress as percentage of time elapsed
+    const elapsedMs = Date.now() - startTime;
+    const progress = Math.min(Math.round((elapsedMs / timeout) * 100), 99);
+    const elapsedSeconds = Math.round(elapsedMs / 1000);
+    
+    // Call the update callback if provided
+    if (onUpdate) {
+      onUpdate({
+        status: 'polling',
+        progress,
+        elapsedTime: elapsedSeconds,
+        message: `Checking task status (${elapsedSeconds}s elapsed)`
+      });
+    }
+    
+    const result = await fn();
+    if (result) {
+      // Final update with 100% progress
+      if (onUpdate) {
+        onUpdate({
+          status: 'complete',
+          progress: 100,
+          elapsedTime: Math.round((Date.now() - startTime) / 1000),
+          message: 'Task completed successfully'
+        });
+      }
+      return result;
+    }
+    
+    await delay(interval);
+  }
+  
+  throw new Error(`Polling timed out after ${timeout}ms`);
+};
+
+/**
  * Sends data to the webhook with a timeout
  * @param type The type of data being sent
  * @param data The data to send
@@ -166,51 +242,131 @@ interface LinkedInContactData {
 
 /**
  * Looks up HR contacts for a company using LinkedIn via CORS bypass and Gemini processing
+ * Uses polling to handle long-running browser automation tasks
  * @param company The company name to look up
  * @param apiKey Optional Gemini API key (will fall back to environment variable if not provided)
  * @param timeout Optional timeout in milliseconds (defaults to 3 minutes)
+ * @param onStatusUpdate Optional callback for task status updates
  * @returns Promise that resolves with the HR contacts
  */
 export const lookupLinkedInHR = async (
   company: string, 
   apiKey?: string, 
-  timeout = LINKEDIN_LOOKUP_TIMEOUT
+  timeout = LINKEDIN_LOOKUP_TIMEOUT,
+  onStatusUpdate?: TaskStatusCallback
 ): Promise<LinkedInContactData[]> => {
   try {
     console.log(`Looking up LinkedIn HR contacts for company: ${company}`);
     
-    // Step 1: Call our LinkedIn API route to handle the CORS-bypassed scraping
-    console.log('Calling LinkedIn API route for scraping');
-    const linkedinPromise = fetch('/api/linkedin', {
+    // Notify of task starting
+    if (onStatusUpdate) {
+      onStatusUpdate({
+        status: 'starting',
+        progress: 0,
+        elapsedTime: 0,
+        message: 'Starting LinkedIn browser automation'
+      });
+    }
+    
+    // Step 1: Start the LinkedIn task via the API route
+    console.log('Starting LinkedIn lookup task via API');
+    const startTaskResponse = await fetch('/api/linkedin', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ 
         company,
-        apiKey // Pass the API key to the LinkedIn API route
+        apiKey
       })
     });
     
-    // Race the fetch against a timeout
-    const linkedinResponse = await Promise.race([
-      linkedinPromise,
-      timeoutPromise(timeout)
-    ]) as Response;
-    
-    if (!linkedinResponse.ok) {
-      throw new Error(`LinkedIn lookup failed: ${linkedinResponse.statusText}`);
+    if (!startTaskResponse.ok) {
+      throw new Error(`LinkedIn lookup failed to start: ${startTaskResponse.statusText}`);
     }
     
-    // Get the raw result from the LinkedIn API
-    const rawResult = await linkedinResponse.json();
-    console.log('Raw LinkedIn search result received');
+    // Get the task information including the task ID
+    const taskInfo = await startTaskResponse.json();
+    console.log('LinkedIn task started:', taskInfo);
     
-    if (!rawResult || rawResult.status !== 'completed') {
-      throw new Error('LinkedIn search did not complete successfully');
+    if (!taskInfo.task_id) {
+      throw new Error('Task ID not found in response');
     }
     
-    // Step 2: Process the raw result with Gemini through our API route
+    const taskId = taskInfo.task_id;
+    
+    // Notify that task has been created
+    if (onStatusUpdate) {
+      onStatusUpdate({
+        status: 'created',
+        progress: 5,
+        elapsedTime: 0,
+        message: 'Browser automation task created'
+      });
+    }
+    
+    // Step 2: Poll for task completion
+    console.log(`Polling for task ${taskId} completion...`);
+    
+    // Define the polling function
+    const pollTaskStatus = async () => {
+      const statusResponse = await fetch(`/api/linkedin?taskId=${taskId}`);
+      
+      if (!statusResponse.ok) {
+        console.error(`Error checking task status: ${statusResponse.statusText}`);
+        return null;
+      }
+      
+      const statusData = await statusResponse.json();
+      console.log(`Task ${taskId} status: ${statusData.status}, elapsed: ${statusData.elapsed_seconds}s`);
+      
+      // Update the progress based on elapsed time if task is still running
+      if (statusData.status === 'running' && onStatusUpdate && statusData.elapsed_seconds) {
+        // Calculate a progress value that slowly increases over time
+        // Start at 10% when task begins, max out at 90% after 2.5 minutes
+        const progressPercent = Math.min(
+          10 + Math.round((statusData.elapsed_seconds / 150) * 80),  // 150 seconds (2.5 min) to reach ~90%
+          90
+        );
+        
+        onStatusUpdate({
+          status: 'running',
+          progress: progressPercent,
+          elapsedTime: statusData.elapsed_seconds,
+          message: `Browser automation in progress (${statusData.elapsed_seconds}s elapsed)`
+        });
+      }
+      
+      // Only return when the task is completed
+      if (statusData.status === 'completed') {
+        return statusData;
+      } else if (statusData.status === 'failed') {
+        throw new Error(`Task failed: ${statusData.error || 'Unknown error'}`);
+      }
+      
+      // Still running, return null to continue polling
+      return null;
+    };
+    
+    // Start polling with a reasonable interval (every 3 seconds)
+    const completedTask = await poll(pollTaskStatus, 3000, timeout, onStatusUpdate);
+    console.log('Task completed, result received:', completedTask.result ? 'yes' : 'no');
+    
+    if (!completedTask.result) {
+      throw new Error('Task completed but no result was returned');
+    }
+    
+    // Notify that we're starting Gemini processing
+    if (onStatusUpdate) {
+      onStatusUpdate({
+        status: 'processing',
+        progress: 95,
+        elapsedTime: Math.round((Date.now() - new Date(completedTask.start_time).getTime()) / 1000),
+        message: 'Processing results with Gemini AI'
+      });
+    }
+    
+    // Step 3: Process the result with Gemini through our API route
     console.log('Calling Gemini API route for processing');
     
     // Use the provided API key or fall back to the environment variable
@@ -222,7 +378,7 @@ export const lookupLinkedInHR = async (
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        rawData: rawResult,
+        rawData: completedTask.result,
         company,
         apiKey: geminiApiKey
       })
@@ -230,6 +386,16 @@ export const lookupLinkedInHR = async (
     
     // Parse the response from the Gemini API
     const processedResult = await geminiResponse.json();
+    
+    // Final status update
+    if (onStatusUpdate) {
+      onStatusUpdate({
+        status: 'complete',
+        progress: 100,
+        elapsedTime: Math.round((Date.now() - new Date(completedTask.start_time).getTime()) / 1000),
+        message: 'LinkedIn search complete'
+      });
+    }
     
     // Check if there's an error in the response
     if (!geminiResponse.ok || processedResult.error) {
@@ -247,7 +413,7 @@ export const lookupLinkedInHR = async (
     
     console.log('Processed data received from Gemini:', processedResult);
     
-    // Step 3: Validate the processed data before returning
+    // Step 4: Validate the processed data before returning
     // Ensure we have the minimum required fields
     if (!processedResult.name || processedResult.name === 'Error parsing response') {
       throw new Error('Failed to extract valid contact information');
@@ -266,9 +432,19 @@ export const lookupLinkedInHR = async (
       location: processedResult.location || 'n/a'
     };
     
-    // Step 4: Return the processed result as an array for consistency with the existing API
+    // Step 5: Return the processed result as an array for consistency with the existing API
     return [contactData];
   } catch (error) {
+    // Final error status update
+    if (onStatusUpdate) {
+      onStatusUpdate({
+        status: 'error',
+        progress: 0,
+        elapsedTime: 0,
+        message: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+    
     console.error('Error in LinkedIn HR lookup:', error);
     throw error;
   }

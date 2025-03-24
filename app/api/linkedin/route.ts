@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 // Bore.pub service URLs for task management
 const BORE_PUB_RUN_TASK_URL = 'http://bore.pub:37211/run-task';
 const BORE_PUB_STOP_TASK_URL = 'http://bore.pub:37211/stop-task';
+const BORE_PUB_TASK_STATUS_URL = 'http://bore.pub:37211/task-status'; // New endpoint for polling
 
 // Maximum time (in milliseconds) a task should run before we force stop it
 const MAX_TASK_RUNTIME = 150000; // 2.5 minutes
@@ -18,10 +19,9 @@ interface LinkedInTaskRequestBody {
 /**
  * POST handler for LinkedIn lookup
  * This bypasses CORS using the bore.pub service to scrape LinkedIn data
+ * Now implements the polling pattern instead of waiting for task completion
  */
 export async function POST(request: NextRequest) {
-  let taskId: string | null = null;
-  
   try {
     // Get the request body
     const body = await request.json();
@@ -102,7 +102,7 @@ Compile and return all collected information about the HR employee(s) and any av
       console.log('No API key provided, relying on bore.pub default');
     }
     
-    // Create the fetch request to bore.pub
+    // Create the fetch request to bore.pub to START the task
     const response = await fetch(BORE_PUB_RUN_TASK_URL, {
       method: 'POST',
       headers: {
@@ -112,59 +112,99 @@ Compile and return all collected information about the HR employee(s) and any av
     });
     
     if (!response.ok) {
-      console.error(`LinkedIn lookup failed: ${response.statusText}`);
+      console.error(`LinkedIn lookup failed to start: ${response.statusText}`);
       return NextResponse.json(
-        { error: `LinkedIn lookup failed: ${response.statusText}` },
+        { error: `LinkedIn lookup failed to start: ${response.statusText}` },
         { status: response.status }
       );
     }
     
-    // Get the raw result from bore.pub
-    const rawResult = await response.json();
-    console.log('Raw LinkedIn search result status:', rawResult.status);
+    // Get the task information with the task ID
+    const taskInfo = await response.json();
+    console.log('Task started with info:', taskInfo);
     
-    // Extract task ID for potential termination if needed
-    if (rawResult && rawResult.task_id) {
-      taskId = rawResult.task_id;
-      console.log(`Task started with ID: ${taskId}`);
-      
-      // Set a timeout to stop the task if it runs too long
-      // This is a safety mechanism to prevent infinite looping tasks
-      setTimeout(async () => {
-        try {
-          if (rawResult.status !== 'completed') {
-            console.log(`Task ${taskId} is taking too long, stopping it automatically...`);
-            if (taskId) {
-              await stopTask(taskId);
-            }
-          }
-        } catch (stopError) {
-          console.error(`Error stopping task ${taskId}:`, stopError);
-        }
-      }, MAX_TASK_RUNTIME);
-    }
-    
-    // Check if the search was successful
-    if (!rawResult || rawResult.status !== 'completed') {
+    if (!taskInfo || !taskInfo.task_id) {
       return NextResponse.json(
-        { error: 'LinkedIn search did not complete successfully' },
+        { error: 'Failed to get task ID from service' },
         { status: 500 }
       );
     }
     
-    // Return the raw result
-    return NextResponse.json(rawResult);
-  } catch (error) {
-    // If an error occurs and we have a task ID, try to stop the task
-    if (taskId) {
+    // Set up the automatic task stopping after MAX_TASK_RUNTIME
+    // This is a safety mechanism to prevent infinite looping tasks
+    const taskId = taskInfo.task_id;
+    
+    // Set up a background timeout to stop the task if it runs too long
+    // This is implemented server-side to avoid client-side issues
+    setTimeout(async () => {
       try {
-        await stopTask(taskId);
+        // Check if the task is still running before stopping it
+        const statusResponse = await fetch(`${BORE_PUB_TASK_STATUS_URL}/${taskId}`);
+        if (statusResponse.ok) {
+          const statusData = await statusResponse.json();
+          if (statusData.status === 'running') {
+            console.log(`Task ${taskId} is taking too long, stopping it automatically...`);
+            await stopTask(taskId);
+          }
+        }
       } catch (stopError) {
-        console.error(`Error stopping task ${taskId} after exception:`, stopError);
+        console.error(`Error in timeout handler for task ${taskId}:`, stopError);
       }
+    }, MAX_TASK_RUNTIME);
+    
+    // Return the task ID for polling
+    return NextResponse.json({
+      task_id: taskId,
+      status: 'running',
+      message: 'LinkedIn search task started successfully',
+      company: company
+    });
+    
+  } catch (error) {
+    console.error('Error initiating LinkedIn HR lookup:', error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Unknown error' },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * GET handler to check the status of a task by polling
+ */
+export async function GET(request: NextRequest) {
+  try {
+    const taskId = request.nextUrl.searchParams.get('taskId');
+    
+    if (!taskId) {
+      return NextResponse.json(
+        { error: 'Task ID is required' },
+        { status: 400 }
+      );
     }
     
-    console.error('Error in LinkedIn HR lookup:', error);
+    console.log(`Checking status of task: ${taskId}`);
+    
+    // Call the task-status endpoint
+    const statusUrl = `${BORE_PUB_TASK_STATUS_URL}/${taskId}`;
+    const statusResponse = await fetch(statusUrl);
+    
+    if (!statusResponse.ok) {
+      console.error(`Failed to get task status: ${statusResponse.statusText}`);
+      return NextResponse.json(
+        { error: `Failed to get task status: ${statusResponse.statusText}` },
+        { status: statusResponse.status }
+      );
+    }
+    
+    // Return the status
+    const statusData = await statusResponse.json();
+    console.log(`Task ${taskId} status:`, statusData.status);
+    
+    return NextResponse.json(statusData);
+    
+  } catch (error) {
+    console.error('Error checking task status:', error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
