@@ -66,6 +66,8 @@ export default function JobCardGrid({
   const cardRef = useRef<HTMLDivElement>(null)
   const [internalViewMode, setInternalViewMode] = useState<'card' | 'list'>('card')
   const [selectedJobForDetail, setSelectedJobForDetail] = useState<PreparedJob | null>(null)
+  const [keyboardListIndex, setKeyboardListIndex] = useState<number>(-1)
+  const keyboardSelectedRef = useRef<HTMLDivElement | HTMLTableRowElement | null>(null)
   
   // Determine which view mode to use (external or internal)
   const viewMode = externalViewMode !== undefined ? externalViewMode : internalViewMode;
@@ -437,6 +439,63 @@ export default function JobCardGrid({
     }
   };
   
+  // Add keyboard navigation event listeners
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (sortedJobs.length === 0) return;
+      
+      // Handle arrow keys for card view
+      if (viewMode === 'card') {
+        if (e.key === 'ArrowRight') {
+          goToNextJob();
+        } else if (e.key === 'ArrowLeft') {
+          goToPrevJob();
+        }
+      } 
+      // Handle arrow keys for list view
+      else if (viewMode === 'list') {
+        if (selectedJobForDetail) {
+          // If in detail view, allow Escape or left arrow to go back to list
+          if (e.key === 'Escape' || e.key === 'ArrowLeft') {
+            handleBackToList();
+          }
+        } else {
+          // Up and down navigation in list view
+          if (e.key === 'ArrowDown') {
+            e.preventDefault(); // Prevent page scrolling
+            setKeyboardListIndex(prev => {
+              const newIndex = prev < sortedJobs.length - 1 ? prev + 1 : prev;
+              // If first selection, start from the beginning
+              if (prev === -1) return 0;
+              return newIndex;
+            });
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault(); // Prevent page scrolling
+            setKeyboardListIndex(prev => prev > 0 ? prev - 1 : prev);
+          } else if (e.key === 'Enter' && keyboardListIndex >= 0) {
+            // Select the currently highlighted job on Enter
+            handleListItemClick(sortedJobs[keyboardListIndex], keyboardListIndex);
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [viewMode, sortedJobs.length, selectedJobForDetail, keyboardListIndex]);
+
+  // Scroll the selected item into view when using keyboard navigation
+  useEffect(() => {
+    if (keyboardListIndex >= 0 && keyboardSelectedRef.current) {
+      keyboardSelectedRef.current.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest'
+      });
+    }
+  }, [keyboardListIndex]);
+
   if (sortedJobs.length === 0) {
     return <div className="text-center py-8 text-gray-500">No job listings found</div>
   }
@@ -498,6 +557,12 @@ export default function JobCardGrid({
               <ChevronLeft className="w-4 h-4 mr-1" />
               Back to List
             </button>
+            <div className="ml-3 text-sm text-gray-500 dark:text-gray-400">
+              <span className="hidden sm:inline">Tip: </span>
+              Press <kbd className="px-1.5 py-0.5 mx-1 text-xs font-semibold border border-gray-300 dark:border-gray-600 rounded bg-gray-100 dark:bg-gray-800">Esc</kbd> 
+              or <kbd className="px-1.5 py-0.5 mx-1 text-xs font-semibold border border-gray-300 dark:border-gray-600 rounded bg-gray-100 dark:bg-gray-800">←</kbd> 
+              to go back
+            </div>
           </div>
           <JobCard
             job={selectedJobForDetail}
@@ -545,9 +610,17 @@ export default function JobCardGrid({
               <Filter className="w-4 h-4 mr-1.5 text-gray-500 dark:text-gray-400" />
               <span>{sortedJobs.length} job listings</span>
             </div>
-            <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center">
-              <ArrowUpDown className="w-3.5 h-3.5 mr-1 text-gray-400" />
-              <span>Sorted by date</span>
+            <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2">
+              <div>
+                <ArrowUpDown className="w-3.5 h-3.5 mr-1 text-gray-400 inline-block" />
+                <span>Sorted by date</span>
+              </div>
+              <div className="hidden md:block">
+                <span>Use </span>
+                <kbd className="px-1.5 py-0.5 mx-0.5 text-xs font-semibold border border-gray-300 dark:border-gray-600 rounded bg-gray-100 dark:bg-gray-800">↑</kbd>
+                <kbd className="px-1.5 py-0.5 mx-0.5 text-xs font-semibold border border-gray-300 dark:border-gray-600 rounded bg-gray-100 dark:bg-gray-800">↓</kbd>
+                <span> to navigate</span>
+              </div>
             </div>
           </div>
           
@@ -563,8 +636,11 @@ export default function JobCardGrid({
                 return (
                   <div 
                     key={preparedJob.id || index}
+                    ref={keyboardListIndex === index ? keyboardSelectedRef : null}
                     onClick={() => handleListItemClick(job, index)}
-                    className="hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer p-4 border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg shadow-sm transition-all hover:shadow-md animate-fade-in"
+                    className={`hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer p-4 border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg shadow-sm transition-all hover:shadow-md animate-fade-in ${
+                      keyboardListIndex === index ? 'ring-2 ring-blue-500 bg-blue-50 dark:bg-blue-900/20' : ''
+                    }`}
                   >
                     <div className="flex justify-between items-start mb-2">
                       <h3 className="font-medium text-gray-900 dark:text-white text-sm line-clamp-2 mr-2">
@@ -612,8 +688,8 @@ export default function JobCardGrid({
 
           {/* Desktop table view */}
           <div className="hidden md:block h-full overflow-y-auto custom-scrollbar">
-            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700 table-fixed">
-              <thead className="bg-gray-50 dark:bg-gray-900 sticky top-0 z-10 shadow-sm">
+            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+              <thead className="bg-gray-50 dark:bg-gray-800/60">
                 <tr>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-1/3">
                     Job Title
@@ -624,14 +700,15 @@ export default function JobCardGrid({
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-1/5">
                     Location
                   </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-1/8">
-                    Date Posted
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-1/5">
+                    Date
                   </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-1/8">
+                  <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Status
                   </th>
                 </tr>
               </thead>
+              
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                 {sortedJobs.map((job, index) => {
                   const preparedJob = prepareJobData(job, index);
@@ -642,8 +719,11 @@ export default function JobCardGrid({
                   return (
                     <tr 
                       key={preparedJob.id || index}
+                      ref={keyboardListIndex === index ? keyboardSelectedRef : null}
                       onClick={() => handleListItemClick(job, index)}
-                      className="hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors"
+                      className={`hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors ${
+                        keyboardListIndex === index ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                      }`}
                     >
                       <td className="px-6 py-4 text-sm">
                         <div className="font-medium text-gray-900 dark:text-white line-clamp-2">
@@ -758,6 +838,13 @@ export default function JobCardGrid({
         >
           <ChevronRight className="w-5 h-5 text-gray-600 dark:text-gray-400" />
         </button>
+      </div>
+      
+      <div className="mt-4 text-center text-sm text-gray-500 dark:text-gray-400">
+        <span>Use </span>
+        <kbd className="px-1.5 py-0.5 mx-0.5 text-xs font-semibold border border-gray-300 dark:border-gray-600 rounded bg-gray-100 dark:bg-gray-800">←</kbd>
+        <kbd className="px-1.5 py-0.5 mx-0.5 text-xs font-semibold border border-gray-300 dark:border-gray-600 rounded bg-gray-100 dark:bg-gray-800">→</kbd>
+        <span> to navigate between jobs</span>
       </div>
     </div>
   )

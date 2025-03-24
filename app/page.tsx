@@ -161,6 +161,17 @@ export default function Home() {
     
     let filtered = [...rows];
     
+    // Helper function to get field value - consolidated to avoid duplication
+    const getFieldValue = (row: RowData | string[], fieldName: string): string => {
+      const rowData = Array.isArray(row) ? row : row.data;
+      if (!rowData) return "";
+      
+      const index = headers.findIndex(
+        (header) => header.toLowerCase() === fieldName.toLowerCase()
+      );
+      return index !== -1 ? rowData[index] || "" : "";
+    };
+    
     // Filter out applied jobs - they should only appear on the Applied page
     filtered = filtered.filter((row) => {
       const job = prepareJobData(row, 0);
@@ -182,8 +193,8 @@ export default function Home() {
             return job.title === hiddenTitle && job.company_name === hiddenCompany;
           }
           return false;
-        } catch (e) {
-          console.error('Error checking hidden job match:', e);
+        } catch (err) {
+          console.error('Error checking hidden job match:', err);
           return false;
         }
       });
@@ -192,19 +203,10 @@ export default function Home() {
     // Text search filter
     if (filterText) {
       filtered = filtered.filter((row) => {
-        const rowData = Array.isArray(row) ? row : row.data;
-        if (!rowData) return false;
+        const title = getFieldValue(row, "title").toLowerCase();
         
-        const getFieldValue = (fieldName: string) => {
-          const index = headers.findIndex(
-            (header) => header.toLowerCase() === fieldName.toLowerCase()
-          );
-          return index !== -1 ? rowData[index] || "" : "";
-        };
-        
-        const title = (getFieldValue("title") || "").toLowerCase();
-        if (title.includes(filterText.toLowerCase())) {
-          return true;
+        if (!title.includes(filterText.toLowerCase())) {
+          return false;
         }
         
         // Excluded words filter
@@ -216,28 +218,6 @@ export default function Home() {
           }
         }
         
-        // Location filter
-        if (selectedLocation) {
-          const location = (getFieldValue("location") || "").toLowerCase();
-          
-          if (selectedLocation.toLowerCase() === "remote") {
-            // Special case for remote
-            const isRemote = 
-              location.includes("remote") || 
-              location.includes("work from home") || 
-              location.includes("wfh");
-            
-            if (!isRemote) {
-              return false;
-            }
-          } else {
-            // Specific city
-            if (!location.toLowerCase().includes(selectedLocation.toLowerCase())) {
-              return false;
-            }
-          }
-        }
-        
         return true;
       });
     }
@@ -245,17 +225,7 @@ export default function Home() {
     // Location filter
     if (selectedLocation) {
       filtered = filtered.filter((row) => {
-        const rowData = Array.isArray(row) ? row : row.data;
-        if (!rowData) return false;
-        
-        const getFieldValue = (fieldName: string) => {
-          const index = headers.findIndex(
-            (header) => header.toLowerCase() === fieldName.toLowerCase()
-          );
-          return index !== -1 ? rowData[index] || "" : "";
-        };
-        
-        const location = (getFieldValue("location") || "").toLowerCase();
+        const location = getFieldValue(row, "location").toLowerCase();
         
         if (selectedLocation.toLowerCase() === "remote") {
           // Special case for remote
@@ -264,34 +234,18 @@ export default function Home() {
             location.includes("work from home") || 
             location.includes("wfh");
           
-          if (!isRemote) {
-            return false;
-          }
+          return isRemote;
         } else {
           // Specific city
-          if (!location.toLowerCase().includes(selectedLocation.toLowerCase())) {
-            return false;
-          }
+          return location.includes(selectedLocation.toLowerCase());
         }
-        
-        return true;
       });
     }
     
     // Salary filter
     if (minSalary) {
       filtered = filtered.filter((row) => {
-        const rowData = Array.isArray(row) ? row : row.data;
-        if (!rowData) return false;
-        
-        const getFieldValue = (fieldName: string) => {
-          const index = headers.findIndex(
-            (header) => header.toLowerCase() === fieldName.toLowerCase()
-          );
-          return index !== -1 ? rowData[index] || "" : "";
-        };
-        
-        const salary = getFieldValue("salary") || "";
+        const salary = getFieldValue(row, "salary");
         
         if (!salary) return false;
         
@@ -363,47 +317,20 @@ export default function Home() {
     // Skills filter
     if (skillFilter) {
       filtered = filtered.filter((row) => {
-        const rowData = Array.isArray(row) ? row : row.data;
-        if (!rowData) return false;
+        const skills = getFieldValue(row, "skills").toLowerCase();
+        const description = getFieldValue(row, "description").toLowerCase();
+        const title = getFieldValue(row, "title").toLowerCase();
         
-        const getFieldValue = (fieldName: string) => {
-          const index = headers.findIndex(
-            (header) => header.toLowerCase() === fieldName.toLowerCase()
-          );
-          return index !== -1 ? rowData[index] || "" : "";
-        };
-        
-        const skills = (getFieldValue("skills") || "").toLowerCase();
-        const description = (getFieldValue("description") || "").toLowerCase();
-        const title = (getFieldValue("title") || "").toLowerCase();
-        
-        const skillMatch = 
-          skills.includes(skillFilter.toLowerCase()) || 
-          description.includes(skillFilter.toLowerCase()) ||
-          title.includes(skillFilter.toLowerCase());
-        
-        if (!skillMatch) {
-          return false;
-        }
-        
-        return true;
+        return skills.includes(skillFilter.toLowerCase()) || 
+               description.includes(skillFilter.toLowerCase()) ||
+               title.includes(skillFilter.toLowerCase());
       });
     }
     
     // Last day filter
     if (showLastDayOnly) {
       filtered = filtered.filter((row) => {
-        const rowData = Array.isArray(row) ? row : row.data;
-        if (!rowData) return false;
-        
-        const getFieldValue = (fieldName: string) => {
-          const index = headers.findIndex(
-            (header) => header.toLowerCase() === fieldName.toLowerCase()
-          );
-          return index !== -1 ? rowData[index] || "" : "";
-        };
-        
-        const datePosted = getFieldValue("date_posted") || getFieldValue("currentdate") || getFieldValue("currentDate");
+        const datePosted = getFieldValue(row, "date_posted") || getFieldValue(row, "currentdate") || getFieldValue(row, "currentDate");
         
         if (!datePosted) return false;
         

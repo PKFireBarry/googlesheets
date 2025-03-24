@@ -1,11 +1,10 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import Image from 'next/image'
 import { 
   MapPin, 
   Building, 
-  Clock, 
   Briefcase, 
   DollarSign, 
   Trash2, 
@@ -17,7 +16,6 @@ import {
   ChevronRight,
   X,
   Linkedin,
-  Search,
   Link2,
   EyeOff
 } from 'lucide-react'
@@ -41,13 +39,13 @@ interface JobCardProps {
     skills: string;
     notes: string;
     id: string;
-    source?: string; // Added source field which may be passed from JobCardGrid
-    [key: string]: string | undefined; // Allow for additional fields
+    source?: string;
+    [key: string]: string | undefined;
   };
   isApplied: boolean;
   onApply: () => void;
   onDelete: () => void;
-  onHide?: () => void; // Add new prop for hiding jobs
+  onHide?: () => void;
   onUpdateNote: (note: string) => void;
 }
 
@@ -66,22 +64,9 @@ export default function JobCard({
   const [imageError, setImageError] = useState(false)
   const router = useRouter()
   
-  // Log job data for debugging
-  useEffect(() => {
-    console.log("Job data in JobCard:", job);
-    console.log("Job application status:", isApplied ? "Applied" : "Not Applied");
-  }, [job, isApplied]);
-  
   const truncateDescription = (text: string, maxLength = 150) => {
     if (!text || text.length <= maxLength) return text
     return text.substring(0, maxLength) + '...'
-  }
-  
-  // Helper function to clean skill text from junk characters
-  const cleanSkillText = (skill: string): string => {
-    return skill
-      .replace(/[\[\]"']/g, '') // Remove brackets and quotes
-      .trim();                   // Remove extra whitespace
   }
   
   const handleNoteSubmit = () => {
@@ -90,10 +75,8 @@ export default function JobCard({
   }
   
   const handleLinkedInLookup = () => {
-    // Store the company name in a cookie for the LinkedIn lookup page
     const companyName = job.company_name
     if (companyName) {
-      // Navigate to the LinkedIn lookup page
       router.push(`/linkedin-lookup?company=${encodeURIComponent(companyName)}`)
     }
   }
@@ -102,28 +85,22 @@ export default function JobCard({
     if (!dateString) return "Unknown";
     
     try {
-      // Try to parse the date
       const date = new Date(dateString);
       
-      // Check if the date is valid
       if (isNaN(date.getTime())) {
-        console.log('Invalid date:', dateString);
         return dateString;
       }
       
-      console.log('Parsed date object:', date);
       return date.toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'short',
         day: 'numeric'
       });
-    } catch (e) {
-      console.error('Error parsing date:', e);
+    } catch {
       return dateString;
     }
   }
   
-  // Extract source from URL if not already provided
   const getJobSource = (): string => {
     if (job.source) return job.source;
     
@@ -131,13 +108,9 @@ export default function JobCard({
     if (!url) return 'Unknown';
     
     try {
-      // Remove protocol and www. prefix
       let domain = url.replace(/^(https?:\/\/)?(www\.)?/i, '');
-      
-      // Get domain name without path
       domain = domain.split('/')[0];
       
-      // Special case handling for common job sites
       if (domain.includes('linkedin')) return 'LinkedIn';
       if (domain.includes('indeed')) return 'Indeed';
       if (domain.includes('ziprecruiter')) return 'ZipRecruiter';
@@ -147,30 +120,11 @@ export default function JobCard({
       if (domain.includes('simplyhired')) return 'SimplyHired';
       if (domain.includes('careerbuilder')) return 'CareerBuilder';
       
-      // Return just the domain part
       return domain;
-    } catch (error) {
-      console.error('Error extracting source:', error);
+    } catch {
       return 'Unknown';
     }
   }
-  
-  // Debug logs to see what date values we're getting
-  useEffect(() => {
-    if (job) {
-      console.log('Job date fields:', {
-        date_posted: job.date_posted,
-        currentDate: job.currentDate,
-        currentdate: job.currentdate
-      });
-    }
-  }, [job]);
-  
-  // Handle apply button click with debug log
-  const handleApply = () => {
-    console.log(`${isApplied ? "Removing" : "Adding"} job from applied list:`, job.title);
-    onApply();
-  };
   
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-100 dark:border-gray-700 transition-all hover:shadow-xl">
@@ -209,7 +163,7 @@ export default function JobCard({
           <div className="flex flex-wrap gap-2 mt-2 sm:mt-0">
             {isApplied ? (
               <button
-                onClick={handleApply}
+                onClick={onApply}
                 className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-800 dark:hover:text-red-400 transition-colors group"
               >
                 <CheckCircle className="w-3.5 h-3.5 mr-1 group-hover:hidden" />
@@ -219,7 +173,7 @@ export default function JobCard({
               </button>
             ) : (
               <button 
-                onClick={handleApply}
+                onClick={onApply}
                 className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors"
               >
                 <CheckCircle className="w-3.5 h-3.5 mr-1" />
