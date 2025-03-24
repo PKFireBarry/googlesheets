@@ -108,7 +108,7 @@ export default function Home() {
         fetchData(id);
       }
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);  
 
   // Extract unique locations from job data
   useEffect(() => {
@@ -440,6 +440,7 @@ export default function Home() {
     }));
     
     setFilteredRows(filteredWithIndices);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, filterText, selectedLocation, skillFilter, showLastDayOnly, minSalary, salaryType, excludedWords, appliedJobs, hiddenJobs]);
 
   const handleUrlSubmit = (url: string) => {
@@ -1327,7 +1328,7 @@ export default function Home() {
                           onChange={(e) => setShowLastDayOnly(e.target.checked)}
                           className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                         />
-                        <label htmlFor="last-day-filter" className="ml-1.5 sm:ml-2 block text-xs sm:text-sm text-gray-700 dark:text-gray-300 flex items-center">
+                        <label htmlFor="last-day-filter" className="ml-1.5 sm:ml-2 block text-xs sm:text-sm text-gray-700 dark:text-gray-300 items-center">
                           <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1 text-gray-500" />
                           Last 24 Hours Only
                         </label>

@@ -105,6 +105,7 @@ function LinkedInLookupContent() {
       handleSearch();
       setAutoSearchDone(true); // Mark auto-search as done
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyParam, isSearching, autoSearchDone, searchParams]);
   
   const fetchCompanies = async (spreadsheetId: string) => {
@@ -145,11 +146,10 @@ function LinkedInLookupContent() {
       // Extract unique company names
       const uniqueCompanies = Array.from(new Set(
         rows
-          .map((row: any) => row[companyIndex])
+          .map((row: string[]) => row[companyIndex])
           .filter(Boolean)
           .sort()
       ))
-      
       setCompanies(uniqueCompanies as string[])
       
     } catch (error: any) {
@@ -508,6 +508,7 @@ function LinkedInLookupContent() {
                     <div className="flex justify-between items-start">
                       <div className="flex items-start">
                         {contact.profileImage && (
+                          // eslint-disable-next-line @next/next/no-img-element
                           <img 
                             src={contact.profileImage} 
                             alt={`${contact.name} profile`}

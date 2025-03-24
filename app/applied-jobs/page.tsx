@@ -169,6 +169,7 @@ export default function AppliedJobsPage() {
     // Unlike the main page, we don't apply any filters here
     // We want to show ALL applied jobs regardless of other criteria
     setFilteredRows(appliedJobRows);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, appliedJobs]);
 
   const fetchData = async (id: string) => {
