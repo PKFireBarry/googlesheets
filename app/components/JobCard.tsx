@@ -69,7 +69,8 @@ export default function JobCard({
   // Log job data for debugging
   useEffect(() => {
     console.log("Job data in JobCard:", job);
-  }, [job]);
+    console.log("Job application status:", isApplied ? "Applied" : "Not Applied");
+  }, [job, isApplied]);
   
   const truncateDescription = (text: string, maxLength = 150) => {
     if (!text || text.length <= maxLength) return text
@@ -97,8 +98,7 @@ export default function JobCard({
     }
   }
   
-  const formatDate = (dateString: string) => {
-    console.log('Formatting date string:', dateString);
+  const formatDate = (dateString: string | undefined) => {
     if (!dateString) return "Unknown";
     
     try {
@@ -166,6 +166,12 @@ export default function JobCard({
     }
   }, [job]);
   
+  // Handle apply button click with debug log
+  const handleApply = () => {
+    console.log(`${isApplied ? "Removing" : "Adding"} job from applied list:`, job.title);
+    onApply();
+  };
+  
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-100 dark:border-gray-700 transition-all hover:shadow-xl">
       {/* Status indicator */}
@@ -203,15 +209,17 @@ export default function JobCard({
           <div className="flex flex-wrap gap-2 mt-2 sm:mt-0">
             {isApplied ? (
               <button
-                onClick={onApply}
-                className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors"
+                onClick={handleApply}
+                className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-800 dark:hover:text-red-400 transition-colors group"
               >
-                <CheckCircle className="w-3.5 h-3.5 mr-1" />
-                Applied
+                <CheckCircle className="w-3.5 h-3.5 mr-1 group-hover:hidden" />
+                <X className="w-3.5 h-3.5 mr-1 hidden group-hover:block" />
+                <span className="group-hover:hidden">Applied</span>
+                <span className="hidden group-hover:block">Remove</span>
               </button>
             ) : (
               <button 
-                onClick={onApply}
+                onClick={handleApply}
                 className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors"
               >
                 <CheckCircle className="w-3.5 h-3.5 mr-1" />

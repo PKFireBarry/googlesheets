@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Cookies from "js-cookie";
 import SheetUrlForm from "./components/SheetUrlForm";
 import JobCardGrid from "./components/JobCardGrid";
-import { FileSpreadsheet, Users, CheckCircle, AlertCircle, Search, X, Sliders, Calendar, MapPin, DollarSign, Ban, List, Grid } from "lucide-react";
+import { FileSpreadsheet, Users, CheckCircle, AlertCircle, Search, X, Sliders, Calendar, MapPin, DollarSign, Ban, List, Grid, XCircle } from "lucide-react";
 import ClientSkillsFilter from "./components/ClientSkillsFilter";
 
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY;
@@ -53,6 +53,10 @@ export default function Home() {
   const [totalSheetRows, setTotalSheetRows] = useState<number>(0);
   const [sheetAutoLoaded, setSheetAutoLoaded] = useState(false);
   const [sheetsLoaded, setSheetsLoaded] = useState(false);
+  
+  // Toast notification state
+  const [showSuccessToast, setShowSuccessToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
   
   // Filtering state
   const [filterText, setFilterText] = useState("");
@@ -585,7 +589,10 @@ export default function Home() {
 
   const handleToggleApplied = (jobId: string) => {
     console.log("Toggle applied for job ID:", jobId);
-
+    
+    // Find job title to include in notification
+    let jobTitle = "";
+    
     // If we have the row index, use it to find the job data
     const jobIndex = rowIndices.findIndex(index => index.toString() === jobId)
     if (jobIndex !== -1) {
@@ -599,6 +606,7 @@ export default function Home() {
         
         if (titleIndex !== -1 && companyIndex !== -1) {
           const title = rowData[titleIndex]
+          jobTitle = title; // Store for notification
           const company = rowData[companyIndex]
           
           // Create a consistent job ID from title and company
@@ -618,11 +626,19 @@ export default function Home() {
           // If it wasn't applied, add it with the consistent ID format
           if (!isCurrentlyApplied) {
             newAppliedJobs.push(consistentJobId)
+            setToastMessage(`"${title}" marked as applied`);
+          } else {
+            setToastMessage(`"${title}" removed from applied jobs`);
           }
           
           console.log("New applied jobs list:", newAppliedJobs);
           setAppliedJobs(newAppliedJobs);
           Cookies.set("appliedJobs", JSON.stringify(newAppliedJobs), { expires: 30 });
+          
+          // Show toast notification
+          setShowSuccessToast(true);
+          setTimeout(() => setShowSuccessToast(false), 3000);
+          
           return;
         }
       }
@@ -635,25 +651,25 @@ export default function Home() {
       
       if (titleIndex === -1 || companyIndex === -1) return false;
       
-      let jobTitle, jobCompany;
+      let jobTitleFromFilteredData = "";
       
       if (job && (job as any).data) {
-        jobTitle = (job as any).data[titleIndex];
-        jobCompany = (job as any).data[companyIndex];
+        jobTitleFromFilteredData = (job as any).data[titleIndex];
+        const company = (job as any).data[companyIndex];
         
         // Check if this matches the provided jobId
-        if (jobId === jobTitle || 
-            jobId === `${jobTitle}-${jobCompany}`.replace(/\s+/g, '-') ||
-            jobId.startsWith(`${jobTitle}-${jobCompany}`)) {
+        if (jobId === jobTitleFromFilteredData || 
+            jobId === `${jobTitleFromFilteredData}-${company}`.replace(/\s+/g, '-') ||
+            jobId.startsWith(`${jobTitleFromFilteredData}-${company}`)) {
           
           // Create a consistent job ID
-          const consistentJobId = `${jobTitle}-${jobCompany}`.replace(/\s+/g, '-');
+          const consistentJobId = `${jobTitleFromFilteredData}-${company}`.replace(/\s+/g, '-');
           
           // Remove any variations of this job from applied jobs
           let newAppliedJobs = appliedJobs.filter(id => 
             id !== consistentJobId && 
-            id !== jobTitle && 
-            !id.startsWith(`${jobTitle}-${jobCompany}`));
+            id !== jobTitleFromFilteredData && 
+            !id.startsWith(`${jobTitleFromFilteredData}-${company}`));
           
           // If it wasn't in the list (after filtering), add it with the consistent format
           if (newAppliedJobs.length === appliedJobs.length) {
@@ -663,6 +679,19 @@ export default function Home() {
           console.log("New applied jobs list (from filtered data):", newAppliedJobs);
           setAppliedJobs(newAppliedJobs);
           Cookies.set("appliedJobs", JSON.stringify(newAppliedJobs), { expires: 30 });
+          
+          // If we toggled the status, show notification
+          if (newAppliedJobs.length !== appliedJobs.length) {
+            const isApplying = newAppliedJobs.length > appliedJobs.length;
+            setToastMessage(isApplying ? 
+              `"${jobTitleFromFilteredData}" marked as applied` : 
+              `"${jobTitleFromFilteredData}" removed from applied jobs`);
+            
+            // Show toast notification
+            setShowSuccessToast(true);
+            setTimeout(() => setShowSuccessToast(false), 3000);
+          }
+          
           return true;
         }
       }
@@ -680,6 +709,17 @@ export default function Home() {
       : [...appliedJobs, jobId];
 
     console.log("New applied jobs (fallback):", newAppliedJobs);
+    
+    // For fallback case, we may not have a job title, so use generic message
+    if (newAppliedJobs.length > appliedJobs.length) {
+      setToastMessage("Job marked as applied");
+    } else {
+      setToastMessage("Job removed from applied jobs");
+    }
+    
+    // Show toast notification
+    setShowSuccessToast(true);
+    setTimeout(() => setShowSuccessToast(false), 3000);
     
     setAppliedJobs(newAppliedJobs);
     Cookies.set("appliedJobs", JSON.stringify(newAppliedJobs), { expires: 30 });
@@ -1433,6 +1473,17 @@ export default function Home() {
             />
           )}
         </>
+      )}
+
+      {/* Success toast notification */}
+      {showSuccessToast && (
+        <div className={`fixed bottom-4 right-4 ${toastMessage.includes('removed') ? 'bg-red-600' : 'bg-green-600'} text-white px-4 py-2 rounded-lg shadow-lg animate-fade-in-up z-50 flex items-center`}>
+          {toastMessage.includes('removed') ? 
+            <XCircle className="w-5 h-5 mr-2" /> : 
+            <CheckCircle className="w-5 h-5 mr-2" />
+          }
+          {toastMessage}
+        </div>
       )}
     </div>
   );

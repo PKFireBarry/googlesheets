@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Cookies from "js-cookie";
 import JobCardGrid from "../components/JobCardGrid";
-import { CheckCircle, FileSpreadsheet, Briefcase, AlertCircle } from "lucide-react";
+import { CheckCircle, Briefcase, AlertCircle, XCircle } from "lucide-react";
 
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY;
 const RANGE = process.env.NEXT_PUBLIC_RANGE;
@@ -48,6 +48,10 @@ export default function AppliedJobsPage() {
     return savedViewMode === 'list' ? 'list' : 'card';
   });
   const [filteredRows, setFilteredRows] = useState<any[]>([]);
+  
+  // Toast notification state
+  const [showSuccessToast, setShowSuccessToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
 
   useEffect(() => {
     const savedSheetUrl = Cookies.get("lastSheetUrl");
@@ -110,25 +114,50 @@ export default function AppliedJobsPage() {
         const titleIndex = findColumnIndex("title");
         const companyIndex = findColumnIndex("company_name");
         
-        let title, company;
+        let title = "";
+        let company = "";
+        
         if (Array.isArray(row)) {
           title = titleIndex !== -1 ? row[titleIndex] : "";
           company = companyIndex !== -1 ? row[companyIndex] : "";
-        } else {
-          title = titleIndex !== -1 ? row.data[titleIndex] : "";
-          company = companyIndex !== -1 ? row.data[companyIndex] : "";
+        } else if (row && typeof row === 'object') {
+          // Check if row has a data property
+          const rowData = 'data' in row ? (row as { data: string[] }).data : [];
+          title = titleIndex !== -1 && rowData.length > titleIndex ? rowData[titleIndex] : "";
+          company = companyIndex !== -1 && rowData.length > companyIndex ? rowData[companyIndex] : "";
         }
+        
+        if (!title) return false;
         
         // Generate job ID to match against applied jobs list
         const jobId = `${title}-${company}`.replace(/\s+/g, '-');
+        
+        // Map the row to include original index for reference later
+        if (Array.isArray(row)) {
+          // Process for a regular array row
+          const rowIndex = rows.indexOf(row) + 1; // Add 1 to account for header
+          Object.defineProperty(row, 'originalIndex', {
+            value: rowIndex,
+            enumerable: true
+          });
+        }
         
         // Check if this job is in the applied jobs list in any format:
         // 1. As a compound ID (title-company)
         // 2. Just by title (older format)
         // 3. With additional suffix like title-company-index
-        return appliedJobs.includes(jobId) || 
-               appliedJobs.includes(title) || 
-               appliedJobs.some(id => id.startsWith(`${title}-${company}`));
+        const isApplied = appliedJobs.includes(jobId) || 
+                         appliedJobs.includes(title) || 
+                         appliedJobs.some(id => {
+                           // Match prefix pattern for jobs with the same title-company
+                           if (company) {
+                             return id.startsWith(`${title}-${company}`);
+                           }
+                           // For jobs without company, just match title
+                           return id === title;
+                         });
+                         
+        return isApplied;
       } catch (e) {
         console.error("Error filtering applied job:", e);
         return false;
@@ -199,12 +228,48 @@ export default function AppliedJobsPage() {
   };
 
   const handleToggleApplied = (jobId: string) => {
-    const newAppliedJobs = appliedJobs.includes(jobId)
-      ? appliedJobs.filter((id) => id !== jobId)
-      : [...appliedJobs, jobId];
-
+    console.log("Toggle applied for job ID:", jobId);
+    
+    // First, check if this is a title-company format or just a title
+    const jobIdParts = jobId.split('-');
+    const potentialTitle = jobIdParts[0];
+    const jobTitle = potentialTitle || jobId;
+    
+    // Create a new array filtering out any variations of this job ID
+    const newAppliedJobs = appliedJobs.filter(id => {
+      // Don't match this exact ID
+      if (id === jobId) return false;
+      
+      // Don't match if it's just the title (older format)
+      if (id === potentialTitle) return false;
+      
+      // Don't match if it starts with the same title-company pattern
+      if (jobIdParts.length > 1 && id.startsWith(`${potentialTitle}-`)) return false;
+      
+      // Keep all other jobs
+      return true;
+    });
+    
+    // Since we're on the Applied Jobs page, if we're toggling a job,
+    // we're most likely removing it from applied status
+    const wasRemoved = appliedJobs.length !== newAppliedJobs.length;
+    
+    if (wasRemoved) {
+      // Job was removed
+      setToastMessage(`"${jobTitle}" removed from applied jobs`);
+    } else {
+      // This shouldn't usually happen on the applied page, but just in case
+      newAppliedJobs.push(jobId);
+      setToastMessage(`"${jobTitle}" marked as applied`);
+    }
+    
+    console.log("New applied jobs list:", newAppliedJobs);
     setAppliedJobs(newAppliedJobs);
     Cookies.set("appliedJobs", JSON.stringify(newAppliedJobs), { expires: 30 });
+    
+    // Show toast notification
+    setShowSuccessToast(true);
+    setTimeout(() => setShowSuccessToast(false), 3000);
   };
 
   const handleDeleteJob = async (rowIndex: number) => {
@@ -494,6 +559,17 @@ export default function AppliedJobsPage() {
           <p className="text-gray-600 dark:text-gray-400 mb-6">
             You haven't marked any jobs as applied. When you apply for jobs, they'll appear here.
           </p>
+        </div>
+      )}
+
+      {/* Success toast notification */}
+      {showSuccessToast && (
+        <div className={`fixed bottom-4 right-4 ${toastMessage.includes('removed') ? 'bg-red-600' : 'bg-green-600'} text-white px-4 py-2 rounded-lg shadow-lg animate-fade-in-up z-50 flex items-center`}>
+          {toastMessage.includes('removed') ? 
+            <XCircle className="w-5 h-5 mr-2" /> : 
+            <CheckCircle className="w-5 h-5 mr-2" />
+          }
+          {toastMessage}
         </div>
       )}
     </div>

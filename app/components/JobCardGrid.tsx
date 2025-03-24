@@ -187,6 +187,36 @@ export default function JobCardGrid({
     return id;
   }
   
+  // Check if a job is applied using all possible ID formats
+  const isJobInAppliedList = (job: any, index: number): boolean => {
+    // Get the job title and company
+    const titleIndex = findColumnIndex('title');
+    const companyIndex = findColumnIndex('company_name');
+    
+    // Extract job data depending on format
+    const jobData = Array.isArray(job) ? job : (job.data || []);
+    
+    // Get title and company name
+    const title = titleIndex !== -1 ? jobData[titleIndex] || '' : '';
+    const company = companyIndex !== -1 ? jobData[companyIndex] || '' : '';
+    
+    if (!title) return false;
+    
+    // Create the consistent ID format
+    const consistentJobId = title && company ? 
+      `${title}-${company}`.replace(/\s+/g, '-') : title;
+    
+    // Check all possible formats:
+    // 1. As the consistent ID (title-company)
+    // 2. Just by the title (older format)
+    // 3. With the title-company prefix (may have additional suffix)
+    return (
+      appliedJobs.includes(consistentJobId) ||
+      appliedJobs.includes(title) ||
+      (company && appliedJobs.some(id => id.startsWith(`${title}-${company}`)))
+    );
+  };
+  
   const prepareJobData = (job: any, index: number) => {
     // Ensure we have valid job data
     if (!job) {
@@ -220,7 +250,8 @@ export default function JobCardGrid({
     // Create a structured job object
     const structuredJob: any = {
       id: generateJobId(job, index),
-      originalIndex
+      originalIndex,
+      is_applied: isJobInAppliedList(job, index) // Add applied status
     };
     
     // Map all available fields from the headers
@@ -279,22 +310,32 @@ export default function JobCardGrid({
     
     const job = sortedJobs[currentIndex]
     
-    // Get the job title to use for marking as applied
+    // Get the job title and company to use for marking as applied
     const titleIndex = findColumnIndex('title')
+    const companyIndex = findColumnIndex('company_name')
+    
     const jobTitle = titleIndex !== -1 ? 
       (Array.isArray(job) ? job[titleIndex] : 
        ((job as any).data ? (job as any).data[titleIndex] : '')) : ''
+       
+    const jobCompany = companyIndex !== -1 ? 
+      (Array.isArray(job) ? job[companyIndex] : 
+       ((job as any).data ? (job as any).data[companyIndex] : '')) : ''
     
-    // Use the job title if available, otherwise fall back to ID
-    const jobId = jobTitle || generateJobId(job, currentIndex)
+    // Create a consistent job ID from title and company
+    const consistentJobId = jobTitle && jobCompany ? 
+      `${jobTitle}-${jobCompany}`.replace(/\s+/g, '-') : 
+      jobTitle // Fall back to just the title if no company
     
     console.log("Marking job as applied:", {
       index: currentIndex,
       title: jobTitle,
-      company: Array.isArray(job) ? job[findColumnIndex('company_name')] : 
-               ((job as any).data ? (job as any).data[findColumnIndex('company_name')] : 'Unknown'),
-      jobId
+      company: jobCompany,
+      consistentJobId
     });
+    
+    // Use the consistent job ID if available, otherwise fall back to title or generated ID
+    const jobId = consistentJobId || generateJobId(job, currentIndex)
     
     onApply(jobId)
   }
@@ -395,8 +436,9 @@ export default function JobCardGrid({
   if (viewMode === 'list') {
     if (selectedJobForDetail) {
       // Show detail view for selected job
-      const isJobApplied = appliedJobs.includes(selectedJobForDetail.id) || 
-                          appliedJobs.includes(selectedJobForDetail.title)
+      const isJobApplied = isJobInAppliedList(selectedJobForDetail, 0) || 
+                          appliedJobs.includes(selectedJobForDetail.id) || 
+                          appliedJobs.includes(selectedJobForDetail.title);
 
       return (
         <div>
@@ -414,7 +456,23 @@ export default function JobCardGrid({
             job={selectedJobForDetail}
             isApplied={isJobApplied}
             onApply={() => {
-              onApply(selectedJobForDetail.id || selectedJobForDetail.title)
+              // Generate a consistent job ID from title and company if possible
+              const title = selectedJobForDetail.title;
+              const company = selectedJobForDetail.company_name;
+              
+              // Create a consistent job ID
+              const consistentJobId = title && company ? 
+                `${title}-${company}`.replace(/\s+/g, '-') : 
+                title; // Fall back to just the title if no company
+              
+              console.log("List view - toggling job as applied:", {
+                title,
+                company,
+                consistentJobId
+              });
+              
+              // Use the consistent job ID, or fall back to id or title
+              onApply(consistentJobId || selectedJobForDetail.id || selectedJobForDetail.title)
             }}
             onDelete={() => {
               onDelete(selectedJobForDetail.originalIndex)
@@ -450,7 +508,8 @@ export default function JobCardGrid({
             <div className="grid gap-3 overflow-y-auto px-3 py-2 h-full custom-scrollbar">
               {sortedJobs.map((job, index) => {
                 const preparedJob = prepareJobData(job, index);
-                const isJobApplied = appliedJobs.includes(preparedJob.id) || 
+                const isJobApplied = isJobInAppliedList(job, index) || 
+                                  appliedJobs.includes(preparedJob.id) || 
                                   appliedJobs.includes(preparedJob.title);
                 
                 return (
@@ -528,7 +587,8 @@ export default function JobCardGrid({
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                 {sortedJobs.map((job, index) => {
                   const preparedJob = prepareJobData(job, index);
-                  const isJobApplied = appliedJobs.includes(preparedJob.id) || 
+                  const isJobApplied = isJobInAppliedList(job, index) || 
+                                    appliedJobs.includes(preparedJob.id) || 
                                     appliedJobs.includes(preparedJob.title);
                   
                   return (
@@ -589,15 +649,10 @@ export default function JobCardGrid({
   const currentJob = sortedJobs[currentIndex]
   const preparedJob = prepareJobData(currentJob, currentIndex)
   
-  // Check if the job is applied based on its title
-  const titleIndex = findColumnIndex('title')
-  const jobTitle = titleIndex !== -1 ? 
-    (Array.isArray(currentJob) ? currentJob[titleIndex] : 
-     ((currentJob as any).data ? (currentJob as any).data[titleIndex] : '')) : ''
-  
-  const isJobApplied = 
-    appliedJobs.includes(preparedJob.id) || 
-    appliedJobs.includes(jobTitle)
+  // Replace the existing isJobApplied check with our more robust function
+  const isJobApplied = isJobInAppliedList(currentJob, currentIndex) || 
+                       appliedJobs.includes(preparedJob.id) || 
+                       appliedJobs.includes(preparedJob.title);
   
   const animationClass = direction === 'left' 
     ? 'animate-slide-out-left' 
