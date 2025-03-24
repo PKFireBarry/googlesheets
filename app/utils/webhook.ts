@@ -6,6 +6,9 @@ export const WEBHOOK_URL = 'http://localhost:5678/webhook/1f50d8b8-820e-43b4-91a
 // Default timeout for webhook requests (in milliseconds)
 const DEFAULT_TIMEOUT = 30000; // 30 seconds
 
+// Longer timeout for LinkedIn lookups (in milliseconds)
+const LINKEDIN_LOOKUP_TIMEOUT = 180000; // 3 minutes
+
 /**
  * Ensures the webhook URL has the proper protocol
  * @param url The URL to process
@@ -51,7 +54,7 @@ const timeoutPromise = (ms: number) => {
  * @param webhookUrl Optional custom webhook URL (overrides the default)
  * @returns Promise that resolves when the data is sent
  */
-export const sendToWebhook = async (type: string, data: any, timeout = DEFAULT_TIMEOUT, webhookUrl = WEBHOOK_URL) => {
+export const sendToWebhook = async (type: string, data: Record<string, unknown>, timeout = DEFAULT_TIMEOUT, webhookUrl = WEBHOOK_URL) => {
   try {
     console.log(`Sending ${type} data to webhook:`, data);
     
@@ -134,13 +137,139 @@ export const testWebhook = async (webhookUrl: string, timeout = DEFAULT_TIMEOUT)
       const responseData = await response.json();
       console.log('Webhook test response:', responseData);
       return { success: true, data: responseData };
-    } catch (e) {
+    } catch {
       // If we can't parse the response as JSON, that's okay
       console.log('Webhook test successful (no JSON response)');
       return { success: true, data: null };
     }
   } catch (error) {
     console.error('Webhook test failed:', error);
+    throw error;
+  }
+};
+
+/**
+ * Interface for LinkedIn contact data
+ */
+interface LinkedInContactData {
+  name: string;
+  title: string;
+  email: string;
+  linkedinUrl: string;
+  website: string;
+  profileImage: string;
+  company: string;
+  phone: string;
+  location: string;
+  [key: string]: unknown; // Allow for additional properties
+}
+
+/**
+ * Looks up HR contacts for a company using LinkedIn via CORS bypass and Gemini processing
+ * @param company The company name to look up
+ * @param apiKey Optional Gemini API key (will fall back to environment variable if not provided)
+ * @param timeout Optional timeout in milliseconds (defaults to 3 minutes)
+ * @returns Promise that resolves with the HR contacts
+ */
+export const lookupLinkedInHR = async (
+  company: string, 
+  apiKey?: string, 
+  timeout = LINKEDIN_LOOKUP_TIMEOUT
+): Promise<LinkedInContactData[]> => {
+  try {
+    console.log(`Looking up LinkedIn HR contacts for company: ${company}`);
+    
+    // Step 1: Call our LinkedIn API route to handle the CORS-bypassed scraping
+    console.log('Calling LinkedIn API route for scraping');
+    const linkedinPromise = fetch('/api/linkedin', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ 
+        company,
+        apiKey // Pass the API key to the LinkedIn API route
+      })
+    });
+    
+    // Race the fetch against a timeout
+    const linkedinResponse = await Promise.race([
+      linkedinPromise,
+      timeoutPromise(timeout)
+    ]) as Response;
+    
+    if (!linkedinResponse.ok) {
+      throw new Error(`LinkedIn lookup failed: ${linkedinResponse.statusText}`);
+    }
+    
+    // Get the raw result from the LinkedIn API
+    const rawResult = await linkedinResponse.json();
+    console.log('Raw LinkedIn search result received');
+    
+    if (!rawResult || rawResult.status !== 'completed') {
+      throw new Error('LinkedIn search did not complete successfully');
+    }
+    
+    // Step 2: Process the raw result with Gemini through our API route
+    console.log('Calling Gemini API route for processing');
+    
+    // Use the provided API key or fall back to the environment variable
+    const geminiApiKey = apiKey || process.env.NEXT_PUBLIC_GEMINI_API_KEY || '';
+    
+    const geminiResponse = await fetch('/api/gemini', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        rawData: rawResult,
+        company,
+        apiKey: geminiApiKey
+      })
+    });
+    
+    // Parse the response from the Gemini API
+    const processedResult = await geminiResponse.json();
+    
+    // Check if there's an error in the response
+    if (!geminiResponse.ok || processedResult.error) {
+      console.error('Gemini processing failed:', processedResult);
+      
+      // Even if there's an error, if we have a fallback structure, use it
+      if (processedResult.name && processedResult.company) {
+        console.log('Using fallback contact data despite error');
+        return [processedResult as LinkedInContactData];
+      }
+      
+      // If it's a severe error with no usable data, throw an error
+      throw new Error(processedResult.error || `Gemini processing failed: ${geminiResponse.statusText}`);
+    }
+    
+    console.log('Processed data received from Gemini:', processedResult);
+    
+    // Step 3: Validate the processed data before returning
+    // Ensure we have the minimum required fields
+    if (!processedResult.name || processedResult.name === 'Error parsing response') {
+      throw new Error('Failed to extract valid contact information');
+    }
+    
+    // Create a standardized contact object to ensure consistent structure
+    const contactData: LinkedInContactData = {
+      name: processedResult.name || 'n/a',
+      title: processedResult.title || 'n/a',
+      email: processedResult.email || 'n/a',
+      linkedinUrl: processedResult.linkedinUrl || 'n/a',
+      website: processedResult.website || 'n/a',
+      profileImage: processedResult.profileImage || 'n/a',
+      company: company,
+      phone: processedResult.phone || 'n/a',
+      location: processedResult.location || 'n/a'
+    };
+    
+    // Step 4: Return the processed result as an array for consistency with the existing API
+    return [contactData];
+  } catch (error) {
+    console.error('Error in LinkedIn HR lookup:', error);
     throw error;
   }
 };

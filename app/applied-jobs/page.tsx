@@ -23,8 +23,7 @@ const validateJobListing = (row: string[], headers: string[]) => {
 
   return Boolean(
     getFieldValue("title")?.trim() &&
-      getFieldValue("description")?.trim() &&
-      getFieldValue("company_name")?.trim(),
+      getFieldValue("company_name")?.trim()
   );
 };
 
