@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     
     // Extract data from the request
-    const { rawData, company, apiKey } = body;
+    const { rawData, company, apiKey, jobData } = body;
     
     // Check if required data is provided
     if (!rawData) {
@@ -60,11 +60,40 @@ export async function POST(request: NextRequest) {
       );
     }
     
+    // Log API key usage (securely)
+    console.log(`Using API key for Gemini: ${geminiApiKey.substring(0, 5)}... (${apiKey ? 'user provided' : 'from environment'})`);
+    
+    // Process job data if provided
+    let jobDetailsSection = '';
+    if (jobData) {
+      console.log('Job data provided for personalized messages');
+      
+      // Extract key job details
+      const jobTitle = jobData.title || jobData.job_title || 'Unknown Position';
+      const jobDescription = jobData.description || jobData.job_description || '';
+      const jobRequirements = jobData.requirements || '';
+      const jobSkills = jobData.skills || '';
+      
+      // Format job details for the prompt
+      jobDetailsSection = `
+Here are details about the job for which you're crafting a personalized outreach message:
+
+Job Title: ${jobTitle}
+Company: ${company}
+${jobDescription ? `Description: ${jobDescription}` : ''}
+${jobRequirements ? `Requirements: ${jobRequirements}` : ''}
+${jobSkills ? `Skills: ${jobSkills}` : ''}
+
+Please use these details to personalize the response and make it more relevant to the specific job opening.`;
+    }
+    
     // Prepare the prompt for Gemini
     const prompt = `Extract the personal details and profile image URL from this output from a linkedin account search. 
 If data is missing just add n/a to the field.
 
 ${JSON.stringify(rawData)}
+
+${jobDetailsSection}
 
 Here is the format of how I want you to respond. Only reply with information in this format do not include any other text or markdown formatting in your response:
 
@@ -77,7 +106,8 @@ Here is the format of how I want you to respond. Only reply with information in 
   "profileImage": "extracted profile image URL or n/a",
   "company": "${company || 'n/a'}",
   "phone": "extracted phone or n/a",
-  "location": "extracted location or n/a"
+  "location": "extracted location or n/a",
+  "suggestedMessage": "Create a personalized outreach message based on the job details and the recruiter's information. The message should be professional and highlight how the candidate is relevant for the specific position."
 }
 
 IMPORTANT: Return ONLY the JSON object with no markdown formatting, no code blocks, and no extra text before or after the JSON.`;
@@ -161,7 +191,8 @@ IMPORTANT: Return ONLY the JSON object with no markdown formatting, no code bloc
         profileImage: parsedData.profileImage || 'n/a',
         company: parsedData.company || company || 'n/a',
         phone: parsedData.phone || 'n/a',
-        location: parsedData.location || 'n/a'
+        location: parsedData.location || 'n/a',
+        suggestedMessage: parsedData.suggestedMessage || ''
       };
       
       return NextResponse.json(validatedData);
@@ -190,7 +221,8 @@ IMPORTANT: Return ONLY the JSON object with no markdown formatting, no code bloc
           profileImage: correctedData.profileImage || 'n/a',
           company: correctedData.company || company || 'n/a',
           phone: correctedData.phone || 'n/a',
-          location: correctedData.location || 'n/a'
+          location: correctedData.location || 'n/a',
+          suggestedMessage: correctedData.suggestedMessage || ''
         };
         
         console.log('Successfully recovered JSON after fixing:', validatedData);
@@ -210,6 +242,7 @@ IMPORTANT: Return ONLY the JSON object with no markdown formatting, no code bloc
         company: company || 'n/a',
         phone: 'n/a',
         location: 'n/a',
+        suggestedMessage: '',
         _error: true
       };
       

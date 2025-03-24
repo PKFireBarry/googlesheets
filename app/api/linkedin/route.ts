@@ -6,7 +6,7 @@ const BORE_PUB_STOP_TASK_URL = 'http://bore.pub:37211/stop-task';
 const BORE_PUB_TASK_STATUS_URL = 'http://bore.pub:37211/task-status'; // New endpoint for polling
 
 // Maximum time (in milliseconds) a task should run before we force stop it
-const MAX_TASK_RUNTIME = 150000; // 2.5 minutes
+const MAX_TASK_RUNTIME = 75000; // 1.5 minutes
 
 // Interface for the request body
 interface LinkedInTaskRequestBody {
@@ -94,10 +94,18 @@ Compile and return all collected information about the HR employee(s) and any av
     // Use provided API key, or fall back to environment variable
     const geminiApiKey = apiKey || process.env.GEMINI_API_KEY;
     
-    // Add API key if provided
+    // Add API key if provided - ensuring it's properly set for bore.pub
     if (geminiApiKey) {
-      requestBody.api_key = geminiApiKey;
-      console.log('Using provided API key for the task');
+      // Explicitly set the api_key in the format bore.pub expects
+      requestBody.api_key = geminiApiKey.trim();
+      console.log('Using provided API key for the task:', geminiApiKey.substring(0, 5) + '...');
+      
+      // Log the full request body structure (without revealing the full key)
+      const debugRequestBody = { ...requestBody };
+      if (debugRequestBody.api_key) {
+        debugRequestBody.api_key = debugRequestBody.api_key.substring(0, 5) + '...';
+      }
+      console.log('Request body structure:', JSON.stringify(debugRequestBody, null, 2));
     } else {
       console.log('No API key provided, relying on bore.pub default');
     }
@@ -155,6 +163,7 @@ Compile and return all collected information about the HR employee(s) and any av
     // Return the task ID for polling
     return NextResponse.json({
       task_id: taskId,
+      taskId: taskId,
       status: 'running',
       message: 'LinkedIn search task started successfully',
       company: company
@@ -201,7 +210,12 @@ export async function GET(request: NextRequest) {
     const statusData = await statusResponse.json();
     console.log(`Task ${taskId} status:`, statusData.status);
     
-    return NextResponse.json(statusData);
+    // Make sure we have consistent field names
+    return NextResponse.json({
+      ...statusData,
+      task_id: taskId,
+      taskId: taskId
+    });
     
   } catch (error) {
     console.error('Error checking task status:', error);
