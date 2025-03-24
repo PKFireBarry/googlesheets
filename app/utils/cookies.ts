@@ -49,7 +49,36 @@ export const setCookie = (name: string, value: string, options: any = {}): void 
   }
 };
 
+/**
+ * Sets a secure cookie specifically for API keys
+ * @param name Cookie name
+ * @param value API key value
+ * @param daysToExpire Number of days until cookie expires
+ */
+export const setSecureCookie = (name: string, value: string, daysToExpire: number = 30): void => {
+  try {
+    // Calculate expiration date
+    const expirationDate = new Date();
+    expirationDate.setDate(expirationDate.getDate() + daysToExpire);
+    
+    // Set cookie with secure options
+    // Note: httpOnly can only be set by the server, not client-side JavaScript
+    // For truly secure storage, consider using server-side sessions
+    Cookies.set(name, value, {
+      expires: daysToExpire,
+      secure: window.location.protocol === 'https:',
+      sameSite: 'strict',
+      path: '/'
+    });
+    
+    console.log(`Securely stored ${name} (expires in ${daysToExpire} days)`);
+  } catch (error) {
+    console.error(`Error setting secure cookie ${name}:`, error);
+  }
+};
+
 export default {
   get: getCookie,
-  set: setCookie
+  set: setCookie,
+  setSecure: setSecureCookie
 }; 

@@ -116,13 +116,15 @@ export interface LinkedInContactData {
  * Looks up HR contacts at a company using the LinkedIn API and Gemini for processing
  * @param company The company name to look up
  * @param apiKey Optional Gemini API key
+ * @param jobData Optional job data for personalizing messages
  * @param timeout Timeout in milliseconds
  * @param onStatusUpdate Optional callback for status updates
  * @returns Array of contact data objects
  */
 export const lookupLinkedInHR = async (
   company: string, 
-  apiKey?: string, 
+  apiKey?: string,
+  jobData?: Record<string, unknown>,
   timeout = 180000, // 3 minutes default timeout
   onStatusUpdate?: TaskStatusCallback
 ): Promise<LinkedInContactData[]> => {
@@ -153,14 +155,26 @@ export const lookupLinkedInHR = async (
       })
     });
     
-    if (!startResponse.ok) {
-      const error = await startResponse.json();
-      throw new Error(error.message || 'Failed to start LinkedIn search');
+    // Log if we're using an API key (without exposing it)
+    if (apiKey) {
+      console.log(`Using user-provided API key (${apiKey.substring(0, 5)}...) for LinkedIn lookup`);
+    } else {
+      console.log('No API key provided by user for LinkedIn lookup');
     }
     
-    const { taskId } = await startResponse.json();
+    // Get the full response as JSON first, then check status
+    const responseData = await startResponse.json();
+    console.log('LinkedIn API response:', responseData);
+    
+    if (!startResponse.ok) {
+      throw new Error(responseData.error || 'Failed to start LinkedIn search');
+    }
+    
+    // Get the task ID from the response - note the key is task_id, not taskId
+    const taskId = responseData.task_id || responseData.taskId;
     
     if (!taskId) {
+      console.error('No task_id or taskId found in response:', responseData);
       throw new Error('No task ID returned from LinkedIn API');
     }
     
@@ -177,6 +191,7 @@ export const lookupLinkedInHR = async (
     // Poll the task status until it's complete
     const pollTaskStatus = async () => {
       try {
+        console.log(`Polling for task status: ${taskId}`);
         const statusResponse = await fetch(`/api/linkedin?taskId=${encodeURIComponent(taskId)}`);
         
         if (!statusResponse.ok) {
@@ -185,14 +200,18 @@ export const lookupLinkedInHR = async (
         }
         
         const statusData = await statusResponse.json();
+        console.log('Task status response:', statusData);
         
         // Check if the task is still running
         if (statusData.status === 'running') {
+          console.log('Task still running, will check again...');
           return null;
         }
         
         // Check if the task is complete with results
-        if (statusData.status === 'completed' && statusData.results) {
+        // Handle both possible response structures: statusData.results or statusData.result.result
+        if (statusData.status === 'completed' && (statusData.results || (statusData.result && statusData.result.result))) {
+          console.log('Task completed with results!');
           // Update the status to show we're processing the results
           onStatusUpdate?.({
             status: 'processing',
@@ -201,17 +220,21 @@ export const lookupLinkedInHR = async (
             message: 'Processing search results with AI...'
           });
           
-          // Process the results with Gemini
-          const contacts = await processContactsWithGemini(statusData.results, company, apiKey);
+          // Process the results with Gemini - use the correct results field and pass job data
+          const resultsToProcess = statusData.results || statusData.result;
+          const contacts = await processContactsWithGemini(resultsToProcess, company, apiKey, jobData);
           
           return contacts;
         }
         
         // If the task completed but with an error
         if (statusData.status === 'error') {
+          console.error('Task completed with error:', statusData.message);
           throw new Error(statusData.message || 'LinkedIn search failed');
         }
         
+        // If we get an unexpected status
+        console.log('Received unexpected task status:', statusData.status);
         return null;
       } catch (error) {
         console.error('Error polling task status:', error);
@@ -256,15 +279,41 @@ export const lookupLinkedInHR = async (
  * @param rawData The raw contact data from LinkedIn
  * @param company The company name
  * @param apiKey Optional Gemini API key
+ * @param jobData Optional job data for personalizing messages
  * @returns Array of processed contact data objects
  */
 async function processContactsWithGemini(
   rawData: Record<string, unknown>, 
   company: string, 
-  apiKey?: string
+  apiKey?: string,
+  jobData?: Record<string, unknown>
 ): Promise<LinkedInContactData[]> {
   try {
     console.log('Processing LinkedIn results with Gemini AI...');
+    
+    // Log if we're using an API key (without exposing it)
+    if (apiKey) {
+      console.log(`Using user-provided API key (${apiKey.substring(0, 5)}...) for Gemini processing`);
+    } else {
+      console.log('No API key provided by user for Gemini processing, will use environment variable');
+    }
+    
+    // Handle nested result structure if needed
+    // If rawData has a 'result' property that's an array, use that instead
+    const dataToProcess = rawData.result && Array.isArray(rawData.result) 
+      ? { result: rawData.result } 
+      : rawData;
+    
+    console.log('Data structure for Gemini processing:', 
+      Object.keys(dataToProcess), 
+      'Result array length:', 
+      Array.isArray(dataToProcess.result) ? dataToProcess.result.length : 'N/A'
+    );
+    
+    // Include job data if provided for more personalized processing
+    if (jobData) {
+      console.log('Including job data for personalized message generation');
+    }
     
     // Call the Gemini API to process the results
     const response = await fetch('/api/gemini', {
@@ -273,9 +322,10 @@ async function processContactsWithGemini(
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        rawData,
+        rawData: dataToProcess,
         company,
-        apiKey
+        apiKey,
+        jobData // Pass job data to Gemini API
       })
     });
     
