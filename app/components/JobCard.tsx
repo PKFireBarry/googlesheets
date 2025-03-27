@@ -18,7 +18,8 @@ import {
   Linkedin,
   Link2,
   EyeOff,
-  Mic
+  Mic,
+  FileText
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
@@ -249,11 +250,48 @@ export default function JobCard({
         <div className="flex flex-wrap gap-2 mt-4 mb-4 border-t border-b border-gray-100 dark:border-gray-700 py-3">
           <button
             onClick={handleLinkedInLookup}
-            className="inline-flex items-center px-3 py-2 border border-blue-300 dark:border-blue-600 rounded-md text-sm font-medium text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50"
+            className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
           >
-            <Linkedin className="w-4 h-4 mr-2 text-blue-500 dark:text-blue-400" />
-            LinkedIn Lookup
+            <Linkedin className="w-3.5 h-3.5 mr-1.5" />
+            Find Recruiters
           </button>
+          
+          {/* Replace Cover Letter Generator with link to dedicated page */}
+          <button
+            onClick={() => {
+              const params = new URLSearchParams({
+                title: job.title,
+                company: job.company_name,
+                description: job.description || '',
+                skills: job.skills || '',
+                location: job.location || '',
+                jobId: job.id
+              }).toString();
+              router.push(`/cover-letter?${params}`);
+            }}
+            className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+          >
+            <FileText className="w-3.5 h-3.5 mr-1.5" />
+            Generate Cover Letter
+          </button>
+          
+          <button
+            onClick={handleStartMockInterview}
+            className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500"
+          >
+            <Mic className="w-3.5 h-3.5 mr-1.5" />
+            Mock Interview
+          </button>
+
+          {onHide && (
+            <button
+              onClick={onHide}
+              className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+            >
+              <EyeOff className="w-3.5 h-3.5 mr-1.5" />
+              Hide Job
+            </button>
+          )}
         </div>
         
         {/* Description */}
