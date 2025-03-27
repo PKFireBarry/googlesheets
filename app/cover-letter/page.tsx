@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast, Toaster } from "react-hot-toast";
 import {
@@ -19,7 +19,8 @@ import {
 import { jsPDF } from "jspdf";
 import Cookies from "js-cookie";
 
-export default function CoverLetterPage() {
+// Create a client component that uses useSearchParams
+function CoverLetterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -628,5 +629,30 @@ export default function CoverLetterPage() {
         )}
       </div>
     </div>
+  );
+}
+
+// Loading fallback for Suspense
+function CoverLetterLoading() {
+  return (
+    <div className="container mx-auto px-4 py-8">
+      <div className="max-w-4xl mx-auto">
+        <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6 flex items-center justify-center min-h-[300px]">
+          <div className="text-center">
+            <Loader2 className="h-10 w-10 mx-auto mb-4 text-blue-600 animate-spin" />
+            <p className="text-gray-700 dark:text-gray-300">Loading cover letter generator...</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Main page component with Suspense boundary
+export default function CoverLetterPage() {
+  return (
+    <Suspense fallback={<CoverLetterLoading />}>
+      <CoverLetterForm />
+    </Suspense>
   );
 } 
