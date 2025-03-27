@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import MockInterviewContainer from '@/app/components/MockInterviewContainer'
 import { ArrowLeft } from 'lucide-react'
@@ -16,7 +16,8 @@ interface JobData {
   [key: string]: string | undefined;
 }
 
-export default function MockInterviewPage() {
+// Create a separate client component that uses useSearchParams
+function MockInterviewContent() {
   const searchParams = useSearchParams()
   const jobId = searchParams.get('jobId')
   const [jobData, setJobData] = useState<JobData | null>(null)
@@ -54,6 +55,28 @@ export default function MockInterviewPage() {
   }, [jobId])
 
   return (
+    <>
+      {loading ? (
+        <div className="flex justify-center py-12">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+        </div>
+      ) : error ? (
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-6 text-center">
+          <p className="text-red-700 dark:text-red-400">{error}</p>
+          <Link href="/" className="mt-4 inline-block px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+            Go Back to Jobs
+          </Link>
+        </div>
+      ) : (
+        <MockInterviewContainer jobData={jobData as JobData} />
+      )}
+    </>
+  )
+}
+
+// Main page component with Suspense boundary
+export default function MockInterviewPage() {
+  return (
     <div className="container mx-auto px-4 py-8">
       <div className="mb-6">
         <Link href="/" className="inline-flex items-center text-blue-600 hover:text-blue-800">
@@ -72,20 +95,13 @@ export default function MockInterviewPage() {
         </p>
       </div>
 
-      {loading ? (
+      <Suspense fallback={
         <div className="flex justify-center py-12">
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
         </div>
-      ) : error ? (
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-6 text-center">
-          <p className="text-red-700 dark:text-red-400">{error}</p>
-          <Link href="/" className="mt-4 inline-block px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
-            Go Back to Jobs
-          </Link>
-        </div>
-      ) : (
-        <MockInterviewContainer jobData={jobData as JobData} />
-      )}
+      }>
+        <MockInterviewContent />
+      </Suspense>
     </div>
   )
 } 
