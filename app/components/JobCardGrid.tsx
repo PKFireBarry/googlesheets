@@ -400,6 +400,17 @@ export default function JobCardGrid({
 
   const handleListItemClick = (job: JobData, index: number) => {
     const preparedJob = prepareJobData(job, index)
+    
+    // Save job data to localStorage to support mock interview
+    try {
+      const savedJobs = JSON.parse(localStorage.getItem('savedJobs') || '{}');
+      savedJobs[preparedJob.id] = preparedJob;
+      localStorage.setItem('savedJobs', JSON.stringify(savedJobs));
+      console.log(`Saved job data for ${preparedJob.id} to localStorage from list view`);
+    } catch (error) {
+      console.error('Error saving job data to localStorage from list view:', error);
+    }
+    
     setSelectedJobForDetail(preparedJob)
   }
 
@@ -495,6 +506,26 @@ export default function JobCardGrid({
       });
     }
   }, [keyboardListIndex]);
+
+  // Save current job data to localStorage to support mock interview
+  useEffect(() => {
+    // Only save when in card view and we have a valid job
+    if (viewMode === 'card' && sortedJobs.length > 0) {
+      const currentJob = sortedJobs[currentIndex];
+      const preparedJob = prepareJobData(currentJob, currentIndex);
+      
+      if (preparedJob && preparedJob.id) {
+        try {
+          const savedJobs = JSON.parse(localStorage.getItem('savedJobs') || '{}');
+          savedJobs[preparedJob.id] = preparedJob;
+          localStorage.setItem('savedJobs', JSON.stringify(savedJobs));
+          console.log(`Saved job data for ${preparedJob.id} to localStorage from card view`);
+        } catch (error) {
+          console.error('Error saving job data to localStorage from card view:', error);
+        }
+      }
+    }
+  }, [currentIndex, viewMode, sortedJobs]);
 
   if (sortedJobs.length === 0) {
     return <div className="text-center py-8 text-gray-500">No job listings found</div>

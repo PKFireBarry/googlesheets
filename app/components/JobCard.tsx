@@ -17,7 +17,8 @@ import {
   X,
   Linkedin,
   Link2,
-  EyeOff
+  EyeOff,
+  Mic
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
@@ -124,6 +125,19 @@ export default function JobCard({
     } catch {
       return 'Unknown';
     }
+  }
+  
+  const handleStartMockInterview = () => {
+    // Save this job to localStorage before navigating
+    try {
+      const savedJobs = JSON.parse(localStorage.getItem('savedJobs') || '{}');
+      savedJobs[job.id] = job;
+      localStorage.setItem('savedJobs', JSON.stringify(savedJobs));
+      console.log(`Saved job data for ${job.id} to localStorage`);
+    } catch (error) {
+      console.error('Error saving job data to localStorage:', error);
+    }
+    router.push(`/mock-interview?jobId=${encodeURIComponent(job.id)}`);
   }
   
   return (
@@ -384,6 +398,14 @@ export default function JobCard({
               Company Site
             </a>
           )}
+          
+          <button
+            onClick={handleStartMockInterview}
+            className="inline-flex items-center px-3 py-2 border border-purple-300 dark:border-purple-600 rounded-md text-sm font-medium text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-900/20 hover:bg-purple-100 dark:hover:bg-purple-900/30"
+          >
+            <Mic className="w-4 h-4 mr-2 text-purple-500 dark:text-purple-400" />
+            Mock Interview
+          </button>
           
           <div className="flex gap-2 mt-4 justify-end">
             {isEditingNote ? (
