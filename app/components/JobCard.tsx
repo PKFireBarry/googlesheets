@@ -19,7 +19,8 @@ import {
   Link2,
   EyeOff,
   Mic,
-  FileText
+  FileText,
+  File
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
@@ -141,6 +142,19 @@ export default function JobCard({
     router.push(`/mock-interview?jobId=${encodeURIComponent(job.id)}`);
   }
   
+  const handleCreateResume = () => {
+    // Save this job to localStorage before navigating
+    try {
+      const savedJobs = JSON.parse(localStorage.getItem('savedJobs') || '{}');
+      savedJobs[job.id] = job;
+      localStorage.setItem('savedJobs', JSON.stringify(savedJobs));
+      console.log(`Saved job data for ${job.id} to localStorage`);
+    } catch (error) {
+      console.error('Error saving job data to localStorage:', error);
+    }
+    router.push(`/resume-builder?jobId=${encodeURIComponent(job.id)}`);
+  }
+  
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-100 dark:border-gray-700 transition-all hover:shadow-xl">
       {/* Status indicator */}
@@ -244,54 +258,6 @@ export default function JobCard({
             <Link2 className="w-4 h-4 mr-2 text-gray-500 dark:text-gray-500 flex-shrink-0" />
             <span>Source: {getJobSource()}</span>
           </div>
-        </div>
-        
-        {/* HR Lookup Actions */}
-        <div className="flex flex-wrap gap-2 mt-4 mb-4 border-t border-b border-gray-100 dark:border-gray-700 py-3">
-          <button
-            onClick={handleLinkedInLookup}
-            className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-          >
-            <Linkedin className="w-3.5 h-3.5 mr-1.5" />
-            Find Recruiters
-          </button>
-          
-          {/* Replace Cover Letter Generator with link to dedicated page */}
-          <button
-            onClick={() => {
-              const params = new URLSearchParams({
-                title: job.title,
-                company: job.company_name,
-                description: job.description || '',
-                skills: job.skills || '',
-                location: job.location || '',
-                jobId: job.id
-              }).toString();
-              router.push(`/cover-letter?${params}`);
-            }}
-            className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
-          >
-            <FileText className="w-3.5 h-3.5 mr-1.5" />
-            Generate Cover Letter
-          </button>
-          
-          <button
-            onClick={handleStartMockInterview}
-            className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500"
-          >
-            <Mic className="w-3.5 h-3.5 mr-1.5" />
-            Mock Interview
-          </button>
-
-          {onHide && (
-            <button
-              onClick={onHide}
-              className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
-            >
-              <EyeOff className="w-3.5 h-3.5 mr-1.5" />
-              Hide Job
-            </button>
-          )}
         </div>
         
         {/* Description */}
@@ -411,16 +377,16 @@ export default function JobCard({
           )}
         </div>
         
-        {/* Actions */}
-        <div className="flex flex-wrap gap-2 mt-5">
+        {/* All Action Buttons in a consolidated grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mt-6">
           {job.url && (
             <a 
               href={job.url} 
               target="_blank" 
               rel="noopener noreferrer"
-              className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700"
+              className="flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none"
             >
-              <ExternalLink className="w-4 h-4 mr-2 text-gray-500 dark:text-gray-400" />
+              <ExternalLink className="w-4 h-4 mr-2" />
               View Job
             </a>
           )}
@@ -430,72 +396,62 @@ export default function JobCard({
               href={job.company_website.startsWith('http') ? job.company_website : `https://${job.company_website}`} 
               target="_blank" 
               rel="noopener noreferrer"
-              className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700"
+              className="flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none"
             >
-              <Globe className="w-4 h-4 mr-2 text-gray-500 dark:text-gray-400" />
+              <Globe className="w-4 h-4 mr-2" />
               Company Site
             </a>
           )}
           
           <button
-            onClick={handleStartMockInterview}
-            className="inline-flex items-center px-3 py-2 border border-purple-300 dark:border-purple-600 rounded-md text-sm font-medium text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-900/20 hover:bg-purple-100 dark:hover:bg-purple-900/30"
+            onClick={handleCreateResume}
+            className="flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg border border-green-700 dark:border-green-500 bg-white dark:bg-gray-700 text-green-700 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20 focus:outline-none"
           >
-            <Mic className="w-4 h-4 mr-2 text-purple-500 dark:text-purple-400" />
-            Mock Interview
+            <File className="w-4 h-4 mr-2" />
+            Resume
           </button>
           
-          <div className="flex gap-2 mt-4 justify-end">
-            {isEditingNote ? (
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setIsEditingNote(false)}
-                  className="rounded-md px-3 py-1.5 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleNoteSubmit}
-                  className="rounded-md px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700"
-                >
-                  Save Note
-                </button>
-              </div>
-            ) : (
-              <>
-                <button
-                  onClick={() => setIsEditingNote(true)}
-                  className="rounded-md px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
-                >
-                  <MessageSquare className="w-4 h-4 mr-1.5 inline-block" />
-                  {job.notes ? 'Edit Note' : 'Add Note'}
-                </button>
-                <button
-                  onClick={handleLinkedInLookup}
-                  className="rounded-md px-3 py-1.5 text-sm font-medium text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30"
-                >
-                  <Linkedin className="w-4 h-4 mr-1.5 inline-block" />
-                  Find Contact
-                </button>
-                {onHide && (
-                  <button
-                    onClick={onHide}
-                    className="rounded-md px-3 py-1.5 text-sm font-medium text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30"
-                  >
-                    <EyeOff className="w-4 h-4 mr-1.5 inline-block" />
-                    Hide
-                  </button>
-                )}
-                <button
-                  onClick={onDelete}
-                  className="rounded-md px-3 py-1.5 text-sm font-medium text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30"
-                >
-                  <Trash2 className="w-4 h-4 mr-1.5 inline-block" />
-                  Delete
-                </button>
-              </>
-            )}
-          </div>
+          <button
+            onClick={handleStartMockInterview}
+            className="flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg border border-purple-700 dark:border-purple-500 bg-white dark:bg-gray-700 text-purple-700 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 focus:outline-none"
+          >
+            <Mic className="w-4 h-4 mr-2" />
+            Interview
+          </button>
+          
+          <button
+            onClick={handleLinkedInLookup}
+            className="flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg border border-blue-700 dark:border-blue-500 bg-white dark:bg-gray-700 text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 focus:outline-none"
+          >
+            <Linkedin className="w-4 h-4 mr-2" />
+            Recruiter
+          </button>
+          
+          <button
+            onClick={() => router.push(`/cover-letter?jobId=${encodeURIComponent(job.id)}`)}
+            className="flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg border border-purple-700 dark:border-purple-500 bg-white dark:bg-gray-700 text-purple-700 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 focus:outline-none"
+          >
+            <FileText className="w-4 h-4 mr-2" />
+            Cover Letter
+          </button>
+          
+          {onHide && (
+            <button
+              onClick={onHide}
+              className="flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg border border-amber-700 dark:border-amber-500 bg-white dark:bg-gray-700 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 focus:outline-none"
+            >
+              <EyeOff className="w-4 h-4 mr-2" />
+              Hide Job
+            </button>
+          )}
+          
+          <button
+            onClick={onDelete}
+            className="flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg border border-red-700 dark:border-red-500 bg-white dark:bg-gray-700 text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 focus:outline-none"
+          >
+            <Trash2 className="w-4 h-4 mr-2" />
+            Delete
+          </button>
         </div>
       </div>
     </div>

@@ -48,6 +48,7 @@ interface InterviewResponse {
   areasForImprovement?: string[];
   suggestedQuestions?: string[];
   error?: string;
+  resumeHighlights?: string[];
 }
 
 interface MockInterviewContainerProps {
@@ -62,6 +63,7 @@ export default function MockInterviewContainer({ jobData }: MockInterviewContain
   const [isFinished, setIsFinished] = useState(false)
   const [resumeFile, setResumeFile] = useState<File | null>(null)
   const [resumeText, setResumeText] = useState<string | null>(null)
+  const [resumeBase64, setResumeBase64] = useState<string | null>(null)
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
   const [interviewScore, setInterviewScore] = useState<number | null>(null)
   const [feedbackVisible, setFeedbackVisible] = useState<{[key: string]: boolean}>({})
@@ -122,6 +124,7 @@ export default function MockInterviewContainer({ jobData }: MockInterviewContain
             type: resumeFile.type,
             size: resumeFile.size
           } : null,
+          resumeData: resumeBase64,
           action: 'start'
         }),
       })
@@ -223,8 +226,10 @@ export default function MockInterviewContainer({ jobData }: MockInterviewContain
     setIsLoading(true)
 
     try {
-      // We're storing the file directly to send to Gemini API, which can handle PDF and DOCX files
-      // No need to parse the content on the client side
+      // Convert the file to base64 format
+      const base64Data = await readFileAsBase64(file)
+      setResumeBase64(base64Data)
+      
       const sizeInKb = (file.size / 1024).toFixed(2);
       const fileInfoText = `Resume "${file.name}" (${sizeInKb} KB) uploaded successfully`;
       setResumeText(fileInfoText);
@@ -248,6 +253,24 @@ export default function MockInterviewContainer({ jobData }: MockInterviewContain
     } finally {
       setIsLoading(false)
     }
+  }
+
+  // Helper function to convert a file to base64
+  const readFileAsBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          // Extract the base64 content from the data URL
+          const base64Content = reader.result.split(',')[1]
+          resolve(base64Content)
+        } else {
+          reject(new Error('Failed to convert file to base64'))
+        }
+      }
+      reader.onerror = () => reject(reader.error)
+      reader.readAsDataURL(file)
+    })
   }
 
   const startInterview = async () => {
@@ -302,6 +325,7 @@ export default function MockInterviewContainer({ jobData }: MockInterviewContain
             type: resumeFile.type,
             size: resumeFile.size
           } : null,
+          resumeData: resumeBase64,
           currentQuestion: questionIndex,
           action: 'question'
         }),
@@ -436,6 +460,7 @@ export default function MockInterviewContainer({ jobData }: MockInterviewContain
             type: resumeFile.type,
             size: resumeFile.size
           } : null,
+          resumeData: resumeBase64,
           currentQuestion: currentQuestionIndex,
           userResponse: currentMessage,
           action: 'feedback'
@@ -623,6 +648,7 @@ export default function MockInterviewContainer({ jobData }: MockInterviewContain
             type: resumeFile.type,
             size: resumeFile.size
           } : null,
+          resumeData: resumeBase64,
           conversation: conversationForSummary,
           action: 'summary'
         }),
@@ -657,6 +683,11 @@ export default function MockInterviewContainer({ jobData }: MockInterviewContain
       
       if (data.areasForImprovement && data.areasForImprovement.length > 0) {
         summaryContent += `**Areas for Improvement:**\n${data.areasForImprovement.map(i => `• ${i}`).join('\n')}\n\n`
+      }
+      
+      // Add resume highlights section if available and resume was uploaded
+      if (resumeFile && data.resumeHighlights && data.resumeHighlights.length > 0) {
+        summaryContent += `**Resume Highlights:**\n${data.resumeHighlights.map(r => `• ${r}`).join('\n')}\n\n`
       }
       
       if (data.suggestedQuestions && data.suggestedQuestions.length > 0) {

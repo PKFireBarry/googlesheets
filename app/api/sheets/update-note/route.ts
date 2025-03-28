@@ -28,9 +28,18 @@ export async function POST(request: Request) {
       );
     }
 
+    const sheetsResponse = await sheets.spreadsheets.get({
+      spreadsheetId,
+      fields: 'sheets.properties'
+    });
+    
+    const sheetName = sheetsResponse.data.sheets && 
+                      sheetsResponse.data.sheets[0]?.properties?.title || 
+                      'Sheet1';
+
     await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: `Sheet1!${String.fromCharCode(65 + noteColumnIndex)}${rowIndex}`,
+      range: `${sheetName}!${String.fromCharCode(65 + noteColumnIndex)}${rowIndex}`,
       valueInputOption: 'RAW',
       requestBody: {
         values: [[note]]

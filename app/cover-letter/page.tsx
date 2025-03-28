@@ -18,6 +18,11 @@ import {
 } from "lucide-react";
 import { jsPDF } from "jspdf";
 import Cookies from "js-cookie";
+import ResumeForm, { 
+  getInitialResumeData, 
+  generateResumeText,
+  saveResumeData
+} from "./resume-form";
 
 // Create a client component that uses useSearchParams
 function CoverLetterForm() {
@@ -34,8 +39,13 @@ function CoverLetterForm() {
   
   // State for resume and cover letter
   const [resumeContent, setResumeContent] = useState("");
+  const [resumePdfData, setResumePdfData] = useState<string | null>(null);
   const [coverLetterText, setCoverLetterText] = useState("");
   const [savedResumes, setSavedResumes] = useState<{[key: string]: string}>({});
+  
+  // Resume form state
+  const [showResumeForm, setShowResumeForm] = useState(false);
+  const [resumeData, setResumeData] = useState(getInitialResumeData);
   
   // UI state
   const [loading, setLoading] = useState(false);
@@ -43,6 +53,22 @@ function CoverLetterForm() {
   const [error, setError] = useState<string | null>(null);
   const [showApiKeyInfo, setShowApiKeyInfo] = useState(false);
   const [jobDetailsEditable, setJobDetailsEditable] = useState(false);
+  
+  // Handle saving resume data
+  const handleSaveResumeData = () => {
+    saveResumeData(resumeData, (text) => {
+      setResumeContent(text);
+      
+      // Also save as a named resume in localStorage
+      const resumeName = resumeData.fullName ? `${resumeData.fullName}'s Resume` : "My Resume";
+      const newSavedResumes = { ...savedResumes, [resumeName]: text };
+      setSavedResumes(newSavedResumes);
+      localStorage.setItem("savedResumes", JSON.stringify(newSavedResumes));
+    });
+    
+    // Close the form after saving
+    setShowResumeForm(false);
+  };
   
   // Load data from URL parameters and local storage
   useEffect(() => {
@@ -90,6 +116,23 @@ function CoverLetterForm() {
       setApiKey(savedApiKey);
     }
     
+    // Load saved resume data from cookies
+    try {
+      const savedResumeData = Cookies.get("resumeData");
+      if (savedResumeData) {
+        const parsedData = JSON.parse(savedResumeData);
+        setResumeData(parsedData);
+        
+        // If we have existing resume data, automatically generate the text version
+        if (parsedData.fullName || parsedData.experience || parsedData.skills) {
+          const formattedContent = generateResumeText(parsedData);
+          setResumeContent(formattedContent);
+        }
+      }
+    } catch (error) {
+      console.error("Error loading resume data from cookies:", error);
+    }
+    
     // Load saved resumes from localStorage
     try {
       const saved = localStorage.getItem("savedResumes");
@@ -101,37 +144,73 @@ function CoverLetterForm() {
     }
   }, [searchParams]);
   
-  // Handle resume upload
-  const handleResumeUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setError(null);
+  // Handle resume upload from file
+  const handleResumeUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    // Only accept text files, PDFs, DOCs, DOCXs
-    const validTypes = ["text/plain", "application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"];
-    if (!validTypes.includes(file.type)) {
-      setError("Please upload a valid resume file (TXT, PDF, DOC, DOCX)");
-      return;
-    }
-
-    // For simplicity, we'll only properly handle text files in this example
-    if (file.type === "text/plain") {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const text = e.target?.result;
-        if (typeof text === "string") {
-          setResumeContent(text);
-          
-          // Save this resume to localStorage
-          const newSavedResumes = { ...savedResumes, [file.name]: text };
-          setSavedResumes(newSavedResumes);
-          localStorage.setItem("savedResumes", JSON.stringify(newSavedResumes));
-        }
-      };
-      reader.readAsText(file);
-    } else {
-      // For PDFs/DOCs just acknowledge upload but explain limitations
-      setResumeContent(`[Uploaded ${file.name}] - Please note that for PDF/DOC/DOCX files, only the file name is captured in this demo. For a production app, you would need to extract text with appropriate libraries.`);
+    
+    setLoading(true);
+    
+    try {
+      if (file.type === 'application/pdf') {
+        // For PDF files, we'll convert to base64 and keep the binary data for the API
+        const fileReader = new FileReader();
+        
+        fileReader.onload = async (e) => {
+          try {
+            const base64Data = e.target?.result?.toString().split(',')[1]; // Extract base64 content
+            
+            // Store the PDF data for later API call
+            if (base64Data) {
+              setResumePdfData(base64Data);
+            } else {
+              toast.error("Failed to extract PDF data");
+              setLoading(false);
+              return;
+            }
+            
+            // Show a toast to indicate we're using the PDF directly
+            toast.success(`PDF "${file.name}" will be sent to Gemini for processing`, {
+              icon: "📄",
+              duration: 4000
+            });
+            
+            // Extract text from PDF if possible for display in textarea
+            try {
+              // For now just show a placeholder in the textarea
+              setResumeContent(`[PDF uploaded: ${file.name}] - PDF will be processed directly by Gemini AI`);
+            } catch (error) {
+              console.error("Error extracting PDF text:", error);
+              // Still store the PDF, but mention the text extraction issue
+              setResumeContent(`[PDF uploaded: ${file.name}] - Text extraction failed, but PDF will be processed by Gemini AI`);
+            }
+          } catch (error) {
+            console.error("Error processing PDF:", error);
+            toast.error("Failed to process PDF file");
+          } finally {
+            setLoading(false);
+          }
+        };
+        
+        fileReader.onerror = () => {
+          toast.error("Failed to read PDF file");
+          setLoading(false);
+        };
+        
+        fileReader.readAsDataURL(file);
+      } else {
+        // For text-based files, we'll extract the text content
+        const text = await file.text();
+        setResumeContent(text);
+        // Clear any previously stored PDF data
+        setResumePdfData(null);
+        toast.success(`Resume "${file.name}" uploaded successfully!`);
+        setLoading(false);
+      }
+    } catch (error) {
+      console.error("Error handling file upload:", error);
+      toast.error("Failed to process file");
+      setLoading(false);
     }
   };
   
@@ -163,6 +242,13 @@ function CoverLetterForm() {
     
     setLoading(true);
     
+    // If we have resume data but no resume content, generate it from the form
+    let finalResumeContent = resumeContent;
+    if (!resumeContent && (resumeData.fullName || resumeData.experience || resumeData.skills)) {
+      finalResumeContent = generateResumeText(resumeData);
+      toast.success("Using resume data from your saved profile");
+    }
+    
     try {
       const response = await fetch("/api/coverletter", {
         method: "POST",
@@ -173,7 +259,8 @@ function CoverLetterForm() {
           jobTitle,
           companyName,
           jobDescription,
-          resumeContent,
+          resumeContent: finalResumeContent,
+          resumePdfData: resumePdfData,
           skills,
           location,
           apiKey,
@@ -190,6 +277,11 @@ function CoverLetterForm() {
       
       // Save API key for future use
       Cookies.set("geminiApiKey", apiKey, { expires: 30 });
+      
+      // If we have resume data, save it for future use
+      if (resumeData.fullName || resumeData.skills || resumeData.experience) {
+        Cookies.set("resumeData", JSON.stringify(resumeData), { expires: 30 });
+      }
       
       toast.success("Cover letter generated successfully!");
       
@@ -493,7 +585,25 @@ function CoverLetterForm() {
           
           {/* Resume Section */}
           <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-            <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Your Resume (Optional)</h2>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-medium text-gray-900 dark:text-white">Your Resume (Optional)</h2>
+              
+              <button
+                type="button"
+                onClick={() => setShowResumeForm(!showResumeForm)}
+                className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 flex items-center"
+              >
+                {showResumeForm ? 'Hide Form' : 'Show Resume Form'}
+              </button>
+            </div>
+            
+            {showResumeForm && (
+              <ResumeForm 
+                resumeData={resumeData} 
+                onChangeResumeData={setResumeData} 
+                onSave={handleSaveResumeData} 
+              />
+            )}
             
             <div className="space-y-4">
               <div className="flex flex-col sm:flex-row gap-2">
@@ -502,7 +612,7 @@ function CoverLetterForm() {
                   ref={fileInputRef}
                   onChange={handleResumeUpload}
                   className="hidden"
-                  accept=".txt,.pdf,.doc,.docx"
+                  accept=".txt,.pdf"
                 />
                 <button
                   type="button"
@@ -510,7 +620,7 @@ function CoverLetterForm() {
                   className="flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                 >
                   <FileUp className="w-4 h-4 mr-2" />
-                  Upload Resume
+                  Upload Resume (TXT, PDF)
                 </button>
                 
                 {Object.keys(savedResumes).length > 0 && (
@@ -529,13 +639,45 @@ function CoverLetterForm() {
                 )}
               </div>
               
+              {/* PDF upload info */}
+              <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-md text-blue-800 dark:text-blue-300 text-sm flex items-start mt-2 mb-2">
+                <Info className="w-5 h-5 mr-2 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-medium">📄 New PDF Processing Feature</p>
+                  <p>Upload your resume as a PDF file to have it processed directly by Gemini AI. This allows for better recognition of formatting, tables, and visual elements in your resume!</p>
+                </div>
+              </div>
+              
               <textarea
                 value={resumeContent}
-                onChange={(e) => setResumeContent(e.target.value)}
+                onChange={(e) => {
+                  setResumeContent(e.target.value);
+                  // Clear PDF data if user manually edits the textarea
+                  if (resumePdfData) {
+                    setResumePdfData(null);
+                  }
+                }}
                 placeholder="Or paste your resume content here... (Adding your resume will make the cover letter more personalized to your experience)"
                 rows={8}
-                className="w-full rounded-md border-gray-300 dark:border-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm dark:bg-gray-700 dark:text-white"
+                className={`w-full rounded-md border-gray-300 dark:border-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm dark:bg-gray-700 dark:text-white ${resumePdfData ? 'border-green-500 dark:border-green-600' : ''}`}
               />
+              
+              {resumePdfData && (
+                <div className="flex items-center text-sm text-green-600 dark:text-green-400 mt-1">
+                  <FileText className="w-4 h-4 mr-1" /> 
+                  PDF uploaded and ready for processing with Gemini AI
+                  <button 
+                    onClick={() => {
+                      setResumePdfData(null);
+                      setResumeContent("");
+                    }}
+                    className="ml-2 text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                    title="Remove uploaded PDF"
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
               
               <div className="bg-yellow-50 dark:bg-yellow-900/20 p-3 rounded-md text-yellow-800 dark:text-yellow-300 text-sm flex items-start">
                 <Info className="w-4 h-4 mr-2 mt-0.5 flex-shrink-0" />

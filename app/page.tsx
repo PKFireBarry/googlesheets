@@ -4,8 +4,9 @@ import { useState, useEffect } from "react";
 import Cookies from "js-cookie";
 import SheetUrlForm from "./components/SheetUrlForm";
 import JobCardGrid from "./components/JobCardGrid";
-import { FileSpreadsheet, Users, CheckCircle, AlertCircle, Search, X, Sliders, Calendar, MapPin, DollarSign, Ban, List, Grid, XCircle } from "lucide-react";
+import { FileSpreadsheet, Users, CheckCircle, AlertCircle, Search, X, Sliders, Calendar, MapPin, DollarSign, Ban, List, Grid, XCircle, File } from "lucide-react";
 import ClientSkillsFilter from "./components/ClientSkillsFilter";
+import { useRouter } from "next/navigation";
 
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY;
 const RANGE = process.env.NEXT_PUBLIC_RANGE;
@@ -76,6 +77,8 @@ export default function Home() {
     const savedViewMode = Cookies.get("viewMode");
     return savedViewMode === 'list' ? 'list' : 'card';
   });
+
+  const router = useRouter();
 
   // Load saved filters on initial render
   useEffect(() => {
@@ -200,26 +203,52 @@ export default function Home() {
       });
     });
     
+    // Apply excluded words filter first, independently of other filters
+    if (excludedWords.length > 0) {
+      console.log('Applying excluded words filter:', excludedWords);
+      filtered = filtered.filter((row) => {
+        const title = getFieldValue(row, "title").toLowerCase();
+        
+        // Only check the job title for excluded words
+        for (const word of excludedWords) {
+          const lowerWord = word.toLowerCase();
+          if (title.includes(lowerWord)) {
+            console.log(`Excluding job with title "${title}" due to word "${word}"`);
+            return false; // Exclude this job if title contains the excluded word
+          }
+        }
+        return true;
+      });
+      console.log('Jobs remaining after excluded words filter:', filtered.length);
+    }
+    
     // Text search filter
     if (filterText) {
       filtered = filtered.filter((row) => {
         const title = getFieldValue(row, "title").toLowerCase();
-        
-        if (!title.includes(filterText.toLowerCase())) {
-          return false;
-        }
-        
-        // Excluded words filter
-        if (excludedWords.length > 0) {
-          for (const word of excludedWords) {
-            if (title.includes(word.toLowerCase())) {
-              return false; // Exclude this job if title contains any excluded word
-            }
-          }
-        }
-        
-        return true;
+        const description = getFieldValue(row, "description").toLowerCase();
+        return title.includes(filterText.toLowerCase()) || 
+               description.includes(filterText.toLowerCase());
       });
+    }
+    
+    // Add error handling for no results
+    if (filtered.length === 0) {
+      console.log('No results found with current filters:', {
+        filterText,
+        selectedLocation,
+        skillFilter,
+        showLastDayOnly,
+        minSalary,
+        salaryType,
+        excludedWords
+      });
+      
+      // Set error state to show user feedback
+      setError('No jobs found with the current filter combination. Try adjusting your filters.');
+    } else {
+      // Clear error if we have results
+      setError(null);
     }
     
     // Location filter
@@ -725,15 +754,44 @@ export default function Home() {
 
   // Add new excluded word
   const handleAddExcludedWord = () => {
-    if (newExcludeWord.trim() !== "" && !excludedWords.includes(newExcludeWord.trim())) {
-      setExcludedWords([...excludedWords, newExcludeWord.trim()]);
-      setNewExcludeWord("");
+    if (newExcludeWord.trim() !== "") {
+      const word = newExcludeWord.trim();
+      if (!excludedWords.includes(word)) {
+        const updatedWords = [...excludedWords, word];
+        setExcludedWords(updatedWords);
+        setNewExcludeWord("");
+        
+        // Save to cookies immediately
+        const filters = {
+          filterText,
+          selectedLocation,
+          skillFilter,
+          showLastDayOnly,
+          minSalary,
+          salaryType,
+          excludedWords: updatedWords,
+        };
+        Cookies.set("savedFilters", JSON.stringify(filters), { expires: 30 });
+      }
     }
   };
 
   // Remove excluded word
   const handleRemoveExcludedWord = (word: string) => {
-    setExcludedWords(excludedWords.filter(w => w !== word));
+    const updatedWords = excludedWords.filter(w => w !== word);
+    setExcludedWords(updatedWords);
+    
+    // Save to cookies immediately
+    const filters = {
+      filterText,
+      selectedLocation,
+      skillFilter,
+      showLastDayOnly,
+      minSalary,
+      salaryType,
+      excludedWords: updatedWords,
+    };
+    Cookies.set("savedFilters", JSON.stringify(filters), { expires: 30 });
   };
 
   // Save filters to cookies
@@ -875,17 +933,35 @@ export default function Home() {
     };
   });
 
+  const handleResumeBuilderClick = () => {
+    router.push('/resume-builder');
+  };
+
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 no-overflow mobile-container">
       <div className="mb-4 sm:mb-8">
         <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl shadow-xl p-4 sm:p-10 text-white mb-4 sm:mb-8">
-          <h1 className="text-2xl sm:text-4xl font-bold mb-2 sm:mb-3">
-            Job Application Tracker
-          </h1>
-          <p className="text-mobile-sm text-blue-100 max-w-2xl">
-            Track and manage your job applications with Google Sheets integration. 
-            Keep all your job opportunities organized in one place.
-          </p>
+          <div className="flex flex-col md:flex-row justify-between items-center">
+            <div>
+              <h1 className="text-2xl sm:text-4xl font-bold mb-2 sm:mb-3">
+                Job Application Tracker
+              </h1>
+              <p className="text-mobile-sm text-blue-100 max-w-2xl">
+                Track and manage your job applications with Google Sheets integration. 
+                Keep all your job opportunities organized in one place.
+              </p>
+            </div>
+            
+            <div className="mt-4 md:mt-0">
+              <button
+                onClick={handleResumeBuilderClick}
+                className="flex items-center px-4 py-2 bg-white/10 hover:bg-white/20 text-white font-medium rounded-lg transition-colors"
+              >
+                <File className="w-4 h-4 mr-2" />
+                Resume Builder
+              </button>
+            </div>
+          </div>
         </div>
 
         {!sheetAutoLoaded && (
@@ -1098,10 +1174,58 @@ export default function Home() {
         )}
       </div>
 
+      {/* Error message */}
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 sm:px-4 sm:py-3 rounded-lg mb-4 sm:mb-6 flex items-start">
-          <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 mr-2 mt-0.5 flex-shrink-0" />
-          <p className="text-mobile-sm">{error}</p>
+        <div className="max-w-4xl mx-auto mb-6">
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative" role="alert">
+            <div className="flex items-center">
+              <AlertCircle className="h-5 w-5 mr-2" />
+              <p>{error}</p>
+            </div>
+            {error.includes('filter') && (
+              <div className="mt-2 flex gap-2">
+                <button
+                  onClick={clearFilters}
+                  className="text-sm bg-red-100 hover:bg-red-200 text-red-700 px-3 py-1 rounded transition-colors"
+                >
+                  Clear All Filters
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* No results message */}
+      {!loading && !error && filteredRows.length === 0 && data.length > 1 && (
+        <div className="max-w-4xl mx-auto mb-6">
+          <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded relative" role="alert">
+            <div className="flex items-center">
+              <AlertCircle className="h-5 w-5 mr-2" />
+              <div>
+                <p className="font-medium">No jobs found with current filters</p>
+                <p className="text-sm mt-1">Try adjusting your filter criteria:</p>
+                <ul className="text-sm list-disc list-inside mt-2">
+                  {filterText && <li>Search text: "{filterText}"</li>}
+                  {selectedLocation && <li>Location: {selectedLocation}</li>}
+                  {skillFilter && <li>Skills: {skillFilter}</li>}
+                  {showLastDayOnly && <li>Last 24 hours only</li>}
+                  {minSalary && <li>Minimum salary: {minSalary} ({salaryType})</li>}
+                  {excludedWords.length > 0 && (
+                    <li>Excluded words: {excludedWords.join(', ')}</li>
+                  )}
+                </ul>
+              </div>
+            </div>
+            <div className="mt-3 flex gap-2">
+              <button
+                onClick={clearFilters}
+                className="text-sm bg-yellow-100 hover:bg-yellow-200 text-yellow-800 px-3 py-1 rounded transition-colors"
+              >
+                Clear All Filters
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
