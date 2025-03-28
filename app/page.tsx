@@ -4,36 +4,20 @@ import { useState, useEffect } from "react";
 import Cookies from "js-cookie";
 import SheetUrlForm from "./components/SheetUrlForm";
 import JobCardGrid from "./components/JobCardGrid";
-import { FileSpreadsheet, Users, CheckCircle, AlertCircle, Search, X, Sliders, Calendar, MapPin, DollarSign, Ban, List, Grid, XCircle } from "lucide-react";
+import { FileSpreadsheet, CheckCircle, AlertCircle, Search, X, Sliders, Calendar, MapPin, DollarSign, Ban, List, Grid, XCircle } from "lucide-react";
 import ClientSkillsFilter from "./components/ClientSkillsFilter";
+import { useRouter } from "next/navigation";
+import { 
+  extractSpreadsheetId, 
+  validateJobListing, 
+  generateJobId, 
+  getFieldValue, 
+  extractSourceFromUrl,
+  type RowData 
+} from "./utils/dataHelpers";
 
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY;
 const RANGE = process.env.NEXT_PUBLIC_RANGE;
-
-const extractSpreadsheetId = (url: string) => {
-  const match = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-  return match ? match[1] : null;
-};
-
-const validateJobListing = (row: string[], headers: string[]) => {
-  const getFieldValue = (fieldName: string) => {
-    const index = headers.findIndex(
-      (header) => header.toLowerCase() === fieldName.toLowerCase(),
-    );
-    return index !== -1 ? row[index] : "";
-  };
-
-  return Boolean(
-    getFieldValue("title")?.trim() &&
-    getFieldValue("company_name")?.trim()
-  );
-};
-
-interface RowData {
-  data: string[];
-  originalIndex: number;
-  [key: string]: unknown; // Allow for additional properties
-}
 
 export default function Home() {
   const [data, setData] = useState<string[][]>([]);
@@ -76,6 +60,8 @@ export default function Home() {
     const savedViewMode = Cookies.get("viewMode");
     return savedViewMode === 'list' ? 'list' : 'card';
   });
+
+  const router = useRouter();
 
   // Load saved filters on initial render
   useEffect(() => {
@@ -200,26 +186,52 @@ export default function Home() {
       });
     });
     
+    // Apply excluded words filter first, independently of other filters
+    if (excludedWords.length > 0) {
+      console.log('Applying excluded words filter:', excludedWords);
+      filtered = filtered.filter((row) => {
+        const title = getFieldValue(row, "title").toLowerCase();
+        
+        // Only check the job title for excluded words
+        for (const word of excludedWords) {
+          const lowerWord = word.toLowerCase();
+          if (title.includes(lowerWord)) {
+            console.log(`Excluding job with title "${title}" due to word "${word}"`);
+            return false; // Exclude this job if title contains the excluded word
+          }
+        }
+        return true;
+      });
+      console.log('Jobs remaining after excluded words filter:', filtered.length);
+    }
+    
     // Text search filter
     if (filterText) {
       filtered = filtered.filter((row) => {
         const title = getFieldValue(row, "title").toLowerCase();
-        
-        if (!title.includes(filterText.toLowerCase())) {
-          return false;
-        }
-        
-        // Excluded words filter
-        if (excludedWords.length > 0) {
-          for (const word of excludedWords) {
-            if (title.includes(word.toLowerCase())) {
-              return false; // Exclude this job if title contains any excluded word
-            }
-          }
-        }
-        
-        return true;
+        const description = getFieldValue(row, "description").toLowerCase();
+        return title.includes(filterText.toLowerCase()) || 
+               description.includes(filterText.toLowerCase());
       });
+    }
+    
+    // Add error handling for no results
+    if (filtered.length === 0) {
+      console.log('No results found with current filters:', {
+        filterText,
+        selectedLocation,
+        skillFilter,
+        showLastDayOnly,
+        minSalary,
+        salaryType,
+        excludedWords
+      });
+      
+      // Set error state to show user feedback
+      setError('No jobs found with the current filter combination. Try adjusting your filters.');
+    } else {
+      // Clear error if we have results
+      setError(null);
     }
     
     // Location filter
@@ -416,11 +428,28 @@ export default function Home() {
 
       // Filter out invalid entries while preserving original indices
       const validRows = rowsWithIndices.filter((row: RowData) => {
-        const isValid = validateJobListing(row.data, headers);
-        if (!isValid) {
-          console.log(`Row ${row.originalIndex} failed validation:`, row.data);
+        try {
+          const splicedRow = row.data.slice(0); // create a copy
+          // Replace empty cells with empty strings to avoid undefined issues
+          splicedRow.forEach((cell, idx) => {
+            if (cell === undefined) splicedRow[idx] = "";
+          });
+          
+          // Filter out rows that don't have required fields
+          const isValid = row.data && Array.isArray(row.data) 
+            ? validateJobListing(row.data, headers)
+            : false;
+          
+          if (!isValid) {
+            console.log(`Skipping invalid job record: ${row}`);
+            return false;
+          }
+          
+          return true;
+        } catch (err) {
+          console.error("Error validating row:", err);
+          return false;
         }
-        return isValid;
       });
 
       console.log("Valid rows after filtering:", validRows.length);
@@ -725,15 +754,44 @@ export default function Home() {
 
   // Add new excluded word
   const handleAddExcludedWord = () => {
-    if (newExcludeWord.trim() !== "" && !excludedWords.includes(newExcludeWord.trim())) {
-      setExcludedWords([...excludedWords, newExcludeWord.trim()]);
-      setNewExcludeWord("");
+    if (newExcludeWord.trim() !== "") {
+      const word = newExcludeWord.trim();
+      if (!excludedWords.includes(word)) {
+        const updatedWords = [...excludedWords, word];
+        setExcludedWords(updatedWords);
+        setNewExcludeWord("");
+        
+        // Save to cookies immediately
+        const filters = {
+          filterText,
+          selectedLocation,
+          skillFilter,
+          showLastDayOnly,
+          minSalary,
+          salaryType,
+          excludedWords: updatedWords,
+        };
+        Cookies.set("savedFilters", JSON.stringify(filters), { expires: 30 });
+      }
     }
   };
 
   // Remove excluded word
   const handleRemoveExcludedWord = (word: string) => {
-    setExcludedWords(excludedWords.filter(w => w !== word));
+    const updatedWords = excludedWords.filter(w => w !== word);
+    setExcludedWords(updatedWords);
+    
+    // Save to cookies immediately
+    const filters = {
+      filterText,
+      selectedLocation,
+      skillFilter,
+      showLastDayOnly,
+      minSalary,
+      salaryType,
+      excludedWords: updatedWords,
+    };
+    Cookies.set("savedFilters", JSON.stringify(filters), { expires: 30 });
   };
 
   // Save filters to cookies
@@ -789,38 +847,32 @@ export default function Home() {
 
   // Function to prepare job data from row data
   const prepareJobData = (row: any, index: number): any => {
-    // Existing function implementation...
-    // We need to add this function if it doesn't exist already in your code
-    const getFieldValue = (fieldName: string) => {
-      const columnIndex = findColumnIndex(fieldName);
-      if (columnIndex === -1) return "";
-      
-      const rowData = Array.isArray(row) ? row : row.data;
-      return rowData[columnIndex] || "";
-    };
+    const headers = data[0];
+    const id = generateJobId(row, index, headers);
     
-    const title = getFieldValue("title");
-    const company = getFieldValue("company_name");
-    const location = getFieldValue("location");
-    const jobType = getFieldValue("job_type") || getFieldValue("type");
-    const salary = getFieldValue("salary");
-    const datePosted = getFieldValue("date_posted") || getFieldValue("currentdate");
-    const description = getFieldValue("description");
-    const url = getFieldValue("url");
-    const companyWebsite = getFieldValue("company_website");
-    const companyImage = getFieldValue("company_image");
-    const experience = getFieldValue("experience");
-    const skills = getFieldValue("skills");
-    const notes = getFieldValue("notes");
-    
-    // Generate a unique ID for the job
-    const id = generateJobId(row, index);
+    // Use the imported getFieldValue with headers
+    const title = getFieldValue(row, "title", headers);
+    const company = getFieldValue(row, "company_name", headers);
+    const location = getFieldValue(row, "location", headers);
+    const jobType = getFieldValue(row, "job_type", headers) || getFieldValue(row, "type", headers);
+    const salary = getFieldValue(row, "salary", headers);
+    const datePosted = getFieldValue(row, "date_posted", headers) || getFieldValue(row, "currentdate", headers);
+    const description = getFieldValue(row, "description", headers);
+    const url = getFieldValue(row, "url", headers);
+    const companyWebsite = getFieldValue(row, "company_website", headers);
+    const companyImage = getFieldValue(row, "company_image", headers);
+    const experience = getFieldValue(row, "experience", headers);
+    const skills = getFieldValue(row, "skills", headers);
+    const notes = getFieldValue(row, "notes", headers);
     
     return {
+      id,
+      originalIndex: typeof row.originalIndex === 'number' ? row.originalIndex : index,
       title,
       company_name: company,
       location,
       job_type: jobType,
+      type: jobType,
       salary,
       date_posted: datePosted,
       description,
@@ -830,37 +882,21 @@ export default function Home() {
       experience,
       skills,
       notes,
-      id
+      is_applied: appliedJobs.includes(id),
+      source: extractSourceFromUrl(url || companyWebsite),
     };
   };
 
   const findColumnIndex = (fieldName: string) => {
-    if (!data[0]) return -1;
-    
-    return data[0].findIndex(
+    if (!data || data.length === 0) return -1;
+    const headers = data[0];
+    return headers.findIndex(
       (header) => header.toLowerCase() === fieldName.toLowerCase()
     );
   };
 
-  const generateJobId = (row: any, index: number): string => {
-    const titleIndex = findColumnIndex("title");
-    const companyIndex = findColumnIndex("company_name");
-    
-    let title, company;
-    
-    if (Array.isArray(row)) {
-      title = titleIndex >= 0 ? row[titleIndex] : "";
-      company = companyIndex >= 0 ? row[companyIndex] : "";
-    } else if (row.data) {
-      title = titleIndex >= 0 ? row.data[titleIndex] : "";
-      company = companyIndex >= 0 ? row.data[companyIndex] : "";
-    } else {
-      return `job-${index}`;
-    }
-    
-    // We use the title+company as the job ID because it's unique enough
-    // for our purposes and allows us to identify duplicates
-    return `${title}-${company}`.replace(/\s+/g, '-');
+  const handleResumeBuilderClick = () => {
+    router.push("/resume-builder");
   };
 
   // Extract headers and rows from data
@@ -879,13 +915,27 @@ export default function Home() {
     <div className="max-w-6xl mx-auto px-4 sm:px-6 no-overflow mobile-container">
       <div className="mb-4 sm:mb-8">
         <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl shadow-xl p-4 sm:p-10 text-white mb-4 sm:mb-8">
-          <h1 className="text-2xl sm:text-4xl font-bold mb-2 sm:mb-3">
-            Job Application Tracker
-          </h1>
-          <p className="text-mobile-sm text-blue-100 max-w-2xl">
-            Track and manage your job applications with Google Sheets integration. 
-            Keep all your job opportunities organized in one place.
-          </p>
+          <div className="flex flex-col md:flex-row justify-between items-center">
+            <div>
+              <h1 className="text-2xl sm:text-4xl font-bold mb-2 sm:mb-3">
+                Job Application Tracker
+              </h1>
+              <p className="text-mobile-sm text-blue-100 max-w-2xl">
+                Track and manage your job applications with Google Sheets integration. 
+                Keep all your job opportunities organized in one place.
+              </p>
+            </div>
+            
+            <div className="mt-4 md:mt-0">
+              <button
+                onClick={handleResumeBuilderClick}
+                className="flex items-center px-4 py-2 bg-white/10 hover:bg-white/20 text-white font-medium rounded-lg transition-colors"
+              >
+                <FileSpreadsheet className="w-4 h-4 mr-2" />
+                Resume Builder
+              </button>
+            </div>
+          </div>
         </div>
 
         {!sheetAutoLoaded && (
@@ -1098,10 +1148,58 @@ export default function Home() {
         )}
       </div>
 
+      {/* Error message */}
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 sm:px-4 sm:py-3 rounded-lg mb-4 sm:mb-6 flex items-start">
-          <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 mr-2 mt-0.5 flex-shrink-0" />
-          <p className="text-mobile-sm">{error}</p>
+        <div className="max-w-4xl mx-auto mb-6">
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative" role="alert">
+            <div className="flex items-center">
+              <AlertCircle className="h-5 w-5 mr-2" />
+              <p>{error}</p>
+            </div>
+            {error.includes('filter') && (
+              <div className="mt-2 flex gap-2">
+                <button
+                  onClick={clearFilters}
+                  className="text-sm bg-red-100 hover:bg-red-200 text-red-700 px-3 py-1 rounded transition-colors"
+                >
+                  Clear All Filters
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* No results message */}
+      {!loading && !error && filteredRows.length === 0 && data.length > 1 && (
+        <div className="max-w-4xl mx-auto mb-6">
+          <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded relative" role="alert">
+            <div className="flex items-center">
+              <AlertCircle className="h-5 w-5 mr-2" />
+              <div>
+                <p className="font-medium">No jobs found with current filters</p>
+                <p className="text-sm mt-1">Try adjusting your filter criteria:</p>
+                <ul className="text-sm list-disc list-inside mt-2">
+                  {filterText && <li>Search text: "{filterText}"</li>}
+                  {selectedLocation && <li>Location: {selectedLocation}</li>}
+                  {skillFilter && <li>Skills: {skillFilter}</li>}
+                  {showLastDayOnly && <li>Last 24 hours only</li>}
+                  {minSalary && <li>Minimum salary: {minSalary} ({salaryType})</li>}
+                  {excludedWords.length > 0 && (
+                    <li>Excluded words: {excludedWords.join(', ')}</li>
+                  )}
+                </ul>
+              </div>
+            </div>
+            <div className="mt-3 flex gap-2">
+              <button
+                onClick={clearFilters}
+                className="text-sm bg-yellow-100 hover:bg-yellow-200 text-yellow-800 px-3 py-1 rounded transition-colors"
+              >
+                Clear All Filters
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1141,7 +1239,7 @@ export default function Home() {
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-3 sm:p-5 border border-gray-100 dark:border-gray-700">
               <div className="flex items-center mb-2 sm:mb-3">
                 <div className="bg-purple-100 dark:bg-purple-900/30 p-1.5 sm:p-2 rounded-lg mr-2 sm:mr-3">
-                  <Users className="w-4 h-4 sm:w-5 sm:h-5 text-purple-600 dark:text-purple-400" />
+                  <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5 text-purple-600 dark:text-purple-400" />
                 </div>
                 <h3 className="font-medium text-mobile-sm text-gray-900 dark:text-white">Remaining</h3>
               </div>

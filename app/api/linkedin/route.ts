@@ -6,7 +6,7 @@ const BORE_PUB_STOP_TASK_URL = 'http://bore.pub:37211/stop-task';
 const BORE_PUB_TASK_STATUS_URL = 'http://bore.pub:37211/task-status'; // New endpoint for polling
 
 // Maximum time (in milliseconds) a task should run before we force stop it
-const MAX_TASK_RUNTIME = 75000; // 1.5 minutes
+const MAX_TASK_RUNTIME = 95000; // 1.5 minutes
 
 // Interface for the request body
 interface LinkedInTaskRequestBody {
