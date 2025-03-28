@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { parseResumeFile } from '../utils/resumeParser';
 import { generateResumeFile } from '../utils/resumeGenerator';
@@ -8,7 +8,7 @@ import { ResumeData, PersonalInfo } from '../types/resume';
 import { toast, Toaster } from 'react-hot-toast';
 
 // Component for the Resume Builder page
-export default function ResumeBuilder() {
+function ResumeBuilderContent() {
   const searchParams = useSearchParams();
   const jobId = searchParams.get('jobId');
   
@@ -657,5 +657,13 @@ export default function ResumeBuilder() {
         {renderStep()}
       </div>
     </div>
+  );
+}
+
+export default function ResumeBuilderPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <ResumeBuilderContent />
+    </Suspense>
   );
 } 
