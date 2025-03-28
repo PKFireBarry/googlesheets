@@ -3,12 +3,11 @@
 import { useState, useEffect, useRef, TouchEvent } from 'react'
 import JobCard from './JobCard'
 import { ChevronLeft, ChevronRight, Grid, List, MapPin, Calendar, Link2, CheckCircle, Filter, ArrowUpDown } from 'lucide-react'
+import { generateJobId, getFieldValue, formatDateSafely, type RowData as UtilRowData } from '../utils/dataHelpers'
 
 // Define types for job data
-interface JobData {
-  [key: number]: string | number | boolean | null;
-  data?: string[];
-  originalIndex?: number;
+interface JobData extends UtilRowData {
+  // Additional JobData specific properties can be added here
 }
 
 interface PreparedJob {
@@ -190,144 +189,51 @@ export default function JobCardGrid({
     }
   }
   
-  const generateJobId = (job: JobData, index: number) => {
-    // Try to use a unique identifier from the job data
-    const jobData = Array.isArray(job) ? job : job.data || []
-    
-    // Check if there's an ID field
-    const idIndex = findColumnIndex('id')
-    if (idIndex !== -1 && jobData[idIndex]) {
-      const id = jobData[idIndex];
-      console.log(`Generated job ID from ID field: ${id} for job at index ${index}`);
-      return id.toString();
-    }
-    
-    // Use a combination of title and company name if available
-    const titleIndex = findColumnIndex('title')
-    const companyIndex = findColumnIndex('company_name')
-    
-    if (titleIndex !== -1 && companyIndex !== -1 && jobData[titleIndex] && jobData[companyIndex]) {
-      const id = `${jobData[titleIndex]}-${jobData[companyIndex]}-${index}`;
-      console.log(`Generated job ID from title and company: ${id} for job at index ${index}`);
-      return id;
-    }
-    
-    // Fallback to index
-    const id = `job-${index}`;
-    console.log(`Generated fallback job ID: ${id} for job at index ${index}`);
-    return id;
-  }
-  
-  // Check if a job is applied using all possible ID formats
   const isJobInAppliedList = (job: JobData, index: number): boolean => {
-    // Get the job title and company
-    const titleIndex = findColumnIndex('title');
-    const companyIndex = findColumnIndex('company_name');
-    
-    // Extract job data depending on format
-    const jobData = Array.isArray(job) ? job : (job.data || []);
-    
-    // Get title and company name
-    const title = titleIndex !== -1 ? jobData[titleIndex] || '' : '';
-    const company = companyIndex !== -1 ? jobData[companyIndex] || '' : '';
-    
-    if (!title) return false;
-    
-    // Create the consistent ID format
-    const consistentJobId = title && company ? 
-      `${title}-${company}`.replace(/\s+/g, '-') : title;
-    
-    // Check all possible formats:
-    // 1. As the consistent ID (title-company)
-    // 2. Just by the title (older format)
-    // 3. With the title-company prefix (may have additional suffix)
-    return (
-      appliedJobs.includes(consistentJobId) ||
-      appliedJobs.includes(title) ||
-      (company && appliedJobs.some(id => id.startsWith(`${title}-${company}`)))
-    );
-  };
+    const id = generateJobId(job, index, headers)
+    return appliedJobs.includes(id)
+  }
   
   const prepareJobData = (job: JobData, index: number): PreparedJob => {
-    // Ensure we have valid job data
-    if (!job) {
-      console.error('Invalid job data:', job);
-      return {
-        id: `job-${index}`,
-        originalIndex: index + 2,
-        title: 'Unknown Job',
-        company_name: 'Unknown Company',
-        location: '',
-        description: '',
-        skills: '',
-        date_posted: '',
-        currentDate: '',
-        currentdate: '',
-        url: '',
-        company_website: '',
-        company_image: '',
-        experience: '',
-        notes: '',
-        source: 'Unknown',
-        is_applied: false
-      };
-    }
-
-    // Get the job data array, handling both array and object formats
-    const jobData = Array.isArray(job) ? job : (job.data || []);
+    // Use our utility function
+    const id = generateJobId(job, index, headers)
     
-    // Ensure we have a valid originalIndex
-    const originalIndex = job.originalIndex || index + 2;
+    // Use the getFieldValue utility
+    const title = getFieldValue(job, "title", headers)
+    const company = getFieldValue(job, "company_name", headers)
+    const location = getFieldValue(job, "location", headers)
+    const jobType = getFieldValue(job, "job_type", headers) || getFieldValue(job, "type", headers)
+    const salary = getFieldValue(job, "salary", headers)
+    const datePosted = getFieldValue(job, "date_posted", headers) || getFieldValue(job, "currentdate", headers) || getFieldValue(job, "currentDate", headers)
+    const description = getFieldValue(job, "description", headers)
+    const url = getFieldValue(job, "url", headers)
+    const companyWebsite = getFieldValue(job, "company_website", headers)
+    const companyImage = getFieldValue(job, "company_image", headers)
+    const experience = getFieldValue(job, "experience", headers)
+    const skills = getFieldValue(job, "skills", headers)
+    const notes = getFieldValue(job, "notes", headers)
     
-    // Create a structured job object
-    const structuredJob: PreparedJob = {
-      id: generateJobId(job, index),
-      originalIndex,
-      is_applied: isJobInAppliedList(job, index), // Add applied status
-      title: '',
-      company_name: '',
-      source: 'Unknown'
-    };
-    
-    // Map all available fields from the headers
-    headers.forEach((header, idx) => {
-      const key = header.toLowerCase().replace(/\s+/g, '_');
-      structuredJob[key] = jobData[idx] || '';
-    });
-    
-    // Extract source from company_website or url field
-    structuredJob.source = extractSourceFromUrl(structuredJob.company_website || structuredJob.url || '');
-    
-    return structuredJob;
-  }
-  
-  // Extract source name from URL (e.g., linkedin.com, indeed.com)
-  const extractSourceFromUrl = (url: string): string => {
-    if (!url) return 'Unknown'
-    
-    try {
-      // Remove protocol and www. prefix
-      let domain = url.replace(/^(https?:\/\/)?(www\.)?/i, '')
-      
-      // Get domain name without path
-      domain = domain.split('/')[0]
-      
-      // Special case handling for common job sites
-      if (domain.includes('linkedin')) return 'LinkedIn'
-      if (domain.includes('indeed')) return 'Indeed'
-      if (domain.includes('ziprecruiter')) return 'ZipRecruiter'
-      if (domain.includes('monster')) return 'Monster'
-      if (domain.includes('glassdoor')) return 'Glassdoor'
-      if (domain.includes('dice')) return 'Dice'
-      if (domain.includes('simplyhired')) return 'SimplyHired'
-      if (domain.includes('careerbuilder')) return 'CareerBuilder'
-      if (domain.includes('google.com/about/careers')) return 'Google Careers'
-      
-      // Return just the domain part
-      return domain
-    } catch (error) {
-      console.error('Error extracting source from URL:', url, error)
-      return 'Unknown'
+    return {
+      id,
+      originalIndex: typeof job.originalIndex === 'number' ? job.originalIndex : index,
+      is_applied: appliedJobs.includes(id),
+      title,
+      company_name: company,
+      location,
+      description,
+      job_type: jobType,
+      type: jobType,
+      salary,
+      date_posted: datePosted,
+      currentDate: datePosted,
+      currentdate: datePosted,
+      url,
+      company_website: companyWebsite,
+      company_image: companyImage,
+      experience,
+      skills,
+      notes,
+      source: job.source || 'Unknown'
     }
   }
   
@@ -370,7 +276,7 @@ export default function JobCardGrid({
     });
     
     // Use the consistent job ID if available, otherwise fall back to title or generated ID
-    const jobId = consistentJobId || generateJobId(job, currentIndex)
+    const jobId = consistentJobId || generateJobId(job, currentIndex, headers)
     
     onApply(jobId)
   }
@@ -416,30 +322,6 @@ export default function JobCardGrid({
 
   const handleBackToList = () => {
     setSelectedJobForDetail(null)
-  }
-  
-  // Format a date string safely
-  const formatDateSafely = (dateString: string | undefined): string => {
-    if (!dateString) return 'Unknown';
-    
-    try {
-      const date = new Date(dateString);
-      
-      // Check if the date is valid
-      if (isNaN(date.getTime())) {
-        console.log('Invalid date in JobCardGrid:', dateString);
-        return dateString;
-      }
-      
-      return date.toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric'
-      });
-    } catch (e) {
-      console.error('Error formatting date in JobCardGrid:', dateString, e);
-      return dateString || 'Unknown';
-    }
   }
   
   // Function to handle hiding a job

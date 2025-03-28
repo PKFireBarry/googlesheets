@@ -23,6 +23,7 @@ import {
   File
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import { extractSourceFromUrl, formatDateSafely } from '../utils/dataHelpers'
 
 interface JobCardProps {
   job: {
@@ -84,49 +85,13 @@ export default function JobCard({
     }
   }
   
-  const formatDate = (dateString: string | undefined) => {
-    if (!dateString) return "Unknown";
-    
-    try {
-      const date = new Date(dateString);
-      
-      if (isNaN(date.getTime())) {
-        return dateString;
-      }
-      
-      return date.toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric'
-      });
-    } catch {
-      return dateString;
-    }
-  }
-  
   const getJobSource = (): string => {
     if (job.source) return job.source;
     
     const url = job.company_website || job.url || '';
     if (!url) return 'Unknown';
     
-    try {
-      let domain = url.replace(/^(https?:\/\/)?(www\.)?/i, '');
-      domain = domain.split('/')[0];
-      
-      if (domain.includes('linkedin')) return 'LinkedIn';
-      if (domain.includes('indeed')) return 'Indeed';
-      if (domain.includes('ziprecruiter')) return 'ZipRecruiter';
-      if (domain.includes('monster')) return 'Monster';
-      if (domain.includes('glassdoor')) return 'Glassdoor';
-      if (domain.includes('dice')) return 'Dice';
-      if (domain.includes('simplyhired')) return 'SimplyHired';
-      if (domain.includes('careerbuilder')) return 'CareerBuilder';
-      
-      return domain;
-    } catch {
-      return 'Unknown';
-    }
+    return extractSourceFromUrl(url);
   }
   
   const handleStartMockInterview = () => {
@@ -251,7 +216,7 @@ export default function JobCard({
           {/* Date Posted - Always show this regardless of whether date exists */}
           <div className="flex items-center text-gray-600 dark:text-gray-400">
             <Calendar className="w-4 h-4 mr-2 text-gray-500 dark:text-gray-500 flex-shrink-0" />
-            <span>Posted: {formatDate(job.date_posted || job.currentDate || job.currentdate)}</span>
+            <span>Posted: {formatDateSafely(job.date_posted || job.currentDate || job.currentdate)}</span>
           </div>
 
           <div className="flex items-center text-gray-600 dark:text-gray-400">

@@ -4,37 +4,20 @@ import { useState, useEffect } from "react";
 import Cookies from "js-cookie";
 import SheetUrlForm from "./components/SheetUrlForm";
 import JobCardGrid from "./components/JobCardGrid";
-import { FileSpreadsheet, Users, CheckCircle, AlertCircle, Search, X, Sliders, Calendar, MapPin, DollarSign, Ban, List, Grid, XCircle, File } from "lucide-react";
+import { FileSpreadsheet, CheckCircle, AlertCircle, Search, X, Sliders, Calendar, MapPin, DollarSign, Ban, List, Grid, XCircle } from "lucide-react";
 import ClientSkillsFilter from "./components/ClientSkillsFilter";
 import { useRouter } from "next/navigation";
+import { 
+  extractSpreadsheetId, 
+  validateJobListing, 
+  generateJobId, 
+  getFieldValue, 
+  extractSourceFromUrl,
+  type RowData 
+} from "./utils/dataHelpers";
 
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY;
 const RANGE = process.env.NEXT_PUBLIC_RANGE;
-
-const extractSpreadsheetId = (url: string) => {
-  const match = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-  return match ? match[1] : null;
-};
-
-const validateJobListing = (row: string[], headers: string[]) => {
-  const getFieldValue = (fieldName: string) => {
-    const index = headers.findIndex(
-      (header) => header.toLowerCase() === fieldName.toLowerCase(),
-    );
-    return index !== -1 ? row[index] : "";
-  };
-
-  return Boolean(
-    getFieldValue("title")?.trim() &&
-    getFieldValue("company_name")?.trim()
-  );
-};
-
-interface RowData {
-  data: string[];
-  originalIndex: number;
-  [key: string]: unknown; // Allow for additional properties
-}
 
 export default function Home() {
   const [data, setData] = useState<string[][]>([]);
@@ -445,11 +428,28 @@ export default function Home() {
 
       // Filter out invalid entries while preserving original indices
       const validRows = rowsWithIndices.filter((row: RowData) => {
-        const isValid = validateJobListing(row.data, headers);
-        if (!isValid) {
-          console.log(`Row ${row.originalIndex} failed validation:`, row.data);
+        try {
+          const splicedRow = row.data.slice(0); // create a copy
+          // Replace empty cells with empty strings to avoid undefined issues
+          splicedRow.forEach((cell, idx) => {
+            if (cell === undefined) splicedRow[idx] = "";
+          });
+          
+          // Filter out rows that don't have required fields
+          const isValid = row.data && Array.isArray(row.data) 
+            ? validateJobListing(row.data, headers)
+            : false;
+          
+          if (!isValid) {
+            console.log(`Skipping invalid job record: ${row}`);
+            return false;
+          }
+          
+          return true;
+        } catch (err) {
+          console.error("Error validating row:", err);
+          return false;
         }
-        return isValid;
       });
 
       console.log("Valid rows after filtering:", validRows.length);
@@ -847,38 +847,32 @@ export default function Home() {
 
   // Function to prepare job data from row data
   const prepareJobData = (row: any, index: number): any => {
-    // Existing function implementation...
-    // We need to add this function if it doesn't exist already in your code
-    const getFieldValue = (fieldName: string) => {
-      const columnIndex = findColumnIndex(fieldName);
-      if (columnIndex === -1) return "";
-      
-      const rowData = Array.isArray(row) ? row : row.data;
-      return rowData[columnIndex] || "";
-    };
+    const headers = data[0];
+    const id = generateJobId(row, index, headers);
     
-    const title = getFieldValue("title");
-    const company = getFieldValue("company_name");
-    const location = getFieldValue("location");
-    const jobType = getFieldValue("job_type") || getFieldValue("type");
-    const salary = getFieldValue("salary");
-    const datePosted = getFieldValue("date_posted") || getFieldValue("currentdate");
-    const description = getFieldValue("description");
-    const url = getFieldValue("url");
-    const companyWebsite = getFieldValue("company_website");
-    const companyImage = getFieldValue("company_image");
-    const experience = getFieldValue("experience");
-    const skills = getFieldValue("skills");
-    const notes = getFieldValue("notes");
-    
-    // Generate a unique ID for the job
-    const id = generateJobId(row, index);
+    // Use the imported getFieldValue with headers
+    const title = getFieldValue(row, "title", headers);
+    const company = getFieldValue(row, "company_name", headers);
+    const location = getFieldValue(row, "location", headers);
+    const jobType = getFieldValue(row, "job_type", headers) || getFieldValue(row, "type", headers);
+    const salary = getFieldValue(row, "salary", headers);
+    const datePosted = getFieldValue(row, "date_posted", headers) || getFieldValue(row, "currentdate", headers);
+    const description = getFieldValue(row, "description", headers);
+    const url = getFieldValue(row, "url", headers);
+    const companyWebsite = getFieldValue(row, "company_website", headers);
+    const companyImage = getFieldValue(row, "company_image", headers);
+    const experience = getFieldValue(row, "experience", headers);
+    const skills = getFieldValue(row, "skills", headers);
+    const notes = getFieldValue(row, "notes", headers);
     
     return {
+      id,
+      originalIndex: typeof row.originalIndex === 'number' ? row.originalIndex : index,
       title,
       company_name: company,
       location,
       job_type: jobType,
+      type: jobType,
       salary,
       date_posted: datePosted,
       description,
@@ -888,37 +882,21 @@ export default function Home() {
       experience,
       skills,
       notes,
-      id
+      is_applied: appliedJobs.includes(id),
+      source: extractSourceFromUrl(url || companyWebsite),
     };
   };
 
   const findColumnIndex = (fieldName: string) => {
-    if (!data[0]) return -1;
-    
-    return data[0].findIndex(
+    if (!data || data.length === 0) return -1;
+    const headers = data[0];
+    return headers.findIndex(
       (header) => header.toLowerCase() === fieldName.toLowerCase()
     );
   };
 
-  const generateJobId = (row: any, index: number): string => {
-    const titleIndex = findColumnIndex("title");
-    const companyIndex = findColumnIndex("company_name");
-    
-    let title, company;
-    
-    if (Array.isArray(row)) {
-      title = titleIndex >= 0 ? row[titleIndex] : "";
-      company = companyIndex >= 0 ? row[companyIndex] : "";
-    } else if (row.data) {
-      title = titleIndex >= 0 ? row.data[titleIndex] : "";
-      company = companyIndex >= 0 ? row.data[companyIndex] : "";
-    } else {
-      return `job-${index}`;
-    }
-    
-    // We use the title+company as the job ID because it's unique enough
-    // for our purposes and allows us to identify duplicates
-    return `${title}-${company}`.replace(/\s+/g, '-');
+  const handleResumeBuilderClick = () => {
+    router.push("/resume-builder");
   };
 
   // Extract headers and rows from data
@@ -932,10 +910,6 @@ export default function Home() {
       originalIndex: 'originalIndex' in row ? row.originalIndex : index + 2,
     };
   });
-
-  const handleResumeBuilderClick = () => {
-    router.push('/resume-builder');
-  };
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 no-overflow mobile-container">
@@ -957,7 +931,7 @@ export default function Home() {
                 onClick={handleResumeBuilderClick}
                 className="flex items-center px-4 py-2 bg-white/10 hover:bg-white/20 text-white font-medium rounded-lg transition-colors"
               >
-                <File className="w-4 h-4 mr-2" />
+                <FileSpreadsheet className="w-4 h-4 mr-2" />
                 Resume Builder
               </button>
             </div>
@@ -1265,7 +1239,7 @@ export default function Home() {
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-3 sm:p-5 border border-gray-100 dark:border-gray-700">
               <div className="flex items-center mb-2 sm:mb-3">
                 <div className="bg-purple-100 dark:bg-purple-900/30 p-1.5 sm:p-2 rounded-lg mr-2 sm:mr-3">
-                  <Users className="w-4 h-4 sm:w-5 sm:h-5 text-purple-600 dark:text-purple-400" />
+                  <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5 text-purple-600 dark:text-purple-400" />
                 </div>
                 <h3 className="font-medium text-mobile-sm text-gray-900 dark:text-white">Remaining</h3>
               </div>
