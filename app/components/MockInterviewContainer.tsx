@@ -10,8 +10,15 @@ import {
   ThumbsUp, 
   X, 
   Clock, 
-  RefreshCw
+  RefreshCw,
+  FileUp,
+  FileText,
+  Check,
+  Trash2
 } from 'lucide-react'
+import { loadResume, deleteResume, resumeExists, saveResume } from '../utils/resumeStorage'
+import { prepareResumeTextForAPI } from '../utils/resumeAdapter'
+import { toast } from 'react-hot-toast'
 
 interface Job {
   id: string;
@@ -100,6 +107,90 @@ export default function MockInterviewContainer({ jobData }: MockInterviewContain
     // Fetch suggested questions when the component loads
     fetchSuggestedQuestions()
   }, [jobData]) // Re-fetch if job data changes
+
+  // Check for a shared resume
+  useEffect(() => {
+    if (resumeExists()) {
+      const { resumeData, resumePdfData } = loadResume();
+      if (resumePdfData) {
+        // We have a stored PDF resume
+        setResumeBase64(resumePdfData);
+        setResumeText('Shared PDF resume available');
+        
+        // Add a message about the available resume
+        const message: Message = {
+          id: generateId(),
+          role: 'system',
+          content: "A shared resume is available. You can use it for this interview.",
+          timestamp: new Date(),
+        };
+        setMessages(prev => [...prev, message]);
+      } else if (resumeData) {
+        // We have stored resume data
+        const resumeText = prepareResumeTextForAPI(resumeData, null);
+        if (resumeText) {
+          setResumeText('Shared resume available');
+          // Convert the resume to base64 for the API
+          const base64Encoded = btoa(unescape(encodeURIComponent(resumeText)));
+          setResumeBase64(base64Encoded);
+          
+          // Add a message about the available resume
+          const message: Message = {
+            id: generateId(),
+            role: 'system',
+            content: "A shared resume is available. You can use it for this interview.",
+            timestamp: new Date(),
+          };
+          setMessages(prev => [...prev, message]);
+        }
+      }
+    }
+  }, []);
+  
+  // Handle using the shared resume
+  const useSharedResume = () => {
+    if (resumeExists()) {
+      const { resumeData, resumePdfData } = loadResume();
+      
+      if (resumePdfData) {
+        setResumeBase64(resumePdfData);
+        setResumeText('Using shared PDF resume');
+      } else if (resumeData) {
+        const resumeText = prepareResumeTextForAPI(resumeData, null);
+        if (resumeText) {
+          const base64Encoded = btoa(unescape(encodeURIComponent(resumeText)));
+          setResumeBase64(base64Encoded);
+          setResumeText('Using shared resume');
+        }
+      }
+      
+      // Add a confirmation message
+      const message: Message = {
+        id: generateId(),
+        role: 'system',
+        content: 'Using your shared resume for this interview.',
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, message]);
+      toast.success('Using your shared resume for this interview');
+    }
+  };
+  
+  // Handle removing the shared resume
+  const removeSharedResume = () => {
+    setResumeFile(null);
+    setResumeBase64(null);
+    setResumeText(null);
+    
+    const message: Message = {
+      id: generateId(),
+      role: 'system',
+      content: 'Resume removed. The interview will not use resume information.',
+      timestamp: new Date(),
+    };
+    setMessages(prev => [...prev, message]);
+    toast.success('Resume removed from this interview');
+  };
 
   const generateId = () => {
     return Math.random().toString(36).substring(2, 9)
@@ -234,6 +325,19 @@ export default function MockInterviewContainer({ jobData }: MockInterviewContain
       const fileInfoText = `Resume "${file.name}" (${sizeInKb} KB) uploaded successfully`;
       setResumeText(fileInfoText);
       
+      // Save to shared storage
+      const isPdf = file.name.toLowerCase().endsWith('.pdf');
+      if (isPdf) {
+        // For PDF files, we store the base64 data
+        saveResume(null, base64Data);
+        toast.success('Resume saved to shared storage');
+      } else {
+        // For text-based files, we might attempt to parse it in the future
+        // For now, we just store it as PDF data
+        saveResume(null, base64Data);
+        toast.success('Resume saved to shared storage');
+      }
+      
       const message: Message = {
         id: generateId(),
         role: 'system',
@@ -250,6 +354,7 @@ export default function MockInterviewContainer({ jobData }: MockInterviewContain
         timestamp: new Date(),
       }
       setMessages(prev => [...prev, errorMessage])
+      toast.error('Failed to process resume file');
     } finally {
       setIsLoading(false)
     }
@@ -965,47 +1070,66 @@ export default function MockInterviewContainer({ jobData }: MockInterviewContain
           {!isStarted ? (
             <div className="flex flex-col gap-3">
               <div className="flex flex-col sm:flex-row gap-3">
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex items-center justify-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  disabled={isLoading}
-                >
-                  <Upload className="w-4 h-4 mr-2" />
-                  Upload Resume (Optional)
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={handleFileChange}
-                    accept=".pdf,.doc,.docx"
-                    className="hidden"
-                    disabled={isLoading}
-                  />
-                </button>
-                
-                <button
-                  onClick={startInterview}
-                  className="flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  disabled={isLoading}
-                >
-                  {isLoading ? (
-                    <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-white mr-2"></div>
-                      Loading...
-                    </>
-                  ) : (
-                    <>
-                      Start Interview
-                    </>
+                <div className="flex items-center gap-3">
+                  <div className="flex-1">
+                    <label htmlFor="resume-upload" className="cursor-pointer flex items-center justify-center gap-2 w-full px-4 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors">
+                      <FileUp className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                      Upload Resume
+                    </label>
+                    <input
+                      type="file"
+                      id="resume-upload"
+                      accept=".pdf,.docx,.txt,.rtf"
+                      onChange={handleFileChange}
+                      className="hidden"
+                    />
+                  </div>
+                  
+                  {resumeExists() && (
+                    <button
+                      onClick={useSharedResume}
+                      className="flex items-center gap-2 px-4 py-2 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 rounded-md text-sm font-medium hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors"
+                    >
+                      <FileText className="w-4 h-4" />
+                      Use Shared Resume
+                    </button>
                   )}
-                </button>
+                  
+                  {(resumeText || resumeBase64) && (
+                    <button
+                      onClick={removeSharedResume}
+                      className="flex items-center gap-2 px-4 py-2 bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300 rounded-md text-sm font-medium hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Remove Resume
+                    </button>
+                  )}
+                </div>
+                
+                {resumeText && (
+                  <div className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-700/50 p-3 rounded-md">
+                    <Check className="w-4 h-4 text-green-600 dark:text-green-400" />
+                    {resumeText}
+                  </div>
+                )}
               </div>
               
-              {/* Display resume status information */}
-              {resumeText && (
-                <div className="text-sm text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-700/50 p-2 rounded">
-                  {resumeText}
-                </div>
-              )}
+              <button
+                onClick={startInterview}
+                className="flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-white mr-2"></div>
+                    Loading...
+                  </>
+                ) : (
+                  <>
+                    Start Interview
+                  </>
+                )}
+              </button>
             </div>
           ) : (
             <form onSubmit={handleMessageSubmit} className="flex gap-2">

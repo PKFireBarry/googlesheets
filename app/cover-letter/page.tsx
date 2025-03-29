@@ -18,6 +18,8 @@ import {
 } from "lucide-react";
 import { jsPDF } from "jspdf";
 import Cookies from "js-cookie";
+import { loadResume, saveResume, deleteResume, resumeExists } from '../utils/resumeStorage';
+import { convertToCoverLetterFormat, prepareResumeTextForAPI } from '../utils/resumeAdapter';
 import ResumeForm, { 
   getInitialResumeData, 
   generateResumeText,
@@ -116,6 +118,28 @@ function CoverLetterForm() {
       setApiKey(savedApiKey);
     }
     
+    // Load resume from shared storage if it exists
+    if (resumeExists()) {
+      const { resumeData, resumePdfData } = loadResume();
+      if (resumeData) {
+        // Convert the main resume format to cover letter format
+        const formattedContent = prepareResumeTextForAPI(resumeData, null);
+        if (formattedContent) {
+          setResumeContent(formattedContent);
+          
+          // Also update resume form data
+          const coverLetterFormat = convertToCoverLetterFormat(resumeData);
+          setResumeData(coverLetterFormat);
+          
+          toast.success("Your resume has been loaded from shared storage");
+        }
+      } else if (resumePdfData) {
+        setResumePdfData(resumePdfData);
+        setResumeContent(`[PDF resume loaded from storage] - PDF will be processed directly by Gemini AI`);
+        toast.success("Your PDF resume has been loaded from shared storage");
+      }
+    }
+    
     // Load saved resume data from cookies
     try {
       const savedResumeData = Cookies.get("resumeData");
@@ -163,6 +187,10 @@ function CoverLetterForm() {
             // Store the PDF data for later API call
             if (base64Data) {
               setResumePdfData(base64Data);
+              
+              // Also save to shared storage
+              saveResume(null, base64Data);
+              
             } else {
               toast.error("Failed to extract PDF data");
               setLoading(false);
@@ -204,6 +232,10 @@ function CoverLetterForm() {
         setResumeContent(text);
         // Clear any previously stored PDF data
         setResumePdfData(null);
+        
+        // We could try to parse this text into a structured resume,
+        // but for now we'll just save the text as is
+        
         toast.success(`Resume "${file.name}" uploaded successfully!`);
         setLoading(false);
       }
@@ -623,6 +655,27 @@ function CoverLetterForm() {
                   Upload Resume (TXT, PDF)
                 </button>
                 
+                {resumeExists() && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm('Are you sure you want to delete your shared resume? This will remove it from all parts of the application.')) {
+                        if (deleteResume()) {
+                          setResumeContent('');
+                          setResumePdfData(null);
+                          toast.success('Your shared resume has been deleted');
+                        } else {
+                          toast.error('Failed to delete your resume');
+                        }
+                      }
+                    }}
+                    className="flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-red-600 dark:text-red-400 bg-white dark:bg-gray-700 hover:bg-red-50 dark:hover:bg-red-900/20 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                  >
+                    <FileText className="w-4 h-4 mr-2" />
+                    Delete Shared Resume
+                  </button>
+                )}
+                
                 {Object.keys(savedResumes).length > 0 && (
                   <div className="relative inline-block text-left">
                     <select
@@ -636,6 +689,60 @@ function CoverLetterForm() {
                       ))}
                     </select>
                   </div>
+                )}
+                
+                {resumeContent && !resumePdfData && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      try {
+                        // For now, we'll just create a simple structured resume from the text
+                        // This is a placeholder and would need more sophisticated parsing in a real app
+                        const basicResume = {
+                          name: resumeData.fullName || 'Resume Owner',
+                          contact: {
+                            email: resumeData.email || '',
+                            phone: resumeData.phone || '',
+                            location: resumeData.location || '',
+                            website: resumeData.website || '',
+                            linkedin: ''
+                          },
+                          summary: resumeData.summary || resumeContent.slice(0, 200),
+                          skills: resumeData.skills ? resumeData.skills.split(',').map(s => s.trim()) : [],
+                          experience: [
+                            {
+                              title: 'Position',
+                              company: 'Company',
+                              location: 'Location',
+                              dates: 'Dates',
+                              highlights: [resumeData.experience || resumeContent]
+                            }
+                          ],
+                          education: [
+                            {
+                              degree: 'Degree',
+                              institution: 'Institution',
+                              location: 'Location',
+                              dates: 'Dates',
+                              details: [resumeData.education || '']
+                            }
+                          ]
+                        };
+                        
+                        // Save to shared storage
+                        saveResume(basicResume, null);
+                        
+                        toast.success('Resume saved to shared storage for use across the application');
+                      } catch (error) {
+                        console.error('Error saving to shared storage:', error);
+                        toast.error('Failed to save resume to shared storage');
+                      }
+                    }}
+                    className="flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-green-600 dark:text-green-400 bg-white dark:bg-gray-700 hover:bg-green-50 dark:hover:bg-green-900/20 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                  >
+                    <FileText className="w-4 h-4 mr-2" />
+                    Save to Shared Storage
+                  </button>
                 )}
               </div>
               

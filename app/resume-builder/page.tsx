@@ -1,14 +1,16 @@
 'use client';
 
-import { useState, useRef, useEffect, Suspense } from 'react';
+import React, { useState, useRef, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { parseResumeFile } from '../utils/resumeParser';
 import { generateResumeFile } from '../utils/resumeGenerator';
 import { ResumeData, PersonalInfo } from '../types/resume';
 import { toast, Toaster } from 'react-hot-toast';
+import Cookies from 'js-cookie';
+import { saveResume, loadResume, deleteResume, resumeExists } from '../utils/resumeStorage';
 
 // Component for the Resume Builder page
-function ResumeBuilderContent() {
+function ResumeBuilderContent(): React.ReactElement {
   const searchParams = useSearchParams();
   const jobId = searchParams.get('jobId');
   
@@ -45,6 +47,83 @@ function ResumeBuilderContent() {
     skills: '',
     company: ''
   });
+  
+  // Add state for checking if master resume exists
+  const [masterResumeExists, setMasterResumeExists] = useState<boolean>(false);
+  
+  // Add state for confirmation dialog
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<boolean>(false);
+  
+  // Function to load the master resume
+  const loadExistingResume = () => {
+    try {
+      const { resumeData, resumePdfData: pdfData } = loadResume();
+      
+      if (resumeData) {
+        // For parsed resume data
+        setMasterResume(resumeData);
+        
+        // Pre-fill personal info
+        setPersonalInfo({
+          name: resumeData.name || '',
+          email: resumeData.contact?.email || '',
+          phone: resumeData.contact?.phone || '',
+          location: resumeData.contact?.location || '',
+          linkedin: resumeData.contact?.linkedin || '',
+          website: resumeData.contact?.website || ''
+        });
+        
+        // Move to step 2
+        setStep(2);
+        toast.success('Your resume has been loaded from storage');
+      } else if (pdfData) {
+        // For PDF data
+        setResumePdfData(pdfData);
+        
+        // Pre-fill empty personal info (will be extracted during processing)
+        setPersonalInfo({
+          name: '',
+          email: '',
+          phone: '',
+          location: '',
+          linkedin: '',
+          website: ''
+        });
+        
+        // Move to step 2
+        setStep(2);
+        toast.success('Your PDF resume has been loaded from storage');
+      } else {
+        throw new Error('No resume found in storage');
+      }
+    } catch (e) {
+      console.error('Error loading stored resume:', e);
+      setError('Failed to load your stored resume. Please upload it again.');
+    }
+  };
+  
+  // Function to delete the saved resume
+  const deleteSavedResume = () => {
+    try {
+      // Remove the resume from localStorage
+      const success = deleteResume();
+      
+      if (success) {
+        // Update UI state
+        setMasterResumeExists(false);
+        
+        // Show success message
+        toast.success('Your saved resume has been deleted');
+        
+        console.log('Deleted resume from localStorage');
+      } else {
+        throw new Error('Failed to delete resume');
+      }
+    } catch (e) {
+      console.error('Error deleting resume:', e);
+      toast.error('Failed to delete your saved resume');
+    }
+  };
   
   // Format skills for display - helper function
   const formatSkills = (skills: string | string[] | undefined): string => {
@@ -230,9 +309,80 @@ function ResumeBuilderContent() {
       }
     };
     
+    // Debug logging for finding sheets
+    console.log('Checking for sheet URL in cookie:', Cookies.get('lastSheetUrl'));
+    console.log('Checking for sheet URL in localStorage:', localStorage.getItem('lastSheetUrl'));
+    
+    // Check for existing resume - moved to its own useEffect for focus
     loadJobs();
     loadApiKey();
   }, [jobId, searchParams, apiKey]);
+  
+  // Dedicated useEffect for checking and loading existing resume
+  useEffect(() => {
+    console.log('Checking for existing resume...');
+    // Debug function to show all storage contents
+    const debugStorage = () => {
+      console.log('--- DEBUG: LocalStorage Contents ---');
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key) {
+          try {
+            const value = localStorage.getItem(key);
+            console.log(`${key}: ${value?.substring(0, 50)}${value && value.length > 50 ? '...' : ''}`);
+          } catch (e) {
+            console.log(`${key}: [Error reading value]`);
+          }
+        }
+      }
+      console.log('--- DEBUG: Cookies ---');
+      console.log('Cookie string:', document.cookie);
+      console.log('lastSheetUrl from cookie:', Cookies.get('lastSheetUrl'));
+      console.log('------------------------');
+    };
+    
+    // Call debug function
+    debugStorage();
+    
+    // Check if resume exists
+    const exists = resumeExists();
+    setMasterResumeExists(exists);
+    
+    if (exists) {
+      // Auto-load the resume if it exists
+      const { resumeData, resumePdfData: pdfData } = loadResume();
+      
+      if (resumeData) {
+        console.log('Auto-loading parsed resume data');
+        setMasterResume(resumeData);
+        
+        // Pre-fill personal info
+        setPersonalInfo({
+          name: resumeData.name || '',
+          email: resumeData.contact?.email || '',
+          phone: resumeData.contact?.phone || '',
+          location: resumeData.contact?.location || '',
+          linkedin: resumeData.contact?.linkedin || '',
+          website: resumeData.contact?.website || ''
+        });
+      } else if (pdfData) {
+        console.log('Auto-loading PDF resume data');
+        setResumePdfData(pdfData);
+        
+        // Pre-fill empty personal info (will be extracted during processing)
+        setPersonalInfo({
+          name: '',
+          email: '',
+          phone: '',
+          location: '',
+          linkedin: '',
+          website: ''
+        });
+      }
+    } else {
+      console.log('No resume found in storage');
+    }
+  }, []);
   
   // Handle resume file upload
   const handleResumeUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -279,7 +429,13 @@ function ResumeBuilderContent() {
                 website: ''
               });
               
-              // Skip directly to step 2 (customize - was step 3 before)
+              // Store the resume for future use
+              setTimeout(() => {
+                saveResume(null, base64Data);
+                setMasterResumeExists(true);
+              }, 500);
+              
+              // Skip directly to step 2
               setStep(2);
             } else {
               toast.error("Failed to extract PDF data");
@@ -302,24 +458,30 @@ function ResumeBuilderContent() {
         fileReader.readAsDataURL(file);
       } else {
         // For other formats, use the existing parser
-      const parsedResume = await parseResumeFile(file);
-      setMasterResume(parsedResume);
+        const parsedResume = await parseResumeFile(file);
+        setMasterResume(parsedResume);
         
         // Clear any previously stored PDF data
         setResumePdfData(null);
       
-      // Pre-fill personal info from the parsed resume
-      setPersonalInfo({
-        name: parsedResume.name || '',
-        email: parsedResume.contact.email || '',
-        phone: parsedResume.contact.phone || '',
-        location: parsedResume.contact.location || '',
-        linkedin: parsedResume.contact.linkedin || '',
-        website: parsedResume.contact.website || ''
-      });
-      
-        // Skip directly to step 2 (customize - was step 3 before)
-      setStep(2);
+        // Pre-fill personal info from the parsed resume
+        setPersonalInfo({
+          name: parsedResume.name || '',
+          email: parsedResume.contact.email || '',
+          phone: parsedResume.contact.phone || '',
+          location: parsedResume.contact.location || '',
+          linkedin: parsedResume.contact.linkedin || '',
+          website: parsedResume.contact.website || ''
+        });
+        
+        // Store the resume for future use
+        setTimeout(() => {
+          saveResume(parsedResume, null);
+          setMasterResumeExists(true);
+        }, 500);
+        
+        // Skip directly to step 2
+        setStep(2);
       }
     } catch (error) {
       console.error('Error processing resume:', error);
@@ -601,7 +763,7 @@ function ResumeBuilderContent() {
             )}
             
             {/* PDF support info box */}
-            <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-md text-blue-800 dark:text-blue-300 text-sm flex items-start mt-2 mb-4">
+            <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-md text-blue-800 dark:text-blue-300 text-sm flex items-start mt-2 mb-4">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
@@ -612,24 +774,90 @@ function ResumeBuilderContent() {
             </div>
             
             <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center mb-6">
-              <input
-                type="file"
-                ref={fileInputRef}
-                accept=".pdf,.docx"
-                onChange={handleResumeUpload}
-                className="hidden"
-                id="resume-upload"
-              />
-              <label
-                htmlFor="resume-upload"
-                className="bg-blue-600 text-white px-4 py-2 rounded-md cursor-pointer hover:bg-blue-700 transition inline-flex items-center"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                </svg>
-                Select Resume File
-              </label>
-              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">Supported formats: PDF (recommended), DOCX</p>
+              {masterResumeExists ? (
+                <div className="flex flex-col items-center">
+                  <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-md text-green-800 dark:text-green-300 text-sm flex items-start mb-4 w-full max-w-md">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <div>
+                      <p className="font-medium">Previously uploaded resume found!</p>
+                      <p>You can use your previously uploaded resume or upload a new one.</p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex flex-col sm:flex-row gap-4 mb-4">
+                    <button
+                      onClick={loadExistingResume}
+                      className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 transition focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                      </svg>
+                      Use Previous Resume
+                    </button>
+                    <div className="relative">
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        accept=".pdf,.docx"
+                        onChange={handleResumeUpload}
+                        className="hidden"
+                        id="resume-upload-new"
+                      />
+                      <label
+                        htmlFor="resume-upload-new"
+                        className="inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                        Upload New Resume
+                      </label>
+                    </div>
+                    <button
+                      onClick={() => setShowDeleteConfirm(true)}
+                      className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 transition focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                      Delete Saved Resume
+                    </button>
+                  </div>
+                  
+                  <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">Supported formats: PDF (recommended), DOCX</p>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-8">
+                  <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-md mb-6 text-center w-full max-w-md">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mx-auto text-blue-500 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <h3 className="text-lg font-medium text-blue-800 dark:text-blue-300 mb-2">Upload Your Resume</h3>
+                    <p className="text-blue-700 dark:text-blue-400 mb-4">Upload your resume to get started with personalizing it for job applications.</p>
+                    
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      accept=".pdf,.docx"
+                      onChange={handleResumeUpload}
+                      className="hidden"
+                      id="resume-upload-new"
+                    />
+                    <label
+                      htmlFor="resume-upload-new"
+                      className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                      </svg>
+                      Select Resume File
+                    </label>
+                    <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">Supported formats: PDF (recommended), DOCX</p>
+                  </div>
+                </div>
+              )}
               
               {resumePdfData && (
                 <div className="flex items-center justify-center text-sm text-green-600 mt-3">
@@ -640,6 +868,35 @@ function ResumeBuilderContent() {
                 </div>
               )}
             </div>
+            
+            {/* Delete confirmation dialog */}
+            {showDeleteConfirm && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md mx-auto shadow-xl border border-gray-100 dark:border-gray-700">
+                  <h3 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">Delete Saved Resume?</h3>
+                  <p className="text-gray-600 dark:text-gray-300 mb-6">
+                    Are you sure you want to delete your saved resume? This action cannot be undone.
+                  </p>
+                  <div className="flex justify-end space-x-4">
+                    <button
+                      onClick={() => setShowDeleteConfirm(false)}
+                      className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => {
+                        deleteSavedResume();
+                        setShowDeleteConfirm(false);
+                      }}
+                      className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         );
         
@@ -664,6 +921,13 @@ function ResumeBuilderContent() {
                     </div>
                   )}
                   
+                  {selectedJob.requirements && selectedJob.requirements.trim() !== '' && (
+                    <div className="mt-2">
+                      <p className="text-sm font-medium">Requirements:</p>
+                      <p className="text-sm">{selectedJob.requirements}</p>
+                    </div>
+                  )}
+                  
                   {selectedJob.skills && (
                     <div className="mt-2">
                       <p className="text-sm font-medium">Skills:</p>
@@ -684,7 +948,7 @@ function ResumeBuilderContent() {
                 </p>
                 <button
                   onClick={() => setStep(1)}
-                  className="mt-3 inline-flex items-center px-3 py-1.5 border border-yellow-300 dark:border-yellow-600 rounded-md shadow-sm text-xs font-medium text-yellow-800 dark:text-yellow-300 bg-yellow-50 dark:bg-yellow-900/20 hover:bg-yellow-100 dark:hover:bg-yellow-900/40 focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                  className="mt-3 inline-flex items-center px-3 py-1.5 border border-yellow-300 dark:border-yellow-600 rounded-md shadow-sm text-xs font-medium text-yellow-800 dark:text-yellow-300 bg-yellow-50 dark:bg-yellow-900/40 focus:outline-none focus:ring-2 focus:ring-yellow-500"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 17l-5-5m0 0l5-5m-5 5h12" />
@@ -937,7 +1201,14 @@ function ResumeBuilderContent() {
 
 export default function ResumeBuilderPage() {
   return (
-    <Suspense fallback={<div>Loading...</div>}>
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-400">Loading Resume Builder...</p>
+        </div>
+      </div>
+    }>
       <ResumeBuilderContent />
     </Suspense>
   );
