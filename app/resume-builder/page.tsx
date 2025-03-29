@@ -415,17 +415,17 @@ function ResumeBuilderContent() {
     switch (step) {
       case 1:
         return (
-          <div className="bg-white shadow-md rounded-lg p-6 max-w-4xl mx-auto">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 max-w-4xl mx-auto border border-gray-100 dark:border-gray-700">
             <h2 className="text-2xl font-bold mb-4">Step 1: Upload Your Resume</h2>
-            <p className="text-gray-600 mb-6">
+            <p className="text-gray-600 dark:text-gray-300 mb-6 text-mobile-sm">
               Upload your resume in PDF or DOCX format. This will be used to create a tailored resume
               that matches the job description.
             </p>
             
             {/* Job Details Form */}
             {showJobForm && (
-              <div className="bg-blue-50 p-4 rounded-lg mb-6">
-                <h3 className="font-semibold text-blue-800 mb-4">Enter Job Details</h3>
+              <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg mb-6">
+                <h3 className="font-semibold text-blue-800 dark:text-blue-300 mb-4">Enter Job Details</h3>
                 <div className="space-y-4">
                   <div>
                     <label htmlFor="jobTitle" className="block text-sm font-medium text-gray-700 mb-1">
@@ -437,7 +437,7 @@ function ResumeBuilderContent() {
                       name="title"
                       value={manualJobData.title}
                       onChange={handleManualJobChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm dark:bg-gray-700 dark:text-white"
                       placeholder="e.g., Senior Software Engineer"
                       required
                     />
@@ -453,7 +453,7 @@ function ResumeBuilderContent() {
                       name="company"
                       value={manualJobData.company}
                       onChange={handleManualJobChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm dark:bg-gray-700 dark:text-white"
                       placeholder="e.g., Google"
                       required
                     />
@@ -468,7 +468,7 @@ function ResumeBuilderContent() {
                       name="description"
                       value={manualJobData.description}
                       onChange={handleManualJobChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm dark:bg-gray-700 dark:text-white"
                       rows={4}
                       placeholder="Paste the job description here..."
                     />
@@ -483,7 +483,7 @@ function ResumeBuilderContent() {
                       name="requirements"
                       value={manualJobData.requirements}
                       onChange={handleManualJobChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm dark:bg-gray-700 dark:text-white"
                       rows={3}
                       placeholder="List the job requirements..."
                     />
@@ -524,11 +524,14 @@ function ResumeBuilderContent() {
               />
               <label
                 htmlFor="resume-upload"
-                className="bg-blue-600 text-white px-4 py-2 rounded cursor-pointer hover:bg-blue-700 transition"
+                className="bg-blue-600 text-white px-4 py-2 rounded-md cursor-pointer hover:bg-blue-700 transition inline-flex items-center"
               >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
                 Select Resume File
               </label>
-              <p className="mt-2 text-sm text-gray-500">Supported formats: PDF (recommended), DOCX</p>
+              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">Supported formats: PDF (recommended), DOCX</p>
               
               {resumePdfData && (
                 <div className="flex items-center justify-center text-sm text-green-600 mt-3">
@@ -562,15 +565,15 @@ function ResumeBuilderContent() {
         
       case 2:
         return (
-          <div className="bg-white shadow-md rounded-lg p-6 max-w-4xl mx-auto">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 max-w-4xl mx-auto border border-gray-100 dark:border-gray-700">
             <h2 className="text-2xl font-bold mb-4">Step 2: Customize Your Resume</h2>
-            <p className="text-gray-600 mb-6">
+            <p className="text-gray-600 dark:text-gray-300 mb-6 text-mobile-sm">
               Provide your Gemini API key to generate your tailored resume.
             </p>
             
-            <div className="mb-6 bg-blue-50 p-4 rounded-lg">
-              <h3 className="font-semibold text-blue-800 mb-2">Contact Information</h3>
-              <p className="text-blue-700">
+            <div className="mb-6 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+              <h3 className="font-semibold text-blue-800 dark:text-blue-300 mb-2">Contact Information</h3>
+              <p className="text-blue-700 dark:text-blue-300">
                 Your contact information will be automatically extracted from your uploaded {resumePdfData ? 'PDF' : 'resume'}.
                 You don't need to enter it manually.
               </p>
@@ -583,16 +586,16 @@ function ResumeBuilderContent() {
                   type="password"
                   value={apiKey}
                   onChange={handleApiKeyChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm dark:bg-gray-700 dark:text-white"
                   placeholder="Enter your Gemini API key"
                 />
-                <p className="text-sm text-gray-500 mt-1">
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                   Your API key is stored locally and never sent to our servers. You can get a free Gemini API key from{' '}
                   <a
                     href="https://makersuite.google.com/app/apikey"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-blue-600 hover:underline"
+                    className="text-blue-600 hover:underline dark:text-blue-400"
                   >
                     Google&apos;s Maker Suite
                   </a>.
@@ -601,9 +604,9 @@ function ResumeBuilderContent() {
             </div>
             
             {selectedJob && (
-            <div className="bg-blue-50 p-4 rounded-lg mb-6">
-              <h3 className="font-semibold text-blue-800">Selected Job</h3>
-              <p className="text-blue-700">
+            <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg mb-6">
+              <h3 className="font-semibold text-blue-800 dark:text-blue-300">Selected Job</h3>
+              <p className="text-blue-700 dark:text-blue-300">
                 {selectedJob.title || selectedJob.job_title} at {selectedJob.company_name || selectedJob.company}
               </p>
             </div>
@@ -612,7 +615,7 @@ function ResumeBuilderContent() {
             <div className="flex justify-between">
               <button
                 onClick={() => setStep(1)}
-                className="bg-gray-200 text-gray-700 px-4 py-2 rounded hover:bg-gray-300 transition"
+                className="inline-flex items-center px-3 py-1.5 sm:px-4 sm:py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 Back
               </button>
@@ -622,7 +625,7 @@ function ResumeBuilderContent() {
                 disabled={isLoading}
                 className={`${
                   isLoading ? 'bg-blue-400' : 'bg-blue-600 hover:bg-blue-700'
-                } text-white px-4 py-2 rounded transition flex items-center`}
+                } text-white px-3 py-1.5 sm:px-4 sm:py-2 border border-transparent rounded-md shadow-sm text-sm font-medium transition flex items-center focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500`}
               >
                 {isLoading ? (
                   <>
@@ -642,23 +645,23 @@ function ResumeBuilderContent() {
         
       case 3:
         return (
-          <div className="bg-white shadow-md rounded-lg p-6 max-w-4xl mx-auto">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 max-w-4xl mx-auto border border-gray-100 dark:border-gray-700">
             <h2 className="text-2xl font-bold mb-4">Step 3: Your Tailored Resume</h2>
-            <p className="text-gray-600 mb-6">
+            <p className="text-gray-600 dark:text-gray-300 mb-6 text-mobile-sm">
               Your tailored resume is ready! Review the changes and download it in your preferred format.
             </p>
             
             {tailoringNotes && (
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
-                <h3 className="font-semibold text-yellow-800 mb-2">Tailoring Notes</h3>
-                <p className="text-yellow-700 text-sm">{tailoringNotes}</p>
+              <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 mb-6">
+                <h3 className="font-semibold text-yellow-800 dark:text-yellow-300 mb-2">Tailoring Notes</h3>
+                <p className="text-yellow-700 dark:text-yellow-400 text-sm">{tailoringNotes}</p>
               </div>
             )}
             
-            <div className="border rounded-lg p-6 mb-6">
+            <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-6 mb-6 bg-white dark:bg-gray-800 shadow-sm">
               <h3 className="font-semibold text-xl mb-3">{generatedResume?.name}</h3>
               
-              <div className="text-sm text-gray-600 mb-4">
+              <div className="text-sm text-gray-600 dark:text-gray-400 mb-4">
                 {generatedResume?.contact.email} • {generatedResume?.contact.phone} • {generatedResume?.contact.location}
                 {generatedResume?.contact.linkedin && ` • ${generatedResume.contact.linkedin}`}
                 {generatedResume?.contact.website && ` • ${generatedResume.contact.website}`}
@@ -666,12 +669,12 @@ function ResumeBuilderContent() {
               
               <div className="mb-4">
                 <h4 className="font-semibold mb-1">Summary</h4>
-                <p className="text-gray-700">{generatedResume?.summary}</p>
+                <p className="text-gray-700 dark:text-gray-300">{generatedResume?.summary}</p>
               </div>
               
               <div className="mb-4">
                 <h4 className="font-semibold mb-1">Skills</h4>
-                <p className="text-gray-700">{generatedResume?.skills.join(', ')}</p>
+                <p className="text-gray-700 dark:text-gray-300">{generatedResume?.skills.join(', ')}</p>
               </div>
               
               <div className="mb-4">
@@ -703,9 +706,16 @@ function ResumeBuilderContent() {
                 disabled={isLoading}
                 className={`${
                   isLoading ? 'bg-green-400' : 'bg-green-600 hover:bg-green-700'
-                } text-white px-6 py-3 rounded transition flex items-center justify-center`}
+                } text-white px-4 py-2 sm:px-6 sm:py-3 border border-transparent rounded-md shadow-sm text-sm font-medium transition flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500`}
               >
-                {isLoading ? 'Downloading...' : 'Download as PDF'}
+                {isLoading ? 'Downloading...' : (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    Download as PDF
+                  </>
+                )}
               </button>
               
               <button
@@ -713,23 +723,30 @@ function ResumeBuilderContent() {
                 disabled={isLoading}
                 className={`${
                   isLoading ? 'bg-blue-400' : 'bg-blue-600 hover:bg-blue-700'
-                } text-white px-6 py-3 rounded transition flex items-center justify-center`}
+                } text-white px-4 py-2 sm:px-6 sm:py-3 border border-transparent rounded-md shadow-sm text-sm font-medium transition flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500`}
               >
-                {isLoading ? 'Downloading...' : 'Download as DOCX'}
+                {isLoading ? 'Downloading...' : (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    Download as DOCX
+                  </>
+                )}
               </button>
             </div>
             
             <div className="flex justify-between">
               <button
                 onClick={() => setStep(2)}
-                className="bg-gray-200 text-gray-700 px-4 py-2 rounded hover:bg-gray-300 transition"
+                className="inline-flex items-center px-3 py-1.5 sm:px-4 sm:py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 Back
               </button>
               
               <button
                 onClick={handleStartOver}
-                className="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition"
+                className="inline-flex items-center px-3 py-1.5 sm:px-4 sm:py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gray-600 hover:bg-gray-700 transition focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
               >
                 Start Over
               </button>
@@ -743,12 +760,18 @@ function ResumeBuilderContent() {
   };
   
   return (
-    <div className="min-h-screen bg-gray-50 py-12 px-4">
+    <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 no-overflow mobile-container">
       <Toaster position="top-right" />
-      <div className="max-w-7xl mx-auto">
-        <div className="text-center mb-10">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Resume Builder</h1>
-          <p className="text-gray-600">Create a tailored resume for your job application</p>
+      <div className="max-w-6xl mx-auto">
+        <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl shadow-xl p-4 sm:p-10 text-white mb-6 sm:mb-8">
+          <div className="flex flex-col md:flex-row justify-between items-center">
+            <div>
+              <h1 className="text-2xl sm:text-4xl font-bold mb-2 sm:mb-3">Resume Builder</h1>
+              <p className="text-mobile-sm text-blue-100 max-w-2xl">
+                Create a tailored resume for your job application that matches the job description and highlights your relevant skills and experience.
+              </p>
+            </div>
+          </div>
         </div>
         
         {/* Progress bar */}
@@ -776,7 +799,10 @@ function ResumeBuilderContent() {
         {/* Error message */}
         {error && (
           <div className="max-w-4xl mx-auto mb-6">
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg relative flex items-center" role="alert">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
               <p>{error}</p>
             </div>
           </div>

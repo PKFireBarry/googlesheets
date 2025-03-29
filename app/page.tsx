@@ -946,11 +946,10 @@ export default function Home() {
           <div className="flex flex-col md:flex-row justify-between items-center">
             <div>
               <h1 className="text-2xl sm:text-4xl font-bold mb-2 sm:mb-3">
-                Job Application Tracker
+                Find Jobs Tailored to You!
               </h1>
               <p className="text-mobile-sm text-blue-100 max-w-2xl">
-                Track and manage your job applications with Google Sheets integration. 
-                Keep all your job opportunities organized in one place.
+                Find jobs tailored to your skills, location, and salary preferences. Updated daily from top job boards to help you find the perfect opportunity and save time on checking multiple sites for latest listings.
               </p>
             </div>          
           </div>
@@ -1229,7 +1228,7 @@ export default function Home() {
                 <div className="bg-blue-100 dark:bg-blue-900/30 p-1.5 sm:p-2 rounded-lg mr-2 sm:mr-3">
                   <FileSpreadsheet className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600 dark:text-blue-400" />
                 </div>
-                <h3 className="font-medium text-mobile-sm text-gray-900 dark:text-white">Total Jobs</h3>
+                <h3 className="font-medium text-mobile-sm text-gray-900 dark:text-white">Total Jobs Found</h3>
               </div>
               <p className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">{rows.length}</p>
               {totalSheetRows > rows.length && (
@@ -1244,7 +1243,7 @@ export default function Home() {
                 <div className="bg-green-100 dark:bg-green-900/30 p-1.5 sm:p-2 rounded-lg mr-2 sm:mr-3">
                   <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5 text-green-600 dark:text-green-400" />
                 </div>
-                <h3 className="font-medium text-mobile-sm text-gray-900 dark:text-white">Applied</h3>
+                <h3 className="font-medium text-mobile-sm text-gray-900 dark:text-white">Jobs Applied For</h3>
               </div>
               <p className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">{appliedJobs.length}</p>
               {rows.length > 0 && (
@@ -1477,21 +1476,7 @@ export default function Home() {
             )}
           </div>
 
-          {/* Swipe Instructions */}
-          <div className="mb-4 sm:mb-6 bg-blue-50 dark:bg-blue-900/20 rounded-xl shadow-md p-3 sm:p-4 border border-blue-100 dark:border-blue-800">
-            <div className="flex items-center gap-1.5 sm:gap-2 mb-1 sm:mb-2">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 sm:h-5 sm:w-5 text-blue-500 dark:text-blue-400" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-              </svg>
-              <h3 className="text-xs sm:text-sm font-medium text-blue-700 dark:text-blue-300">Job Card Navigation</h3>
-            </div>
-            <p className="text-mobile-xs text-blue-600 dark:text-blue-400">
-              <span className="hidden sm:inline">Swipe left or right on job cards to navigate between jobs. </span>
-              <span>Use the arrow buttons below the card to view previous or next job listings. </span>
-              <span>Toggle between card and list views using the view button above. In list view, click on a job to see full details. </span>
-              <span>Jobs are sorted with newest first.</span>
-            </p>
-          </div>
+
 
           {rows.length === 0 ? (
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 sm:p-8 text-center border border-gray-100 dark:border-gray-700">

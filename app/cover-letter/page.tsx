@@ -372,20 +372,20 @@ function CoverLetterForm() {
       <Toaster position="top-right" />
       
       <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center">
-            <FileText className="w-6 h-6 mr-2 text-blue-600 dark:text-blue-500" />
-            Cover Letter Generator
-          </h1>
+        {/* Header Section - Updated to match homepage styling */}
+        <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl shadow-xl p-4 sm:p-10 text-white mb-4 sm:mb-8">
+          <div className="flex flex-col md:flex-row justify-between items-center">
+            <div>
+              <h1 className="text-2xl sm:text-4xl font-bold mb-2 sm:mb-3">
+                Create Your Cover Letter
+              </h1>
+              <p className="text-mobile-sm text-blue-100 max-w-2xl">
+                Generate tailored cover letters in seconds using your resume and job details.
+                Perfect for customizing your application for each position.
+              </p>
+            </div>
           
-          <button
-            onClick={() => router.back()}
-            className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center"
-          >
-            <ArrowLeft className="w-4 h-4 mr-1.5" />
-            Back to Jobs
-          </button>
+          </div>
         </div>
         
         <div className="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden mb-8">
@@ -779,6 +779,13 @@ function CoverLetterLoading() {
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="max-w-4xl mx-auto">
+        <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl shadow-xl p-4 sm:p-10 text-white mb-4 sm:mb-8">
+          <h1 className="text-2xl sm:text-4xl font-bold mb-2 sm:mb-3 animate-pulse">
+            Create Your Cover Letter
+          </h1>
+          <div className="w-2/3 h-4 bg-white/20 rounded animate-pulse"></div>
+        </div>
+        
         <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6 flex items-center justify-center min-h-[300px]">
           <div className="text-center">
             <Loader2 className="h-10 w-10 mx-auto mb-4 text-blue-600 animate-spin" />

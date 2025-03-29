@@ -107,7 +107,7 @@ Here is the format of how I want you to respond. Only reply with information in 
   "company": "${company || 'n/a'}",
   "phone": "extracted phone or n/a",
   "location": "extracted location or n/a",
-  "suggestedMessage": "Create a personalized outreach message based on the job details and the recruiter's information. The message should be professional and highlight how the candidate is relevant for the specific position."
+  "suggestedMessage": ""
 }
 
 IMPORTANT: Return ONLY the JSON object with no markdown formatting, no code blocks, and no extra text before or after the JSON.`;
