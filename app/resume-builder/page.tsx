@@ -22,7 +22,7 @@ function ResumeBuilderContent() {
     description?: string;
     job_description?: string;
     requirements?: string;
-    skills?: string;
+    skills?: string | string[];
     company?: string;
     company_name?: string;
     id?: string;
@@ -37,16 +37,39 @@ function ResumeBuilderContent() {
   const [manualJobData, setManualJobData] = useState<{
     title: string;
     description: string;
-    requirements: string;
     skills: string;
     company: string;
   }>({
     title: '',
     description: '',
-    requirements: '',
     skills: '',
     company: ''
   });
+  
+  // Format skills for display - helper function
+  const formatSkills = (skills: string | string[] | undefined): string => {
+    if (!skills) return '';
+    
+    if (typeof skills === 'string') {
+      if (skills.trim().startsWith('[')) {
+        try {
+          const parsed = JSON.parse(skills);
+          return Array.isArray(parsed) 
+            ? parsed.map((skill: string) => skill.trim()).filter(Boolean).join(', ')
+            : skills;
+        } catch {
+          return skills;
+        }
+      }
+      return skills;
+    } 
+    
+    if (Array.isArray(skills)) {
+      return skills.join(', ');
+    }
+    
+    return String(skills);
+  };
   
   // Personal info state
   const [personalInfo, setPersonalInfo] = useState<PersonalInfo>({
@@ -78,14 +101,22 @@ function ResumeBuilderContent() {
       return;
     }
 
+    // Format the skills as an array if they were entered as comma-separated
+    const formattedSkills = manualJobData.skills
+      ? manualJobData.skills
+          .split(',')
+          .map(skill => skill.trim())
+          .filter(Boolean)
+      : [];
+
     // Set the selected job with manual data
     setSelectedJob({
       title: manualJobData.title,
       job_title: manualJobData.title,
       description: manualJobData.description,
       job_description: manualJobData.description,
-      requirements: manualJobData.requirements,
-      skills: manualJobData.skills,
+      requirements: '',
+      skills: formattedSkills,
       company: manualJobData.company,
       company_name: manualJobData.company
     });
@@ -144,8 +175,8 @@ function ResumeBuilderContent() {
           console.warn('Job not found with ID:', jobId);
         } else {
           console.log('No job ID provided, user will need to choose a job manually');
-          // Show the job form by default if no job is selected
-          setShowJobForm(true);
+          // Do NOT automatically show job form - leave it collapsed by default
+          setShowJobForm(false);
         }
       } catch (error) {
         console.error('Error loading job data:', error);
@@ -310,8 +341,23 @@ function ResumeBuilderContent() {
   
   // Generate the tailored resume
   const handleGenerateResume = async () => {
-    if ((!masterResume && !resumePdfData) || !selectedJob || (!apiKey && !localStorage.getItem('geminiApiKey'))) {
-      setError('Please upload a resume, select a job, and provide a Gemini API key.');
+    // Check if we have a resume and API key
+    if ((!masterResume && !resumePdfData)) {
+      setError('Please upload a resume before continuing.');
+      return;
+    }
+    
+    if (!apiKey && !localStorage.getItem('geminiApiKey')) {
+      setError('Please provide a Gemini API key to continue.');
+      return;
+    }
+    
+    // Check if we have job details from either selectedJob or manualJobData
+    const hasSelectedJob = !!selectedJob;
+    const hasManualJobData = !!(manualJobData.title && manualJobData.company);
+    
+    if (!hasSelectedJob && !hasManualJobData) {
+      setError('Please select a job or enter job details manually.');
       return;
     }
     
@@ -319,14 +365,24 @@ function ResumeBuilderContent() {
       setIsLoading(true);
       setError(null);
       
-      // Extract job data to send to the API
-      const jobData = {
-        title: selectedJob.title || selectedJob.job_title,
-        description: selectedJob.description || selectedJob.job_description,
-        requirements: selectedJob.requirements || '',
-        skills: selectedJob.skills || '',
-        company: selectedJob.company_name || selectedJob.company
-      };
+      // Extract job data to send to the API - either from selectedJob or manualJobData
+      const jobData = hasSelectedJob 
+        ? {
+            title: selectedJob.title || selectedJob.job_title,
+            description: selectedJob.description || selectedJob.job_description,
+            requirements: selectedJob.requirements || '',
+            skills: Array.isArray(selectedJob.skills) 
+              ? selectedJob.skills.join(', ') 
+              : formatSkills(selectedJob.skills) || '',
+            company: selectedJob.company_name || selectedJob.company
+          }
+        : {
+            title: manualJobData.title,
+            description: manualJobData.description,
+            requirements: '',
+            skills: manualJobData.skills,
+            company: manualJobData.company
+          };
       
       // Call the resume API
       const response = await fetch('/api/resume', {
@@ -422,10 +478,38 @@ function ResumeBuilderContent() {
               that matches the job description.
             </p>
             
+            {/* Display the selected job prominently if it exists */}
+            {selectedJob && (
+              <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg mb-6">
+                <h3 className="font-semibold text-blue-800 dark:text-blue-300 mb-2">Selected Job</h3>
+                <div className="text-blue-700 dark:text-blue-300">
+                  <p className="font-medium">{selectedJob.title || selectedJob.job_title} at {selectedJob.company_name || selectedJob.company}</p>
+                  {(selectedJob.description || selectedJob.job_description) && (
+                    <p className="text-sm mt-1 line-clamp-2">{selectedJob.description || selectedJob.job_description}</p>
+                  )}
+                  {selectedJob.skills && (
+                    <p className="text-sm mt-1">
+                      <span className="font-medium">Skills:</span> {formatSkills(selectedJob.skills)}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+            
             {/* Job Details Form */}
             {showJobForm && (
               <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg mb-6">
-                <h3 className="font-semibold text-blue-800 dark:text-blue-300 mb-4">Enter Job Details</h3>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="font-semibold text-blue-800 dark:text-blue-300">Enter Job Details</h3>
+                  <button
+                    onClick={() => setShowJobForm(false)}
+                    className="text-blue-700 dark:text-blue-300 hover:text-blue-900 dark:hover:text-blue-100"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                </div>
                 <div className="space-y-4">
                   <div>
                     <label htmlFor="jobTitle" className="block text-sm font-medium text-gray-700 mb-1">
@@ -475,20 +559,20 @@ function ResumeBuilderContent() {
                   </div>
 
                   <div>
-                    <label htmlFor="requirements" className="block text-sm font-medium text-gray-700 mb-1">
-                      Requirements
+                    <label htmlFor="skills" className="block text-sm font-medium text-gray-700 mb-1">
+                      Skills
                     </label>
                     <textarea
-                      id="requirements"
-                      name="requirements"
-                      value={manualJobData.requirements}
+                      id="skills"
+                      name="skills"
+                      value={manualJobData.skills}
                       onChange={handleManualJobChange}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm dark:bg-gray-700 dark:text-white"
-                      rows={3}
-                      placeholder="List the job requirements..."
+                      rows={2}
+                      placeholder="JavaScript, React, TypeScript, etc."
                     />
+                    <p className="text-xs text-gray-500 mt-1">Separate skills with commas</p>
                   </div>
-
 
                   <div className="flex justify-end">
                     <button
@@ -499,6 +583,20 @@ function ResumeBuilderContent() {
                     </button>
                   </div>
                 </div>
+              </div>
+            )}
+            
+            {!showJobForm && !selectedJob && (
+              <div className="flex justify-center mb-6">
+                <button
+                  onClick={() => setShowJobForm(true)}
+                  className="inline-flex items-center px-3 py-1.5 sm:px-4 sm:py-2 border border-blue-300 dark:border-blue-600 rounded-md shadow-sm text-sm font-medium text-blue-700 dark:text-blue-300 bg-white dark:bg-gray-800 hover:bg-blue-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Enter Job Details Manually
+                </button>
               </div>
             )}
             
@@ -542,34 +640,59 @@ function ResumeBuilderContent() {
                 </div>
               )}
             </div>
-            
-            {selectedJob && (
-              <div className="bg-blue-50 p-4 rounded-lg mb-6">
-                <h3 className="font-semibold text-blue-800">Selected Job</h3>
-                <p className="text-blue-700">
-                  {selectedJob.title || selectedJob.job_title} at {selectedJob.company_name || selectedJob.company}
-                </p>
-              </div>
-            )}
-            
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h3 className="font-semibold mb-2">Why Tailor Your Resume?</h3>
-              <p className="text-gray-700 text-sm">
-                Studies show that 61% of employees believe tailoring your resume for each specific job is the best way to ensure its effectiveness.
-                Recruiters often spend as little as 5 seconds on initial screening, and applications that do not contain relevant keywords may be
-                filtered out by Applicant Tracking Systems (ATS) before a human even sees them.
-              </p>
-            </div>
           </div>
         );
         
       case 2:
         return (
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 max-w-4xl mx-auto border border-gray-100 dark:border-gray-700">
-            <h2 className="text-2xl font-bold mb-4">Step 2: Customize Your Resume</h2>
+            <h2 className="text-2xl font-bold mb-4">Step 2: Job Details</h2>
             <p className="text-gray-600 dark:text-gray-300 mb-6 text-mobile-sm">
-              Provide your Gemini API key to generate your tailored resume.
+              Review the job details below and make sure they're correct before generating your tailored resume.
             </p>
+            
+            {selectedJob && (
+              <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg mb-6">
+                <h3 className="font-semibold text-blue-800 dark:text-blue-300 mb-2">Selected Job</h3>
+                <div className="text-blue-700 dark:text-blue-300 space-y-2">
+                  <p className="font-medium">{selectedJob.title || selectedJob.job_title} at {selectedJob.company_name || selectedJob.company}</p>
+                  
+                  {(selectedJob.description || selectedJob.job_description) && (
+                    <div className="mt-2">
+                      <p className="text-sm font-medium">Description:</p>
+                      <p className="text-sm">{selectedJob.description || selectedJob.job_description}</p>
+                    </div>
+                  )}
+                  
+                  {selectedJob.skills && (
+                    <div className="mt-2">
+                      <p className="text-sm font-medium">Skills:</p>
+                      <p className="text-sm">
+                        {formatSkills(selectedJob.skills)}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            
+            {!selectedJob && (
+              <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 mb-6">
+                <h3 className="font-semibold text-yellow-800 dark:text-yellow-300 mb-2">No Job Selected</h3>
+                <p className="text-yellow-700 dark:text-yellow-400 text-sm">
+                  You haven't selected a job or entered job details. Please go back to the previous step and enter job details manually.
+                </p>
+                <button
+                  onClick={() => setStep(1)}
+                  className="mt-3 inline-flex items-center px-3 py-1.5 border border-yellow-300 dark:border-yellow-600 rounded-md shadow-sm text-xs font-medium text-yellow-800 dark:text-yellow-300 bg-yellow-50 dark:bg-yellow-900/20 hover:bg-yellow-100 dark:hover:bg-yellow-900/40 focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 17l-5-5m0 0l5-5m-5 5h12" />
+                  </svg>
+                  Go Back
+                </button>
+              </div>
+            )}
             
             <div className="mb-6 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
               <h3 className="font-semibold text-blue-800 dark:text-blue-300 mb-2">Contact Information</h3>
@@ -579,37 +702,30 @@ function ResumeBuilderContent() {
               </p>
             </div>
             
-            <div className="mb-6">
-              <h3 className="font-semibold mb-3">Gemini API Key</h3>
-              <div>
-                <input
-                  type="password"
-                  value={apiKey}
-                  onChange={handleApiKeyChange}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm dark:bg-gray-700 dark:text-white"
-                  placeholder="Enter your Gemini API key"
-                />
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                  Your API key is stored locally and never sent to our servers. You can get a free Gemini API key from{' '}
-                  <a
-                    href="https://makersuite.google.com/app/apikey"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-600 hover:underline dark:text-blue-400"
-                  >
-                    Google&apos;s Maker Suite
-                  </a>.
-                </p>
+            {!apiKey && (
+              <div className="mb-6">
+                <h3 className="font-semibold mb-3">Gemini API Key</h3>
+                <div>
+                  <input
+                    type="password"
+                    value={apiKey}
+                    onChange={handleApiKeyChange}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm dark:bg-gray-700 dark:text-white"
+                    placeholder="Enter your Gemini API key"
+                  />
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                    Your API key is stored locally and never sent to our servers. You can get a free Gemini API key from{' '}
+                    <a
+                      href="https://makersuite.google.com/app/apikey"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:underline dark:text-blue-400"
+                    >
+                      Google&apos;s Maker Suite
+                    </a>.
+                  </p>
+                </div>
               </div>
-            </div>
-            
-            {selectedJob && (
-            <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg mb-6">
-              <h3 className="font-semibold text-blue-800 dark:text-blue-300">Selected Job</h3>
-              <p className="text-blue-700 dark:text-blue-300">
-                {selectedJob.title || selectedJob.job_title} at {selectedJob.company_name || selectedJob.company}
-              </p>
-            </div>
             )}
             
             <div className="flex justify-between">
@@ -622,9 +738,9 @@ function ResumeBuilderContent() {
               
               <button
                 onClick={handleGenerateResume}
-                disabled={isLoading}
+                disabled={isLoading || (!selectedJob && !showJobForm)}
                 className={`${
-                  isLoading ? 'bg-blue-400' : 'bg-blue-600 hover:bg-blue-700'
+                  isLoading ? 'bg-blue-400' : (!selectedJob && !showJobForm) ? 'bg-blue-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
                 } text-white px-3 py-1.5 sm:px-4 sm:py-2 border border-transparent rounded-md shadow-sm text-sm font-medium transition flex items-center focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500`}
               >
                 {isLoading ? (
@@ -674,7 +790,11 @@ function ResumeBuilderContent() {
               
               <div className="mb-4">
                 <h4 className="font-semibold mb-1">Skills</h4>
-                <p className="text-gray-700 dark:text-gray-300">{generatedResume?.skills.join(', ')}</p>
+                <p className="text-gray-700 dark:text-gray-300">
+                  {generatedResume?.skills && Array.isArray(generatedResume.skills) 
+                    ? generatedResume.skills.join(', ')
+                    : formatSkills(generatedResume?.skills)}
+                </p>
               </div>
               
               <div className="mb-4">
@@ -768,7 +888,7 @@ function ResumeBuilderContent() {
             <div>
               <h1 className="text-2xl sm:text-4xl font-bold mb-2 sm:mb-3">Resume Builder</h1>
               <p className="text-mobile-sm text-blue-100 max-w-2xl">
-                Create a tailored resume for your job application that matches the job description and highlights your relevant skills and experience.
+                Studies show that 61% of recruiters spend 5 seconds on initial screening. Tailored resumes with relevant keywords are more likely to pass Applicant Tracking Systems and get you the interview.
               </p>
             </div>
           </div>
@@ -777,7 +897,7 @@ function ResumeBuilderContent() {
         {/* Progress bar */}
         <div className="max-w-4xl mx-auto mb-8">
           <div className="flex justify-between mb-2">
-            {['Upload Resume', 'Customize', 'Download'].map((stepTitle, index) => (
+            {['Upload Resume', 'Job Details', 'Download'].map((stepTitle, index) => (
               <div
                 key={index}
                 className={`text-sm font-medium ${
