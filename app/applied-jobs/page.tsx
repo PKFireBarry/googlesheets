@@ -108,8 +108,11 @@ export default function AppliedJobsPage() {
     console.log("Total rows from fetched data:", rows.length);
     console.log("Applied jobs IDs:", appliedJobs);
     
-    // Filter rows to show only applied jobs
-    const appliedJobRows = rows.filter((row) => {
+    // Create a map to track unique jobs by title-company combination
+    const uniqueJobsMap = new Map();
+    
+    // Filter rows to show only applied jobs and handle duplicates
+    rows.forEach((row) => {
       try {
         const titleIndex = findColumnIndex("title");
         const companyIndex = findColumnIndex("company_name");
@@ -127,20 +130,10 @@ export default function AppliedJobsPage() {
           company = companyIndex !== -1 && rowData.length > companyIndex ? rowData[companyIndex] : "";
         }
         
-        if (!title) return false;
+        if (!title) return;
         
         // Generate job ID to match against applied jobs list
         const jobId = `${title}-${company}`.replace(/\s+/g, '-');
-        
-        // Map the row to include original index for reference later
-        if (Array.isArray(row)) {
-          // Process for a regular array row
-          const rowIndex = rows.indexOf(row) + 1; // Add 1 to account for header
-          Object.defineProperty(row, 'originalIndex', {
-            value: rowIndex,
-            enumerable: true
-          });
-        }
         
         // Check if this job is in the applied jobs list in any format:
         // 1. As a compound ID (title-company)
@@ -157,18 +150,35 @@ export default function AppliedJobsPage() {
                            return id === title;
                          });
                          
-        return isApplied;
+        if (isApplied) {
+          // Create a unique key for this job (title + company)
+          const uniqueKey = `${title}-${company}`;
+          
+          // Only add to map if we haven't seen this job before
+          if (!uniqueJobsMap.has(uniqueKey)) {
+            // Map the row to include original index for reference later
+            if (Array.isArray(row)) {
+              // Process for a regular array row
+              const rowIndex = rows.indexOf(row) + 1; // Add 1 to account for header
+              Object.defineProperty(row, 'originalIndex', {
+                value: rowIndex,
+                enumerable: true
+              });
+            }
+            
+            uniqueJobsMap.set(uniqueKey, row);
+          }
+        }
       } catch (e) {
         console.error("Error filtering applied job:", e);
-        return false;
       }
     });
     
-    console.log("Applied job rows found:", appliedJobRows.length);
+    // Convert map values to array
+    const uniqueAppliedJobRows = Array.from(uniqueJobsMap.values());
+    console.log("Unique applied job rows found:", uniqueAppliedJobRows.length);
     
-    // Unlike the main page, we don't apply any filters here
-    // We want to show ALL applied jobs regardless of other criteria
-    setFilteredRows(appliedJobRows);
+    setFilteredRows(uniqueAppliedJobRows);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, appliedJobs]);
 
@@ -257,11 +267,11 @@ export default function AppliedJobsPage() {
     
     if (wasRemoved) {
       // Job was removed
-      setToastMessage(`"${jobTitle}" removed from applied jobs`);
+      setToastMessage(`"${jobTitle}" removed from Applied Jobs`);
     } else {
       // This shouldn't usually happen on the applied page, but just in case
       newAppliedJobs.push(jobId);
-      setToastMessage(`"${jobTitle}" marked as applied`);
+      setToastMessage(`"${jobTitle}" moved to Applied Jobs`);
     }
     
     console.log("New applied jobs list:", newAppliedJobs);

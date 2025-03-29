@@ -160,8 +160,27 @@ export default function Home() {
     
     // Filter out applied jobs - they should only appear on the Applied page
     filtered = filtered.filter((row) => {
-      const job = prepareJobData(row, 0);
-      return !appliedJobs.includes(job.id);
+      const title = getFieldValue(row, "title");
+      const company = getFieldValue(row, "company_name");
+      
+      if (!title) return false;
+      
+      // Create a consistent job ID format
+      const consistentJobId = `${title}-${company}`.replace(/\s+/g, '-');
+      
+      // Check if this job is applied using multiple formats
+      const isApplied = appliedJobs.includes(consistentJobId) || 
+                       appliedJobs.includes(title) || 
+                       appliedJobs.some(id => {
+                         // Match prefix pattern for jobs with the same title-company
+                         if (company) {
+                           return id.startsWith(`${title}-${company}`);
+                         }
+                         // For jobs without company, just match title
+                         return id === title;
+                       });
+                       
+      return !isApplied;
     });
     
     // Filter out hidden jobs
@@ -549,6 +568,7 @@ export default function Home() {
     
     // Find job title to include in notification
     let jobTitle = "";
+    let jobCompany = "";
     
     // If we have the row index, use it to find the job data
     const jobIndex = rowIndices.findIndex(index => index.toString() === jobId)
@@ -562,30 +582,29 @@ export default function Home() {
         const companyIndex = headers.findIndex(h => h.toLowerCase() === 'company_name')
         
         if (titleIndex !== -1 && companyIndex !== -1) {
-          const title = rowData[titleIndex]
-          jobTitle = title; // Store for notification
-          const company = rowData[companyIndex]
+          jobTitle = rowData[titleIndex]
+          jobCompany = rowData[companyIndex]
           
           // Create a consistent job ID from title and company
-          const consistentJobId = `${title}-${company}`.replace(/\s+/g, '-')
+          const consistentJobId = `${jobTitle}-${jobCompany}`.replace(/\s+/g, '-')
           
           // Check if this job is already in applied jobs
           const isCurrentlyApplied = appliedJobs.includes(consistentJobId) || 
-                                    appliedJobs.includes(title) ||
-                                    appliedJobs.some(id => id.startsWith(`${title}-${company}`))
+                                    appliedJobs.includes(jobTitle) ||
+                                    appliedJobs.some(id => id.startsWith(`${jobTitle}-${jobCompany}`))
           
           // Create a new array without any variations of this job ID
           let newAppliedJobs = appliedJobs.filter(id => 
             id !== consistentJobId && 
-            id !== title && 
-            !id.startsWith(`${title}-${company}`))
+            id !== jobTitle && 
+            !id.startsWith(`${jobTitle}-${jobCompany}`))
           
           // If it wasn't applied, add it with the consistent ID format
           if (!isCurrentlyApplied) {
             newAppliedJobs.push(consistentJobId)
-            setToastMessage(`"${title}" marked as applied`);
+            setToastMessage(`"${jobTitle}" moved to Applied Jobs`);
           } else {
-            setToastMessage(`"${title}" removed from applied jobs`);
+            setToastMessage(`"${jobTitle}" removed from Applied Jobs`);
           }
           
           console.log("New applied jobs list:", newAppliedJobs);
@@ -609,24 +628,25 @@ export default function Home() {
       if (titleIndex === -1 || companyIndex === -1) return false;
       
       let jobTitleFromFilteredData = "";
+      let jobCompanyFromFilteredData = "";
       
       if (job && (job as any).data) {
         jobTitleFromFilteredData = (job as any).data[titleIndex];
-        const company = (job as any).data[companyIndex];
+        jobCompanyFromFilteredData = (job as any).data[companyIndex];
         
         // Check if this matches the provided jobId
         if (jobId === jobTitleFromFilteredData || 
-            jobId === `${jobTitleFromFilteredData}-${company}`.replace(/\s+/g, '-') ||
-            jobId.startsWith(`${jobTitleFromFilteredData}-${company}`)) {
+            jobId === `${jobTitleFromFilteredData}-${jobCompanyFromFilteredData}`.replace(/\s+/g, '-') ||
+            jobId.startsWith(`${jobTitleFromFilteredData}-${jobCompanyFromFilteredData}`)) {
           
           // Create a consistent job ID
-          const consistentJobId = `${jobTitleFromFilteredData}-${company}`.replace(/\s+/g, '-');
+          const consistentJobId = `${jobTitleFromFilteredData}-${jobCompanyFromFilteredData}`.replace(/\s+/g, '-');
           
           // Remove any variations of this job from applied jobs
           let newAppliedJobs = appliedJobs.filter(id => 
             id !== consistentJobId && 
             id !== jobTitleFromFilteredData && 
-            !id.startsWith(`${jobTitleFromFilteredData}-${company}`));
+            !id.startsWith(`${jobTitleFromFilteredData}-${jobCompanyFromFilteredData}`));
           
           // If it wasn't in the list (after filtering), add it with the consistent format
           if (newAppliedJobs.length === appliedJobs.length) {
@@ -641,8 +661,8 @@ export default function Home() {
           if (newAppliedJobs.length !== appliedJobs.length) {
             const isApplying = newAppliedJobs.length > appliedJobs.length;
             setToastMessage(isApplying ? 
-              `"${jobTitleFromFilteredData}" marked as applied` : 
-              `"${jobTitleFromFilteredData}" removed from applied jobs`);
+              `"${jobTitleFromFilteredData}" moved to Applied Jobs` : 
+              `"${jobTitleFromFilteredData}" removed from Applied Jobs`);
             
             // Show toast notification
             setShowSuccessToast(true);
@@ -669,9 +689,9 @@ export default function Home() {
     
     // For fallback case, we may not have a job title, so use generic message
     if (newAppliedJobs.length > appliedJobs.length) {
-      setToastMessage("Job marked as applied");
+      setToastMessage("Job moved to Applied Jobs");
     } else {
-      setToastMessage("Job removed from applied jobs");
+      setToastMessage("Job removed from Applied Jobs");
     }
     
     // Show toast notification
@@ -865,6 +885,14 @@ export default function Home() {
     const skills = getFieldValue(row, "skills", headers);
     const notes = getFieldValue(row, "notes", headers);
     
+    // Create a consistent job ID format
+    const consistentJobId = `${title}-${company}`.replace(/\s+/g, '-');
+    
+    // Check if this job is applied using multiple formats
+    const isApplied = appliedJobs.includes(consistentJobId) || 
+                     appliedJobs.includes(title) || 
+                     appliedJobs.some(id => id.startsWith(`${title}-${company}`));
+    
     return {
       id,
       originalIndex: typeof row.originalIndex === 'number' ? row.originalIndex : index,
@@ -882,7 +910,7 @@ export default function Home() {
       experience,
       skills,
       notes,
-      is_applied: appliedJobs.includes(id),
+      is_applied: isApplied,
       source: extractSourceFromUrl(url || companyWebsite),
     };
   };
@@ -924,17 +952,7 @@ export default function Home() {
                 Track and manage your job applications with Google Sheets integration. 
                 Keep all your job opportunities organized in one place.
               </p>
-            </div>
-            
-            <div className="mt-4 md:mt-0">
-              <button
-                onClick={handleResumeBuilderClick}
-                className="flex items-center px-4 py-2 bg-white/10 hover:bg-white/20 text-white font-medium rounded-lg transition-colors"
-              >
-                <FileSpreadsheet className="w-4 h-4 mr-2" />
-                Resume Builder
-              </button>
-            </div>
+            </div>          
           </div>
         </div>
 

@@ -33,6 +33,20 @@ function ResumeBuilderContent() {
   const [apiKey, setApiKey] = useState<string>('');
   const [generatedResume, setGeneratedResume] = useState<ResumeData | null>(null);
   const [tailoringNotes, setTailoringNotes] = useState<string>('');
+  const [showJobForm, setShowJobForm] = useState<boolean>(false);
+  const [manualJobData, setManualJobData] = useState<{
+    title: string;
+    description: string;
+    requirements: string;
+    skills: string;
+    company: string;
+  }>({
+    title: '',
+    description: '',
+    requirements: '',
+    skills: '',
+    company: ''
+  });
   
   // Personal info state
   const [personalInfo, setPersonalInfo] = useState<PersonalInfo>({
@@ -47,6 +61,40 @@ function ResumeBuilderContent() {
   // File input ref
   const fileInputRef = useRef<HTMLInputElement>(null);
   
+  // Handle manual job data changes
+  const handleManualJobChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setManualJobData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  // Handle manual job submission
+  const handleManualJobSubmit = () => {
+    // Validate required fields
+    if (!manualJobData.title || !manualJobData.company) {
+      setError('Please fill in at least the job title and company name.');
+      return;
+    }
+
+    // Set the selected job with manual data
+    setSelectedJob({
+      title: manualJobData.title,
+      job_title: manualJobData.title,
+      description: manualJobData.description,
+      job_description: manualJobData.description,
+      requirements: manualJobData.requirements,
+      skills: manualJobData.skills,
+      company: manualJobData.company,
+      company_name: manualJobData.company
+    });
+
+    // Hide the form
+    setShowJobForm(false);
+    setError(null);
+  };
+
   // Load jobs and job details directly from the URL parameter
   useEffect(() => {
     const loadJobs = async () => {
@@ -56,25 +104,24 @@ function ResumeBuilderContent() {
           let jobData = null;
           
           // Try to find the job in different storage locations
-        const savedJobsData = localStorage.getItem('savedJobs');
-        if (savedJobsData) {
-          try {
-            const savedJobs = JSON.parse(savedJobsData);
-            if (savedJobs && typeof savedJobs === 'object') {
+          const savedJobsData = localStorage.getItem('savedJobs');
+          if (savedJobsData) {
+            try {
+              const savedJobs = JSON.parse(savedJobsData);
+              if (savedJobs && typeof savedJobs === 'object') {
                 // Find the job with the matching id
                 const job = savedJobs[jobId];
                 if (job) {
                   console.log('Found job from URL parameter:', job.title || job.job_title);
                   setSelectedJob(job);
-                  // No need to load all other jobs since we're going directly to customize step
                   return;
                 }
+              }
+            } catch (e) {
+              console.error('Error parsing savedJobs:', e);
             }
-          } catch (e) {
-            console.error('Error parsing savedJobs:', e);
           }
-        }
-        
+          
           // If job not found in savedJobs, look in other storage locations
           const storedData = localStorage.getItem('jobData');
           if (storedData) {
@@ -88,8 +135,8 @@ function ResumeBuilderContent() {
                   setSelectedJob(job);
                   return;
                 }
-            }
-          } catch (e) {
+              }
+            } catch (e) {
               console.error('Error parsing jobData:', e);
             }
           }
@@ -97,6 +144,8 @@ function ResumeBuilderContent() {
           console.warn('Job not found with ID:', jobId);
         } else {
           console.log('No job ID provided, user will need to choose a job manually');
+          // Show the job form by default if no job is selected
+          setShowJobForm(true);
         }
       } catch (error) {
         console.error('Error loading job data:', error);
@@ -372,6 +421,86 @@ function ResumeBuilderContent() {
               Upload your resume in PDF or DOCX format. This will be used to create a tailored resume
               that matches the job description.
             </p>
+            
+            {/* Job Details Form */}
+            {showJobForm && (
+              <div className="bg-blue-50 p-4 rounded-lg mb-6">
+                <h3 className="font-semibold text-blue-800 mb-4">Enter Job Details</h3>
+                <div className="space-y-4">
+                  <div>
+                    <label htmlFor="jobTitle" className="block text-sm font-medium text-gray-700 mb-1">
+                      Job Title *
+                    </label>
+                    <input
+                      type="text"
+                      id="jobTitle"
+                      name="title"
+                      value={manualJobData.title}
+                      onChange={handleManualJobChange}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                      placeholder="e.g., Senior Software Engineer"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="company" className="block text-sm font-medium text-gray-700 mb-1">
+                      Company Name *
+                    </label>
+                    <input
+                      type="text"
+                      id="company"
+                      name="company"
+                      value={manualJobData.company}
+                      onChange={handleManualJobChange}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                      placeholder="e.g., Google"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
+                      Job Description
+                    </label>
+                    <textarea
+                      id="description"
+                      name="description"
+                      value={manualJobData.description}
+                      onChange={handleManualJobChange}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                      rows={4}
+                      placeholder="Paste the job description here..."
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="requirements" className="block text-sm font-medium text-gray-700 mb-1">
+                      Requirements
+                    </label>
+                    <textarea
+                      id="requirements"
+                      name="requirements"
+                      value={manualJobData.requirements}
+                      onChange={handleManualJobChange}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                      rows={3}
+                      placeholder="List the job requirements..."
+                    />
+                  </div>
+
+
+                  <div className="flex justify-end">
+                    <button
+                      onClick={handleManualJobSubmit}
+                      className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
+                    >
+                      Save Job Details
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
             
             {/* PDF support info box */}
             <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-md text-blue-800 dark:text-blue-300 text-sm flex items-start mt-2 mb-4">

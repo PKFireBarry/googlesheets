@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import CookieUtil from '../utils/cookies'
-import { Loader2, Search, Linkedin, Globe, Settings, ArrowRight, Plus, Key, ExternalLink, HelpCircle, X, Copy, Check, MessageSquare, ChevronDown, Sparkles } from 'lucide-react'
+import { Loader2, Search, Linkedin, Globe, Settings, ArrowRight, Plus, Key, ExternalLink, HelpCircle, X, Copy, Check, MessageSquare, ChevronDown, Sparkles, Briefcase, Building, MapPin, DollarSign, Clock, RefreshCw } from 'lucide-react'
 import { lookupLinkedInHR, LinkedInContactData } from '../utils/webhook'
 
 // Helper function to extract spreadsheet ID from URL
@@ -17,15 +17,22 @@ function extractSpreadsheetId(url: string): string | null {
 const formatUrl = (url: string): string => {
   if (!url || url === 'n/a' || url === 'N/A') return '';
   
+  // Remove any whitespace
+  url = url.trim();
+  
   // If the URL already has a protocol, return it as is
   if (url.startsWith('http://') || url.startsWith('https://')) {
     return url;
   }
   
-  // For LinkedIn URLs, add https://www. if needed
+  // For LinkedIn URLs, handle various formats
   if (url.includes('linkedin.com')) {
-    if (url.startsWith('www.')) {
-      return `https://${url}`;
+    // Remove any leading slashes or www.
+    url = url.replace(/^\/+/, '').replace(/^www\./, '');
+    
+    // Make sure it doesn't already start with linkedin.com and add https://www.
+    if (!url.startsWith('linkedin.com')) {
+      return `https://www.${url}`;
     } else {
       return `https://www.${url}`;
     }
@@ -62,14 +69,13 @@ function LinkedInLookupContent() {
   
   const [selectedJob, setSelectedJob] = useState<Record<string, unknown> | null>(null)
   const [copiedMessageIds, setCopiedMessageIds] = useState<Record<string, boolean>>({})
-  const [messageTemplates] = useState([
-    { id: 'default', name: 'Standard Introduction' },
-    { id: 'specific', name: 'Skill-Specific' },
-    { id: 'referral', name: 'Job Referral' },
-    { id: 'connection', name: 'Connection Request' },
-    { id: 'ai', name: '✨ AI-Generated' }
-  ])
-  const [selectedTemplateIds, setSelectedTemplateIds] = useState<Record<string, string>>({})
+  
+  // We only need the referral template
+  const [messageTemplate] = useState('referral')
+  
+  // State for editable messages
+  const [editableMessages, setEditableMessages] = useState<Record<string, string>>({})
+  const [isEditingMessage, setIsEditingMessage] = useState<Record<string, boolean>>({})
   
   useEffect(() => {
     // Load companies from cookie or search params on mount
@@ -82,6 +88,29 @@ function LinkedInLookupContent() {
         if (savedApiKey) {
           console.log('Found saved Gemini API key, loading...')
           setGeminiApiKey(savedApiKey)
+        }
+        
+        // Check if we have a jobId in the URL - if so, try to load from localStorage first
+        const jobId = searchParams.get("jobId")
+        if (jobId) {
+          console.log('JobID found in URL:', jobId)
+          try {
+            // Try to get job data from localStorage
+            const savedJobs = JSON.parse(localStorage.getItem('savedJobs') || '{}')
+            if (savedJobs[jobId]) {
+              console.log('Found saved job data in localStorage:', savedJobs[jobId])
+              setSelectedJob(savedJobs[jobId])
+              
+              // If we have a company name, set it as the selected company
+              if (savedJobs[jobId].company_name) {
+                setSelectedCompany(savedJobs[jobId].company_name)
+              }
+            } else {
+              console.log('No saved job data found for jobId:', jobId)
+            }
+          } catch (error) {
+            console.error('Error loading job data from localStorage:', error)
+          }
         }
         
         // Load or extract company names
@@ -112,6 +141,14 @@ function LinkedInLookupContent() {
             if (companyNames.length > 0) {
               console.log('Setting', companyNames.length, 'unique companies from sheet data cookie')
               setCompanies(companyNames)
+              
+              // Try to find matching job for selected company (if any)
+              if (companyParam) {
+                console.log('Selected company from URL:', companyParam);
+                const jobInfo = extractJobInfo(companyParam, data);
+                setSelectedJob(jobInfo);
+              }
+              
               setLoading(false)
               return
             } else {
@@ -153,7 +190,7 @@ function LinkedInLookupContent() {
     }
     
     loadData()
-  }, [searchParams])
+  }, [searchParams, companyParam])
   
   // Helper function to extract company names from data
   const extractCompanyNames = (data: Record<string, any>[]) => {
@@ -268,23 +305,27 @@ function LinkedInLookupContent() {
   // Auto-trigger search when company is provided in URL
   useEffect(() => {
     // Only auto-search if:
-    // 1. We have a company parameter
+    // 1. We have a company parameter (either from URL or selected from our company list)
     // 2. We're not already searching
     // 3. We haven't done an auto-search yet
-    // 4. The URL has an 'autoSearch=true' parameter
+    // 4. Either autoSearch=true parameter is present OR jobId is present
+    const companyToSearch = companyParam || selectedCompany;
     const shouldAutoSearch = 
-      companyParam && 
+      companyToSearch && 
       !isSearching && 
       !autoSearchDone && 
-      searchParams.get('autoSearch') === 'true';
+      (searchParams.get('autoSearch') === 'true' || searchParams.get('jobId'));
     
     if (shouldAutoSearch) {
-      console.log('Auto-triggering search for company:', companyParam);
-      handleSearch();
-      setAutoSearchDone(true); // Mark auto-search as done
+      console.log('Auto-triggering search for company:', companyToSearch);
+      // Set a slight delay to allow the company to be set
+      setTimeout(() => {
+        handleSearch();
+        setAutoSearchDone(true); // Mark auto-search as done
+      }, 500);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [companyParam, isSearching, autoSearchDone, searchParams]);
+  }, [companyParam, selectedCompany, isSearching, autoSearchDone, searchParams]);
   
   const handleSaveSettings = () => {
     try {
@@ -351,8 +392,8 @@ function LinkedInLookupContent() {
     try {
       console.log(`Starting search for company: ${companyToSearch}`);
       
-      // Get job data for this company to pass to the LinkedIn lookup
-      const jobInfo = extractJobInfo();
+      // Pass the full job data from selectedJob if available
+      const jobInfo = selectedJob || extractJobInfo();
       console.log('Job data for lookup:', jobInfo);
       
       try {
@@ -387,10 +428,10 @@ function LinkedInLookupContent() {
         if (responseData && responseData.length > 0) {
           // If the API returned a suggested message, default to the AI template
           if (responseData[0].suggestedMessage) {
-            // Set AI template as default for this contact
-            setSelectedTemplateIds(prev => ({
+            // Initialize editable message with the suggested message
+            setEditableMessages(prev => ({
               ...prev,
-              [responseData[0].linkedinUrl || responseData[0].name]: 'ai'
+              [responseData[0].linkedinUrl || responseData[0].name]: responseData[0].suggestedMessage as string
             }));
           }
           
@@ -430,44 +471,73 @@ function LinkedInLookupContent() {
   }
   
   // Helper function to extract job information for message generation
-  const extractJobInfo = () => {
+  const extractJobInfo = (companyName: string | null = null, data: any[] | null = null) => {
     try {
-      const sheetData = CookieUtil.get("sheetData")
-      if (!sheetData) {
-        return null
-      }
+      const targetCompany = companyName || selectedCompany;
+      let parsedData = data;
       
-      const data = JSON.parse(sheetData)
+      if (!parsedData) {
+        const sheetData = CookieUtil.get("sheetData")
+        if (!sheetData) {
+          return null;
+        }
+        
+        parsedData = JSON.parse(sheetData);
+      }
       
       // For simplicity, we'll use the first job in the list that matches the company
       // In a more advanced implementation, you could add a job selector
-      if (selectedCompany && data && Array.isArray(data)) {
-        const matchingJob = data.find((job: Record<string, unknown>) => {
-          const jobCompany = (job.company_name || job.company || '') as string
-          return jobCompany.toLowerCase().includes(selectedCompany.toLowerCase())
-        })
+      if (targetCompany && parsedData && Array.isArray(parsedData)) {
+        const matchingJob = parsedData.find((job: Record<string, unknown>) => {
+          const jobCompany = (job.company_name || job.company || '') as string;
+          return jobCompany.toLowerCase().includes(targetCompany.toLowerCase());
+        });
         
-        return matchingJob || null
+        return matchingJob || null;
       }
       
-      return null
+      return null;
     } catch (error) {
-      console.error("Error extracting job info:", error)
-      return null
+      console.error("Error extracting job info:", error);
+      return null;
     }
   }
   
-  // Generate outreach message based on job and contact details and template
-  const generateOutreachMessage = (
-    contact: LinkedInContactData, 
-    job: Record<string, unknown> | null,
-    templateId: string = 'default'
-  ) => {
-    // If the AI has generated a message for this contact, use it
-    if (templateId === 'ai' && contact.suggestedMessage) {
-      return contact.suggestedMessage as string;
+  // Helper function to safely get string value from job object
+  const getJobValue = (job: Record<string, unknown> | null, keys: string[]): string => {
+    if (!job) return '';
+    
+    for (const key of keys) {
+      if (job[key] !== undefined && job[key] !== null) {
+        if (typeof job[key] === 'string') return job[key] as string;
+        return String(job[key]);
+      }
     }
     
+    return '';
+  }
+  
+  // Helper function to safely get skills array from job object
+  const getSkillsArray = (job: Record<string, unknown> | null): string[] => {
+    if (!job || !job.skills) return [];
+    
+    if (typeof job.skills === 'string') {
+      return job.skills.split(',').map(s => s.trim());
+    }
+    
+    if (Array.isArray(job.skills)) {
+      return job.skills.map(s => String(s).trim());
+    }
+    
+    return [];
+  }
+  
+  // Generate outreach message based on job and contact details
+  const generateOutreachMessage = (
+    contact: LinkedInContactData, 
+    job: Record<string, unknown> | null
+  ) => {
+    // We'll use the original referral template
     const contactName = contact.name !== 'n/a' ? contact.name.split(' ')[0] : 'Hiring Manager'
     const jobTitle = (job?.title || job?.job_title || 'the open position') as string
     const companyName = contact.company || selectedCompany || 'your company'
@@ -481,39 +551,8 @@ function LinkedInLookupContent() {
       }
     }
     
-    // Standard introduction template
-    if (templateId === 'default') {
-      return `Hi ${contactName},
-
-I hope this message finds you well. I noticed you're a ${contact.title} at ${companyName}, and I'm very interested in ${jobTitle} at your company.
-
-${skills.length > 0 ? `I have experience with ${skills.join(', ')}, which I believe aligns well with what you're looking for.` : `I'm particularly drawn to this role because of the company's reputation and the opportunity to contribute my skills.`}
-
-Would you be open to a brief conversation about this opportunity and how my background might be a good fit? I'd appreciate any insights you could share.
-
-Thank you for your time and consideration.
-
-Best regards`
-    }
-    
-    // Skill-specific template
-    if (templateId === 'specific') {
-      return `Hi ${contactName},
-
-I came across the ${jobTitle} role at ${companyName} and wanted to connect directly with you as the ${contact.title}.
-
-${skills.length > 0 ? 
-`I've been working extensively with ${skills.join(', ')}, and was excited to see these skills mentioned in the job description. I've successfully delivered projects using these technologies at my current position.` : 
-`I have several years of relevant experience that aligns perfectly with the requirements in your job description.`}
-
-I'd love to discuss how my background could benefit your team. Are you available for a quick chat this week?
-
-Thanks,`
-    }
-    
-    // Job referral template
-    if (templateId === 'referral') {
-      return `Hello ${contactName},
+    // Original job referral template
+    return `Hello ${contactName},
 
 I hope I'm reaching out to the right person. I'm interested in the ${jobTitle} position at ${companyName} and was wondering if you're involved in the hiring process.
 
@@ -522,42 +561,6 @@ I've carefully reviewed the job description and believe my background in ${skill
 Could you kindly let me know if you're the appropriate contact for this role or if you could refer me to the right person? I'd be grateful for any guidance you can provide.
 
 Thank you for your assistance,`
-    }
-    
-    // Connection request template
-    if (templateId === 'connection') {
-      return `Hi ${contactName},
-
-I'm reaching out to connect with you as a ${contact.title} at ${companyName}. I'm currently exploring opportunities in ${jobTitle.includes('at') ? jobTitle.split('at')[0].trim() : jobTitle} and would love to join your professional network.
-
-${skills.length > 0 ? `My background includes experience with ${skills.join(', ')}, and I'm always looking to connect with professionals in the field.` : `I've been following ${companyName} and am impressed with the work your team is doing.`}
-
-Looking forward to connecting!
-
-Best regards,`
-    }
-    
-    // Default to standard template if templateId doesn't match
-    return `Hi ${contactName},
-
-I'm interested in connecting regarding the ${jobTitle} role at ${companyName}.
-
-Would you be open to a brief conversation about this opportunity?
-
-Thank you,`
-  }
-  
-  // Set default template for a contact
-  const setTemplateForContact = (contactId: string, templateId: string) => {
-    setSelectedTemplateIds(prev => ({
-      ...prev,
-      [contactId]: templateId
-    }))
-  }
-  
-  // Get current template for a contact
-  const getTemplateForContact = (contactId: string): string => {
-    return selectedTemplateIds[contactId] || 'default'
   }
   
   // Handle copy message to clipboard
@@ -574,13 +577,69 @@ Thank you,`
       })
   }
   
-  // When search results are loaded, try to find matching job info
+  // When search results are loaded, try to find matching job info if not already set
   useEffect(() => {
-    if (searchResults.length > 0) {
-      const jobInfo = extractJobInfo()
-      setSelectedJob(jobInfo)
+    if (searchResults.length > 0 && !selectedJob) {
+      const jobInfo = extractJobInfo();
+      if (jobInfo) {
+        setSelectedJob(jobInfo);
+      }
     }
-  }, [searchResults, selectedCompany])
+  }, [searchResults, selectedJob])
+  
+  // Handle editing a message
+  const handleEditMessage = (contactId: string) => {
+    // If not currently editing, prepare the editable message first
+    if (!isEditingMessage[contactId]) {
+      // Use the existing editable message or generate a new one
+      const message = editableMessages[contactId] || 
+                     generateOutreachMessage(
+                       // Find the matching contact
+                       searchResults.find(c => (c.linkedinUrl || c.name) === contactId) as LinkedInContactData, 
+                       selectedJob
+                     );
+                     
+      // Set the editable message
+      setEditableMessages(prev => ({
+        ...prev,
+        [contactId]: message
+      }));
+    }
+    
+    // Toggle editing mode for this contact
+    setIsEditingMessage(prev => ({
+      ...prev,
+      [contactId]: !prev[contactId]
+    }));
+  }
+  
+  // Handle saving edited message
+  const handleSaveMessage = (contactId: string) => {
+    setIsEditingMessage(prev => ({
+      ...prev,
+      [contactId]: false
+    }))
+  }
+  
+  // Handle message text change
+  const handleMessageChange = (contactId: string, newMessage: string) => {
+    setEditableMessages(prev => ({
+      ...prev,
+      [contactId]: newMessage
+    }))
+  }
+  
+  // Handle regenerating a message (reset to original)
+  const handleRegenerateMessage = (contactId: string, contact: LinkedInContactData) => {
+    // Generate a fresh message based on the contact and selected job
+    const freshMessage = generateOutreachMessage(contact, selectedJob);
+    
+    // Update the editable message state
+    setEditableMessages(prev => ({
+      ...prev,
+      [contactId]: freshMessage
+    }));
+  }
   
   return (
     <div className="max-w-6xl mx-auto">
@@ -746,6 +805,8 @@ Thank you,`
             </div>
           </div>
           
+          {/* Display Selected Job Details if available */}
+          
           {/* Company Selection */}
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
             <div className="flex items-center mb-4">
@@ -878,6 +939,130 @@ Thank you,`
         </div>
         
         <div className="md:col-span-2">
+          {/* Job Details Section */}
+          {selectedJob && (
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center">
+                  <Briefcase className="w-5 h-5 mr-2 text-blue-600 dark:text-blue-400" />
+                  Selected Job Details
+                </h2>
+              </div>
+              
+              <div className="space-y-4">
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 mb-5">
+                  <div className="flex gap-4">
+                    <div className="flex-shrink-0 w-14 h-14 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center">
+                      {selectedJob.company_image ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img 
+                          src={typeof selectedJob.company_image === 'string' ? selectedJob.company_image : ''} 
+                          alt={`${getJobValue(selectedJob, ['company_name', 'company'])} logo`}
+                          className="w-full h-full object-contain p-1"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
+                      ) : (
+                        <Building className="w-8 h-8 text-gray-400 dark:text-gray-500" />
+                      )}
+                    </div>
+                    
+                    <div>
+                      <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-1 line-clamp-2">
+                        {getJobValue(selectedJob, ['title', 'job_title'])}
+                      </h2>
+                      <div className="flex items-center text-gray-600 dark:text-gray-300">
+                        <Building className="w-4 h-4 mr-1.5 flex-shrink-0" />
+                        <span className="font-medium">{getJobValue(selectedJob, ['company_name', 'company'])}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                  {getJobValue(selectedJob, ['location']) && (
+                    <div className="flex items-center text-gray-600 dark:text-gray-400">
+                      <MapPin className="w-4 h-4 mr-2 text-gray-500 dark:text-gray-500 flex-shrink-0" />
+                      <span>{getJobValue(selectedJob, ['location'])}</span>
+                    </div>
+                  )}
+                  
+                  {getJobValue(selectedJob, ['salary']) && (
+                    <div className="flex items-center text-gray-600 dark:text-gray-400">
+                      <DollarSign className="w-4 h-4 mr-2 text-gray-500 dark:text-gray-500 flex-shrink-0" />
+                      <span>{getJobValue(selectedJob, ['salary'])}</span>
+                    </div>
+                  )}
+                  
+                  {getJobValue(selectedJob, ['experience']) && (
+                    <div className="flex items-center text-gray-600 dark:text-gray-400">
+                      <Briefcase className="w-4 h-4 mr-2 text-gray-500 dark:text-gray-500 flex-shrink-0" />
+                      <span>{getJobValue(selectedJob, ['experience'])}</span>
+                    </div>
+                  )}
+                  
+                  {getJobValue(selectedJob, ['job_type', 'type']) && (
+                    <div className="flex items-center text-gray-600 dark:text-gray-400">
+                      <Clock className="w-4 h-4 mr-2 text-gray-500 dark:text-gray-500 flex-shrink-0" />
+                      <span>{getJobValue(selectedJob, ['job_type', 'type'])}</span>
+                    </div>
+                  )}
+                </div>
+                
+                {getSkillsArray(selectedJob).length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Required Skills:</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {getSkillsArray(selectedJob).map((skill, index) => (
+                        <span 
+                          key={index}
+                          className="px-2 py-1 text-xs rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
+                        >
+                          {skill}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {getJobValue(selectedJob, ['description']) && (
+                  <div className="mt-3">
+                    <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Description:</h4>
+                    <div className="text-sm text-gray-600 dark:text-gray-400 line-clamp-3 whitespace-pre-line">
+                      {getJobValue(selectedJob, ['description'])}
+                    </div>
+                    <button
+                      className="text-blue-600 dark:text-blue-400 text-xs mt-2 hover:underline"
+                      onClick={() => alert(getJobValue(selectedJob, ['description']))}
+                    >
+                      View Full Description
+                    </button>
+                  </div>
+                )}
+                
+                <div className="mt-4 flex justify-between">
+                  <div className="text-sm text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-700 p-3 rounded-md flex-1">
+                    <p className="font-medium mb-1">Looking for HR contacts at {getJobValue(selectedJob, ['company_name', 'company'])}</p>
+                    <p>Click the search button below to find HR personnel for this company.</p>
+                  </div>
+                  
+                  {getJobValue(selectedJob, ['url']) && (
+                    <a
+                      href={getJobValue(selectedJob, ['url'])}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="ml-3 px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-md hover:bg-blue-700 self-center flex items-center"
+                    >
+                      <ExternalLink className="w-4 h-4 mr-1.5" />
+                      View Job
+                    </a>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          
           {/* Search Results */}
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
             <div className="flex items-center mb-4">
@@ -982,7 +1167,7 @@ Thank you,`
                       </div>
                       {contact.linkedinUrl && (
                         <a 
-                          href={contact.linkedinUrl} 
+                          href={formatUrl(contact.linkedinUrl)} 
                           target="_blank" 
                           rel="noopener noreferrer"
                           className="flex items-center text-blue-600 dark:text-blue-400 text-sm hover:underline"
@@ -1006,7 +1191,7 @@ Thank you,`
                       <div className="mt-1 text-sm">
                         <span className="font-medium text-gray-700 dark:text-gray-300">LinkedIn: </span>
                         <a 
-                          href={contact.linkedinUrl} 
+                          href={formatUrl(contact.linkedinUrl)} 
                           target="_blank" 
                           rel="noopener noreferrer" 
                           className="text-blue-600 dark:text-blue-400 hover:underline"
@@ -1028,16 +1213,16 @@ Thank you,`
                     {contact.website && (
                       <div className="mt-1 text-sm">
                         <span className="font-medium text-gray-700 dark:text-gray-300">Website: </span>
-                        <a href={contact.website} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">
+                        <a href={formatUrl(contact.website)} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">
                           {contact.website}
                         </a>
                       </div>
                     )}
                     
-                    {contact.birthday && (
+                    {contact.birthday && typeof contact.birthday === 'string' && (
                       <div className="mt-1 text-sm">
                         <span className="font-medium text-gray-700 dark:text-gray-300">Birthday: </span>
-                        <span className="text-gray-600 dark:text-gray-400">{contact.birthday}</span>
+                        <span className="text-gray-600 dark:text-gray-400">{String(contact.birthday)}</span>
                       </div>
                     )}
                     
@@ -1061,36 +1246,27 @@ Thank you,`
                     {/* LinkedIn Outreach Message Generator */}
                     <div className="border-t border-gray-200 dark:border-gray-700 mt-4 pt-4">
                       <div className="flex items-center justify-between mb-2">
-                        <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">LinkedIn Message Template</h3>
+                        <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Job Referral Message</h3>
                         
                         <div className="flex items-center gap-2">
-                          {/* Template Selector */}
-                          <div className="relative">
-                            <select
-                              value={getTemplateForContact(contact.linkedinUrl || contact.name)}
-                              onChange={(e) => setTemplateForContact(contact.linkedinUrl || contact.name, e.target.value)}
-                              className="text-xs bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md py-1 pl-2 pr-6 appearance-none"
-                            >
-                              {messageTemplates.map(template => (
-                                <option 
-                                  key={template.id} 
-                                  value={template.id}
-                                  className={template.id === 'ai' ? 'text-blue-600 font-medium' : ''}
-                                >
-                                  {template.name}
-                                </option>
-                              ))}
-                            </select>
-                            <ChevronDown className="absolute right-1 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none text-gray-500" />
-                          </div>
+                          {/* Edit/Save Button */}
+                          <button
+                            onClick={() => handleEditMessage(contact.linkedinUrl || contact.name)}
+                            className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900/50"
+                          >
+                            {isEditingMessage[contact.linkedinUrl || contact.name] ? (
+                              <>Save</>
+                            ) : (
+                              <>Edit Message</>
+                            )}
+                          </button>
                           
                           {/* Copy Button */}
                           <button
                             onClick={() => copyMessageToClipboard(
-                              generateOutreachMessage(
+                              editableMessages[contact.linkedinUrl || contact.name] || generateOutreachMessage(
                                 contact, 
-                                selectedJob,
-                                getTemplateForContact(contact.linkedinUrl || contact.name)
+                                selectedJob
                               ),
                               contact.linkedinUrl || contact.name
                             )}
@@ -1111,13 +1287,52 @@ Thank you,`
                         </div>
                       </div>
                       
-                      <div className="mt-3 p-3 text-xs bg-gray-50 dark:bg-gray-900 rounded-md border border-gray-200 dark:border-gray-700 font-mono whitespace-pre-wrap">
-                        {generateOutreachMessage(
-                          contact, 
-                          selectedJob, 
-                          getTemplateForContact(contact.linkedinUrl || contact.name)
-                        )}
-                      </div>
+                      {isEditingMessage[contact.linkedinUrl || contact.name] ? (
+                        <div className="mt-3">
+                          <textarea
+                            value={editableMessages[contact.linkedinUrl || contact.name] || generateOutreachMessage(
+                              contact, 
+                              selectedJob
+                            )}
+                            onChange={(e) => handleMessageChange(contact.linkedinUrl || contact.name, e.target.value)}
+                            className="w-full p-3 text-xs bg-gray-50 dark:bg-gray-900 rounded-md border border-gray-200 dark:border-gray-700 font-mono"
+                            rows={10}
+                          />
+                          <div className="mt-2 flex justify-end space-x-2">
+                            <button
+                              onClick={() => handleRegenerateMessage(contact.linkedinUrl || contact.name, contact)}
+                              className="px-3 py-1.5 text-xs font-medium rounded-md bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 flex items-center"
+                            >
+                              <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                              Regenerate
+                            </button>
+                            <button
+                              onClick={() => handleSaveMessage(contact.linkedinUrl || contact.name)}
+                              className="px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                            >
+                              Save Changes
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="mt-3">
+                          <div className="p-3 text-xs bg-gray-50 dark:bg-gray-900 rounded-md border border-gray-200 dark:border-gray-700 font-mono whitespace-pre-wrap">
+                            {editableMessages[contact.linkedinUrl || contact.name] || generateOutreachMessage(
+                              contact, 
+                              selectedJob
+                            )}
+                          </div>
+                          <div className="mt-2 flex justify-end space-x-2">
+                            <button
+                              onClick={() => handleRegenerateMessage(contact.linkedinUrl || contact.name, contact)}
+                              className="px-3 py-1.5 text-xs font-medium rounded-md bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 flex items-center"
+                            >
+                              <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                              Regenerate
+                            </button>
+                          </div>
+                        </div>
+                      )}
                       
                       <div className="mt-2 flex justify-end">
                         {contact.linkedinUrl && contact.linkedinUrl !== 'n/a' && (

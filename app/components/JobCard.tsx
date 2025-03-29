@@ -81,7 +81,18 @@ export default function JobCard({
   const handleLinkedInLookup = () => {
     const companyName = job.company_name
     if (companyName) {
-      router.push(`/linkedin-lookup?company=${encodeURIComponent(companyName)}`)
+      // Save this job to localStorage before navigating
+      try {
+        const savedJobs = JSON.parse(localStorage.getItem('savedJobs') || '{}');
+        savedJobs[job.id] = job;
+        localStorage.setItem('savedJobs', JSON.stringify(savedJobs));
+        console.log(`Saved job data for ${job.id} to localStorage for LinkedIn lookup`);
+      } catch (error) {
+        console.error('Error saving job data to localStorage:', error);
+      }
+      
+      // Pass company name and job ID to the LinkedIn lookup page
+      router.push(`/linkedin-lookup?company=${encodeURIComponent(companyName)}&jobId=${encodeURIComponent(job.id)}`);
     }
   }
   
