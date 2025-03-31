@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import Cookies from 'js-cookie'
 import { toast } from 'react-hot-toast'
@@ -56,7 +56,8 @@ const formatUrl = (url: string): string => {
   return `https://${url}`;
 };
 
-export default function AutoApplyPage() {
+// Wrap the main component content in a new component
+function AutoApplyContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   
@@ -815,4 +816,17 @@ function InfoIcon(props: React.SVGProps<SVGSVGElement>) {
       <path d="M12 8h.01" />
     </svg>
   );
+}
+
+// Main component that uses Suspense
+export default function AutoApplyPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-purple-600"></div>
+      </div>
+    }>
+      <AutoApplyContent />
+    </Suspense>
+  )
 } 
