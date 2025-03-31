@@ -57,8 +57,8 @@ function MockInterviewContent() {
   return (
     <>
       {loading ? (
-        <div className="flex justify-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+        <div className="flex justify-center py-8">
+          <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-blue-500"></div>
         </div>
       ) : error ? (
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-6 text-center">
@@ -77,22 +77,24 @@ function MockInterviewContent() {
 // Main page component with Suspense boundary
 export default function MockInterviewPage() {
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="mb-6">
+    <div className="max-w-6xl mx-auto px-3 sm:px-6 py-4 sm:py-8">
+      <div className="mb-4 sm:mb-6">
         <Link href="/" className="inline-flex items-center text-blue-600 hover:text-blue-800">
           <ArrowLeft className="w-4 h-4 mr-2" />
           Back to Jobs
         </Link>
       </div>
 
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-          AI Mock Interview
-        </h1>
-        <p className="mt-2 text-gray-600 dark:text-gray-400">
-          Practice interviewing with an AI recruiter for this job position. 
-          You&apos;ll be asked 3-5 common interview questions and receive feedback on your responses.
-        </p>
+      <div className="mb-4 sm:mb-8">
+        <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-xl shadow-lg p-4 sm:p-6 text-white">
+          <h1 className="text-xl sm:text-3xl font-bold">
+            AI Mock Interview
+          </h1>
+          <p className="mt-2 text-sm sm:text-base text-blue-100">
+            Practice interviewing with an AI recruiter for this job position. 
+            You'll be asked questions based on the job requirements and receive feedback on your responses.
+          </p>
+        </div>
       </div>
 
       <Suspense fallback={

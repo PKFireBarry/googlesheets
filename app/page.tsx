@@ -1476,8 +1476,6 @@ export default function Home() {
             )}
           </div>
 
-
-
           {rows.length === 0 ? (
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 sm:p-8 text-center border border-gray-100 dark:border-gray-700">
               <p className="text-mobile-sm text-gray-600 dark:text-gray-400 mb-2">No jobs match your current filters</p>
@@ -1499,6 +1497,7 @@ export default function Home() {
               onUpdateNote={handleUpdateNote}
               viewMode={viewMode}
               onToggleViewMode={toggleViewMode}
+              hideViewToggle={true}
             />
           )}
         </>

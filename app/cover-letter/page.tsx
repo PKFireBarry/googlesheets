@@ -20,6 +20,7 @@ import { jsPDF } from "jspdf";
 import Cookies from "js-cookie";
 import { loadResume, saveResume, deleteResume, resumeExists } from '../utils/resumeStorage';
 import { convertToCoverLetterFormat, prepareResumeTextForAPI } from '../utils/resumeAdapter';
+import ResumeStorageUI from '../components/ResumeStorageUI';
 import ResumeForm, { 
   getInitialResumeData, 
   generateResumeText,
@@ -116,6 +117,14 @@ function CoverLetterForm() {
     const savedApiKey = Cookies.get("geminiApiKey");
     if (savedApiKey) {
       setApiKey(savedApiKey);
+      console.log("API key loaded from cookies");
+    } else {
+      // Try to load from localStorage as fallback
+      const localStorageApiKey = localStorage.getItem("geminiApiKey");
+      if (localStorageApiKey) {
+        setApiKey(localStorageApiKey);
+        console.log("API key loaded from localStorage");
+      }
     }
     
     // Load resume from shared storage if it exists
@@ -638,122 +647,32 @@ function CoverLetterForm() {
             )}
             
             <div className="space-y-4">
-              <div className="flex flex-col sm:flex-row gap-2">
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleResumeUpload}
-                  className="hidden"
-                  accept=".txt,.pdf"
-                />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                >
-                  <FileUp className="w-4 h-4 mr-2" />
-                  Upload Resume (TXT, PDF)
-                </button>
-                
-                {resumeExists() && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (window.confirm('Are you sure you want to delete your shared resume? This will remove it from all parts of the application.')) {
-                        if (deleteResume()) {
-                          setResumeContent('');
-                          setResumePdfData(null);
-                          toast.success('Your shared resume has been deleted');
-                        } else {
-                          toast.error('Failed to delete your resume');
-                        }
-                      }
-                    }}
-                    className="flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-red-600 dark:text-red-400 bg-white dark:bg-gray-700 hover:bg-red-50 dark:hover:bg-red-900/20 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
-                  >
-                    <FileText className="w-4 h-4 mr-2" />
-                    Delete Shared Resume
-                  </button>
-                )}
-                
-                {Object.keys(savedResumes).length > 0 && (
-                  <div className="relative inline-block text-left">
-                    <select
-                      onChange={(e) => loadSavedResume(e.target.value)}
-                      className="block w-48 sm:w-56 rounded-md border-gray-300 dark:border-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm dark:bg-gray-700 dark:text-white px-3 py-2"
-                      defaultValue=""
-                    >
-                      <option value="" disabled>Load saved resume...</option>
-                      {Object.keys(savedResumes).map((name) => (
-                        <option key={name} value={name}>{name}</option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-                
-                {resumeContent && !resumePdfData && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      try {
-                        // For now, we'll just create a simple structured resume from the text
-                        // This is a placeholder and would need more sophisticated parsing in a real app
-                        const basicResume = {
-                          name: resumeData.fullName || 'Resume Owner',
-                          contact: {
-                            email: resumeData.email || '',
-                            phone: resumeData.phone || '',
-                            location: resumeData.location || '',
-                            website: resumeData.website || '',
-                            linkedin: ''
-                          },
-                          summary: resumeData.summary || resumeContent.slice(0, 200),
-                          skills: resumeData.skills ? resumeData.skills.split(',').map(s => s.trim()) : [],
-                          experience: [
-                            {
-                              title: 'Position',
-                              company: 'Company',
-                              location: 'Location',
-                              dates: 'Dates',
-                              highlights: [resumeData.experience || resumeContent]
-                            }
-                          ],
-                          education: [
-                            {
-                              degree: 'Degree',
-                              institution: 'Institution',
-                              location: 'Location',
-                              dates: 'Dates',
-                              details: [resumeData.education || '']
-                            }
-                          ]
-                        };
-                        
-                        // Save to shared storage
-                        saveResume(basicResume, null);
-                        
-                        toast.success('Resume saved to shared storage for use across the application');
-                      } catch (error) {
-                        console.error('Error saving to shared storage:', error);
-                        toast.error('Failed to save resume to shared storage');
-                      }
-                    }}
-                    className="flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-green-600 dark:text-green-400 bg-white dark:bg-gray-700 hover:bg-green-50 dark:hover:bg-green-900/20 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
-                  >
-                    <FileText className="w-4 h-4 mr-2" />
-                    Save to Shared Storage
-                  </button>
-                )}
-              </div>
+              <ResumeStorageUI 
+                onResumeLoaded={(text, isPdf) => {
+                  setResumeContent(text);
+                  setResumePdfData(isPdf ? text : null);
+                }}
+                onResumeDeleted={() => {
+                  setResumeContent('');
+                  setResumePdfData(null);
+                }}
+                onApiKeyLoad={(apiKey) => setApiKey(apiKey)}
+              />
               
-              {/* PDF upload info */}
-              <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-md text-blue-800 dark:text-blue-300 text-sm flex items-start mt-2 mb-2">
-                <Info className="w-5 h-5 mr-2 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-medium">📄 New PDF Processing Feature</p>
-                  <p>Upload your resume as a PDF file to have it processed directly by Gemini AI. This allows for better recognition of formatting, tables, and visual elements in your resume!</p>
+              {Object.keys(savedResumes).length > 0 && (
+                <div className="relative inline-block text-left">
+                  <select
+                    onChange={(e) => loadSavedResume(e.target.value)}
+                    className="block w-48 sm:w-56 rounded-md border-gray-300 dark:border-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm dark:bg-gray-700 dark:text-white px-3 py-2"
+                    defaultValue=""
+                  >
+                    <option value="" disabled>Load saved resume...</option>
+                    {Object.keys(savedResumes).map((name) => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
                 </div>
-              </div>
+              )}
               
               <textarea
                 value={resumeContent}
@@ -768,23 +687,6 @@ function CoverLetterForm() {
                 rows={8}
                 className={`w-full rounded-md border-gray-300 dark:border-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm dark:bg-gray-700 dark:text-white ${resumePdfData ? 'border-green-500 dark:border-green-600' : ''}`}
               />
-              
-              {resumePdfData && (
-                <div className="flex items-center text-sm text-green-600 dark:text-green-400 mt-1">
-                  <FileText className="w-4 h-4 mr-1" /> 
-                  PDF uploaded and ready for processing with Gemini AI
-                  <button 
-                    onClick={() => {
-                      setResumePdfData(null);
-                      setResumeContent("");
-                    }}
-                    className="ml-2 text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
-                    title="Remove uploaded PDF"
-                  >
-                    ×
-                  </button>
-                </div>
-              )}
               
               <div className="bg-yellow-50 dark:bg-yellow-900/20 p-3 rounded-md text-yellow-800 dark:text-yellow-300 text-sm flex items-start">
                 <Info className="w-4 h-4 mr-2 mt-0.5 flex-shrink-0" />

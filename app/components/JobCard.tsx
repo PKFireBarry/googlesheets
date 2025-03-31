@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Image from 'next/image'
 import { 
   MapPin, 
@@ -20,7 +20,8 @@ import {
   EyeOff,
   Mic,
   FileText,
-  File
+  File,
+  Bot
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { extractSourceFromUrl, formatDateSafely } from '../utils/dataHelpers'
@@ -106,30 +107,37 @@ export default function JobCard({
   }
   
   const handleStartMockInterview = () => {
-    // Save this job to localStorage before navigating
-    try {
-      const savedJobs = JSON.parse(localStorage.getItem('savedJobs') || '{}');
-      savedJobs[job.id] = job;
-      localStorage.setItem('savedJobs', JSON.stringify(savedJobs));
-      console.log(`Saved job data for ${job.id} to localStorage`);
-    } catch (error) {
-      console.error('Error saving job data to localStorage:', error);
+    // Create the query parameters with job ID
+    const params = new URLSearchParams();
+    if (job.id) {
+      params.set('jobId', job.id);
     }
-    router.push(`/mock-interview?jobId=${encodeURIComponent(job.id)}`);
-  }
+    
+    // Navigate to the mock interview page with job data
+    window.location.href = `/mock-interview?${params.toString()}`;
+  };
+  
+  const handleAutoApply = () => {
+    // Create the query parameters with job ID
+    const params = new URLSearchParams();
+    if (job.id) {
+      params.set('jobId', job.id);
+    }
+    
+    // Navigate to the auto-apply page with job data
+    window.location.href = `/auto-apply?${params.toString()}`;
+  };
   
   const handleCreateResume = () => {
-    // Save this job to localStorage before navigating
-    try {
-      const savedJobs = JSON.parse(localStorage.getItem('savedJobs') || '{}');
-      savedJobs[job.id] = job;
-      localStorage.setItem('savedJobs', JSON.stringify(savedJobs));
-      console.log(`Saved job data for ${job.id} to localStorage`);
-    } catch (error) {
-      console.error('Error saving job data to localStorage:', error);
+    // Create the query parameters with job ID
+    const params = new URLSearchParams();
+    if (job.id) {
+      params.set('jobId', job.id);
     }
-    router.push(`/resume-builder?jobId=${encodeURIComponent(job.id)}`);
-  }
+    
+    // Navigate to the resume builder with job data
+    window.location.href = `/resume-builder?${params.toString()}`;
+  };
   
   return (
     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-100 dark:border-gray-700 transition-all hover:shadow-xl">
@@ -393,6 +401,14 @@ export default function JobCard({
           >
             <Mic className="w-4 h-4 mr-2" />
             Interview
+          </button>
+          
+          <button
+            onClick={handleAutoApply}
+            className="flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg border border-indigo-700 dark:border-indigo-500 bg-white dark:bg-gray-700 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 focus:outline-none"
+          >
+            <Bot className="w-4 h-4 mr-2" />
+            Auto Apply
           </button>
           
           <button

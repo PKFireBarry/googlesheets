@@ -7,7 +7,9 @@ import { generateResumeFile } from '../utils/resumeGenerator';
 import { ResumeData, PersonalInfo } from '../types/resume';
 import { toast, Toaster } from 'react-hot-toast';
 import Cookies from 'js-cookie';
-import { saveResume, loadResume, deleteResume, resumeExists } from '../utils/resumeStorage';
+import { saveResume, loadResume, deleteResume, resumeExists, getResumeStorageKey } from '../utils/resumeStorage';
+import ResumeStorageUI from '../components/ResumeStorageUI';
+import { jsPDF } from "jspdf";
 
 // Component for the Resume Builder page
 function ResumeBuilderContent(): React.ReactElement {
@@ -53,6 +55,9 @@ function ResumeBuilderContent(): React.ReactElement {
   
   // Add state for confirmation dialog
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<boolean>(false);
+  
+  // Add state for active tab in the upload section
+  const [activeTab, setActiveTab] = useState<'upload' | 'manual'>('upload');
   
   // Function to load the master resume
   const loadExistingResume = () => {
@@ -263,49 +268,24 @@ function ResumeBuilderContent(): React.ReactElement {
       }
     };
     
-    // Load API key from various sources
+    // Load API key from localStorage or cookie
     const loadApiKey = () => {
-      // First, check if API key is in URL query params
-      const apiKeyParam = searchParams.get('apiKey') || searchParams.get('geminiApiKey') || searchParams.get('key');
-      if (apiKeyParam) {
-        console.log('Found API key in URL query parameters');
-        setApiKey(apiKeyParam);
-        // Save to localStorage for future use
-        localStorage.setItem('geminiApiKey', apiKeyParam);
+      // First try from cookie (cross-page consistency)
+      const cookieApiKey = Cookies.get('geminiApiKey');
+      if (cookieApiKey) {
+        setApiKey(cookieApiKey);
+        console.log('API key loaded from cookie');
         return;
       }
       
-      // Check localStorage and cookies for the API key
-      const storedApiKey = localStorage.getItem('geminiApiKey');
-      if (storedApiKey) {
-        console.log('Found API key in localStorage');
-        setApiKey(storedApiKey);
-        return;
-      }
-      
-      // Try other common API key storage locations
-      ['apiKey', 'googleApiKey', 'GEMINI_API_KEY', 'gemini_api_key'].forEach(keyName => {
-        const keyValue = localStorage.getItem(keyName);
-        if (keyValue && !apiKey) {
-          console.log(`Found API key in localStorage (${keyName})`);
-          setApiKey(keyValue);
-        }
-      });
-      
-      // Check cookies for API key
-      const getCookieValue = (name: string) => {
-        const value = `; ${document.cookie}`;
-        const parts = value.split(`; ${name}=`);
-        if (parts.length === 2) {
-          return parts.pop()?.split(';').shift() || '';
-        }
-        return '';
-      };
-      
-      const cookieValue = getCookieValue('geminiApiKey');
-        if (cookieValue) {
-        console.log('Found API key in cookies');
-          setApiKey(cookieValue);
+      // Fall back to localStorage
+      const localStorageApiKey = localStorage.getItem('geminiApiKey');
+      if (localStorageApiKey) {
+        setApiKey(localStorageApiKey);
+        console.log('API key loaded from localStorage');
+        
+        // Also save to cookie for cross-page consistency
+        Cookies.set('geminiApiKey', localStorageApiKey, { expires: 30 });
       }
     };
     
@@ -634,133 +614,193 @@ function ResumeBuilderContent(): React.ReactElement {
       case 1:
         return (
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 max-w-4xl mx-auto border border-gray-100 dark:border-gray-700">
-            <h2 className="text-2xl font-bold mb-4">Step 1: Upload Your Resume</h2>
-            <p className="text-gray-600 dark:text-gray-300 mb-6 text-mobile-sm">
-              Upload your resume in PDF or DOCX format. This will be used to create a tailored resume
-              that matches the job description.
-            </p>
+            <h2 className="text-2xl font-bold mb-4">Step 1: Upload or Create a Resume</h2>
             
-            {/* Display the selected job prominently if it exists */}
-            {selectedJob && (
-              <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg mb-6">
-                <h3 className="font-semibold text-blue-800 dark:text-blue-300 mb-2">Selected Job</h3>
-                <div className="text-blue-700 dark:text-blue-300">
-                  <p className="font-medium">{selectedJob.title || selectedJob.job_title} at {selectedJob.company_name || selectedJob.company}</p>
-                  {(selectedJob.description || selectedJob.job_description) && (
-                    <p className="text-sm mt-1 line-clamp-2">{selectedJob.description || selectedJob.job_description}</p>
-                  )}
-                  {selectedJob.skills && (
-                    <p className="text-sm mt-1">
-                      <span className="font-medium">Skills:</span> {formatSkills(selectedJob.skills)}
-                    </p>
-                  )}
-                </div>
-              </div>
-            )}
-            
-            {/* Job Details Form */}
-            {showJobForm && (
-              <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg mb-6">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="font-semibold text-blue-800 dark:text-blue-300">Enter Job Details</h3>
-                  <button
-                    onClick={() => setShowJobForm(false)}
-                    className="text-blue-700 dark:text-blue-300 hover:text-blue-900 dark:hover:text-blue-100"
+            <div className="mb-6">
+              {/* Tab Navigation */}
+              <div className="border-b border-gray-200 dark:border-gray-700 mb-4">
+                <nav className="flex -mb-px space-x-6">
+                  <button 
+                    onClick={() => setActiveTab('upload')}
+                    className={`pb-3 px-1 ${activeTab === 'upload' 
+                      ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400 font-medium' 
+                      : 'border-b-2 border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                    </svg>
+                    Upload Resume
                   </button>
-                </div>
-                <div className="space-y-4">
-                  <div>
-                    <label htmlFor="jobTitle" className="block text-sm font-medium text-gray-700 mb-1">
-                      Job Title *
-                    </label>
-                    <input
-                      type="text"
-                      id="jobTitle"
-                      name="title"
-                      value={manualJobData.title}
-                      onChange={handleManualJobChange}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm dark:bg-gray-700 dark:text-white"
-                      placeholder="e.g., Senior Software Engineer"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label htmlFor="company" className="block text-sm font-medium text-gray-700 mb-1">
-                      Company Name *
-                    </label>
-                    <input
-                      type="text"
-                      id="company"
-                      name="company"
-                      value={manualJobData.company}
-                      onChange={handleManualJobChange}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm dark:bg-gray-700 dark:text-white"
-                      placeholder="e.g., Google"
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
-                      Job Description
-                    </label>
-                    <textarea
-                      id="description"
-                      name="description"
-                      value={manualJobData.description}
-                      onChange={handleManualJobChange}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm dark:bg-gray-700 dark:text-white"
-                      rows={4}
-                      placeholder="Paste the job description here..."
-                    />
-                  </div>
-
-                  <div>
-                    <label htmlFor="skills" className="block text-sm font-medium text-gray-700 mb-1">
-                      Skills
-                    </label>
-                    <textarea
-                      id="skills"
-                      name="skills"
-                      value={manualJobData.skills}
-                      onChange={handleManualJobChange}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm dark:bg-gray-700 dark:text-white"
-                      rows={2}
-                      placeholder="JavaScript, React, TypeScript, etc."
-                    />
-                    <p className="text-xs text-gray-500 mt-1">Separate skills with commas</p>
-                  </div>
-
-                  <div className="flex justify-end">
-                    <button
-                      onClick={handleManualJobSubmit}
-                      className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
-                    >
-                      Save Job Details
-                    </button>
-                  </div>
-                </div>
+                  <button 
+                    onClick={() => setActiveTab('manual')}
+                    className={`pb-3 px-1 ${activeTab === 'manual' 
+                      ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400 font-medium' 
+                      : 'border-b-2 border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}
+                  >
+                    Enter Job Details
+                  </button>
+                </nav>
               </div>
-            )}
-            
-            {!showJobForm && !selectedJob && (
-              <div className="flex justify-center mb-6">
-                <button
-                  onClick={() => setShowJobForm(true)}
-                  className="inline-flex items-center px-3 py-1.5 sm:px-4 sm:py-2 border border-blue-300 dark:border-blue-600 rounded-md shadow-sm text-sm font-medium text-blue-700 dark:text-blue-300 bg-white dark:bg-gray-800 hover:bg-blue-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                  Enter Job Details Manually
-                </button>
-              </div>
-            )}
+              
+              {/* Upload Resume Tab */}
+              {activeTab === 'upload' && (
+                <>
+                  <p className="text-gray-600 dark:text-gray-300 mb-6 text-mobile-sm">
+                    Upload your existing resume or use a previously uploaded one to get started.
+                  </p>
+                  
+                  {masterResumeExists ? (
+                    <div className="border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 p-5 rounded-lg mb-6">
+                      <div className="flex items-start">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-500 mr-3 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <div>
+                          <h3 className="font-semibold text-green-800 dark:text-green-300">Resume Found</h3>
+                          <p className="text-green-700 dark:text-green-400 text-mobile-sm">
+                            We've found a previously uploaded resume. You can use it or upload a new one.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+                  
+                  <ResumeStorageUI 
+                    onResumeLoaded={(resumeText, isPdf) => {
+                      if (isPdf) {
+                        // For PDF resumes, we'll handle differently
+                        setResumePdfData(resumeText);
+                        // Clear any previously parsed resume data
+                        setMasterResume(null);
+                        // Skip directly to step 2
+                        setStep(2);
+                      } else {
+                        try {
+                          // Try to parse the resume text into a structured format
+                          const parsedResume = JSON.parse(localStorage.getItem(getResumeStorageKey()) || '{}');
+                          if (parsedResume && parsedResume.data && parsedResume.type === 'parsed') {
+                            setMasterResume(parsedResume.data);
+                            // Pre-fill personal info from the parsed resume
+                            const resumeData = parsedResume.data;
+                            setPersonalInfo({
+                              name: resumeData.name || '',
+                              email: resumeData.contact.email || '',
+                              phone: resumeData.contact.phone || '',
+                              location: resumeData.contact.location || '',
+                              linkedin: resumeData.contact.linkedin || '',
+                              website: resumeData.contact.website || ''
+                            });
+                            // Skip directly to step 2
+                            setStep(2);
+                          }
+                        } catch (error) {
+                          console.error('Error parsing resume:', error);
+                          toast.error('Could not parse resume data. Please try uploading again.');
+                        }
+                      }
+                    }}
+                    onResumeDeleted={() => {
+                      setMasterResume(null);
+                      setResumePdfData(null);
+                      setMasterResumeExists(false);
+                    }}
+                    onApiKeyLoad={(apiKey) => setApiKey(apiKey)}
+                  />
+                </>
+              )}
+                
+              {/* Manual Job Entry Tab */}
+              {activeTab === 'manual' && (
+                <div className="space-y-6">
+                  <p className="text-gray-600 dark:text-gray-300 mb-6 text-mobile-sm">
+                    Enter the details of the job you're applying for to create a tailored resume.
+                  </p>
+                  <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg mb-6">
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="font-semibold text-blue-800 dark:text-blue-300">Enter Job Details</h3>
+                      <button
+                        onClick={() => setShowJobForm(false)}
+                        className="text-blue-700 dark:text-blue-300 hover:text-blue-900 dark:hover:text-blue-100"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                    </div>
+                    <div className="space-y-4">
+                      <div>
+                        <label htmlFor="jobTitle" className="block text-sm font-medium text-gray-700 mb-1">
+                          Job Title *
+                        </label>
+                        <input
+                          type="text"
+                          id="jobTitle"
+                          name="title"
+                          value={manualJobData.title}
+                          onChange={handleManualJobChange}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm dark:bg-gray-700 dark:text-white"
+                          placeholder="e.g., Senior Software Engineer"
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="company" className="block text-sm font-medium text-gray-700 mb-1">
+                          Company Name *
+                        </label>
+                        <input
+                          type="text"
+                          id="company"
+                          name="company"
+                          value={manualJobData.company}
+                          onChange={handleManualJobChange}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm dark:bg-gray-700 dark:text-white"
+                          placeholder="e.g., Google"
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
+                          Job Description
+                        </label>
+                        <textarea
+                          id="description"
+                          name="description"
+                          value={manualJobData.description}
+                          onChange={handleManualJobChange}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm dark:bg-gray-700 dark:text-white"
+                          rows={4}
+                          placeholder="Paste the job description here..."
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="skills" className="block text-sm font-medium text-gray-700 mb-1">
+                          Skills
+                        </label>
+                        <textarea
+                          id="skills"
+                          name="skills"
+                          value={manualJobData.skills}
+                          onChange={handleManualJobChange}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm dark:bg-gray-700 dark:text-white"
+                          rows={2}
+                          placeholder="JavaScript, React, TypeScript, etc."
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Separate skills with commas</p>
+                      </div>
+
+                      <div className="flex justify-end">
+                        <button
+                          onClick={handleManualJobSubmit}
+                          className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
+                        >
+                          Save Job Details
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
             
             {/* PDF support info box */}
             <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-md text-blue-800 dark:text-blue-300 text-sm flex items-start mt-2 mb-4">
