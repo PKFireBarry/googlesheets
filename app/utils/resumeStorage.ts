@@ -15,11 +15,16 @@ export interface StoredResume {
   timestamp: number;
 }
 
+// Helper function to check if we're in a browser environment
+const isBrowser = () => typeof window !== 'undefined';
+
 /**
  * Generates a consistent storage key based on the Google Sheet ID
  * This ensures that saved resumes are associated with the current sheet context
  */
 export function getResumeStorageKey(): string {
+  if (!isBrowser()) return 'masterResume_default';
+
   // Try multiple sources to get a sheet ID
   const sources = [
     // First try sheet URL from cookie (where homepage stores it)
@@ -79,6 +84,8 @@ export function getResumeStorageKey(): string {
  * @returns void
  */
 export function saveResume(resumeData: ResumeData | null, resumePdfData: string | null): void {
+  if (!isBrowser()) return;
+
   const storageKey = getResumeStorageKey();
   if (!storageKey) {
     console.error('Could not determine storage key for resume');
@@ -116,6 +123,8 @@ export function saveResume(resumeData: ResumeData | null, resumePdfData: string 
  * @returns boolean indicating if a valid resume exists
  */
 export function resumeExists(): boolean {
+  if (!isBrowser()) return false;
+
   const storageKey = getResumeStorageKey();
   if (!storageKey) return false;
   
@@ -140,6 +149,10 @@ export function resumeExists(): boolean {
  * @returns An object containing the parsed resume data and/or PDF data
  */
 export function loadResume(): { resumeData: ResumeData | null, resumePdfData: string | null } {
+  if (!isBrowser()) {
+    return { resumeData: null, resumePdfData: null };
+  }
+
   const storageKey = getResumeStorageKey();
   if (!storageKey) {
     console.error('Could not determine storage key for resume');
@@ -179,6 +192,8 @@ export function loadResume(): { resumeData: ResumeData | null, resumePdfData: st
  * @returns boolean indicating success
  */
 export function deleteResume(): boolean {
+  if (!isBrowser()) return false;
+
   const storageKey = getResumeStorageKey();
   if (!storageKey) {
     console.error('Could not determine storage key for resume');
@@ -200,6 +215,8 @@ export function deleteResume(): boolean {
  * Useful for troubleshooting resume storage issues
  */
 export function debugResumeStorage(): void {
+  if (!isBrowser()) return;
+
   console.log('--- DEBUG: Resume Storage ---');
   
   // Log cookie information
