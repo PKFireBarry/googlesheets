@@ -10,14 +10,21 @@ export default function SettingsPage() {
   const [apiKey, setApiKey] = useState('');
   const [showApiKeyInfo, setShowApiKeyInfo] = useState(false);
   const [hasResume, setHasResume] = useState(false);
+  const [isClient, setIsClient] = useState(false);
 
   useEffect(() => {
+    setIsClient(true);
     // Load API key from cookie
     const savedApiKey = Cookies.get('geminiApiKey');
     if (savedApiKey) {
       setApiKey(savedApiKey);
     }
   }, []);
+
+  // Only render content that uses localStorage on the client side
+  if (!isClient) {
+    return null; // or a loading state
+  }
 
   const handleApiKeyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setApiKey(e.target.value);
