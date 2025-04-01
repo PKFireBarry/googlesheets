@@ -79,12 +79,12 @@ export async function POST(request: NextRequest) {
       action 
     } = body;
     
-    // Use provided API key or environment variable
-    const geminiApiKey = process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+    // Get API key from headers or environment variables
+    const geminiApiKey = request.headers.get('X-Gemini-API-Key') || process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
     
     if (!geminiApiKey) {
       return NextResponse.json(
-        { error: 'Gemini API key is required. Please provide it in your environment variables.' },
+        { error: 'Gemini API key is required. Please provide it in your environment variables or request headers.' },
         { status: 400 }
       );
     }
@@ -265,6 +265,8 @@ export async function POST(request: NextRequest) {
  */
 async function handleWithResumeData(apiUrl: string, apiKey: string, action: string, prompt: string, resumeData?: string) {
   try {
+    console.log(`Handling ${action} with resume data`);
+    
     // Create the request with multipart structure for the PDF data
     const response = await fetch(apiUrl, {
       method: 'POST',
@@ -276,19 +278,20 @@ async function handleWithResumeData(apiUrl: string, apiKey: string, action: stri
           {
             parts: [
               { text: prompt }, // Text prompt first
-              resumeData ? { // Then PDF data if available
+              { // Then PDF data
                 inlineData: {
                   mimeType: 'application/pdf',
                   data: resumeData
                 }
-              } : undefined
-            ].filter(Boolean) // Remove undefined parts
+              }
+            ]
           }
         ],
         generationConfig: {
-          temperature: 0.5,
-          topP: 0.8,
-          topK: 40
+          temperature: 0.7,
+          topP: 0.9,
+          topK: 40,
+          maxOutputTokens: 4096
         }
       })
     });
@@ -426,11 +429,17 @@ Job Description: ${jobDescription}
 ${skills ? `Required Skills: ${skills}` : ''}`;
 
   if (resumeFile) {
-    prompt += `\n\nThe candidate has uploaded their resume (${resumeFile.name}). 
-Please analyze the resume to:
-1. Tailor this question to their background and experience
-2. Generate sample response suggestions that incorporate specific details from their resume
-3. Reference their actual work history, skills, and achievements in the suggestions`;
+    prompt += `\n\nIMPORTANT: The candidate has uploaded their resume (${resumeFile.name}). 
+You MUST thoroughly analyze the resume PDF content which is provided as inline data with this prompt.
+
+Based on their resume, you MUST:
+1. Explicitly reference specific details, experiences, or skills from their resume in your question
+2. Tailor this question to connect their background to the job requirements
+3. Generate sample response suggestions that incorporate specific details from their resume
+4. In your suggestions, refer to exact positions, companies, projects, or accomplishments mentioned in their resume
+5. Make it clear you have analyzed their resume by mentioning specific resume elements
+
+IMPORTANT: Your question should directly reference at least one specific detail from their resume to demonstrate personalization.`;
   }
 
   prompt += `\n\nYou are now on question ${questionNumber !== undefined ? questionNumber + 1 : 1} of the mock interview.
@@ -441,17 +450,18 @@ Analyze the job description and required skills, then generate a relevant interv
 3. Focuses on relevant skills, experience, or behavior for this position
 4. Is clear, concise, and specific (avoid vague or overly broad questions)
 5. Is phrased in a conversational, natural way
+${resumeFile ? '6. Explicitly references specific details from their resume' : ''}
 
-Also generate 3-4 short suggestion prompts (1-2 sentences each) that could help the candidate formulate a good response to this question. ${resumeFile ? 'These suggestions should directly reference specific experiences, skills, or achievements from their resume that match the job requirements.' : 'These should be general but helpful starting points for their answer.'}
+Also generate 3-4 short suggestion prompts (1-2 sentences each) that could help the candidate formulate a good response to this question. ${resumeFile ? 'These suggestions MUST directly reference specific experiences, skills, or achievements from their resume that match the job requirements. Include their company names, project details, or specific accomplishments.' : 'These should be general but helpful starting points for their answer.'}
 
 Format your response as a JSON object with the following structure:
 {
-  "question": "Your interview question here",
+  "question": "Your interview question here ${resumeFile ? '(with specific reference to their resume)' : ''}",
   "suggestions": [
-    "${resumeFile ? 'Suggestion that references a specific experience from their resume' : 'Suggestion 1 to help the candidate'}",
-    "${resumeFile ? 'Suggestion that mentions relevant skills from their resume' : 'Suggestion 2 to help the candidate'}",
-    "${resumeFile ? 'Suggestion that highlights an achievement from their resume' : 'Suggestion 3 to help the candidate'}",
-    "${resumeFile ? 'Suggestion that connects their background to the job requirements' : 'Suggestion 4 to help the candidate (optional)'}"
+    "${resumeFile ? 'Suggestion that references a specific experience from their resume (mention company name, project, etc.)' : 'Suggestion 1 to help the candidate'}",
+    "${resumeFile ? 'Suggestion that mentions specific skills or technologies from their resume' : 'Suggestion 2 to help the candidate'}",
+    "${resumeFile ? 'Suggestion that highlights a specific achievement from their resume' : 'Suggestion 3 to help the candidate'}",
+    "${resumeFile ? 'Suggestion that connects a specific part of their background to this job requirement' : 'Suggestion 4 to help the candidate (optional)'}"
   ]
 }`;
 
@@ -479,12 +489,16 @@ Job Description: ${jobDescription}
 ${skills ? `Required Skills: ${skills}` : ''}`;
 
   if (resumeFile) {
-    prompt += `\n\nThe candidate has uploaded their resume (${resumeFile.name}). 
-Please analyze the resume when evaluating their response to:
-1. Assess how well they incorporated relevant details from their own background
-2. Identify specific experiences or skills from their resume they could have mentioned but didn't
+    prompt += `\n\nIMPORTANT: The candidate has uploaded their resume (${resumeFile.name}). 
+You MUST thoroughly analyze the resume PDF content which is provided as inline data with this prompt.
+
+When evaluating their response, you MUST:
+1. Assess how well they incorporated relevant details from their actual background
+2. Identify specific experiences, skills, or achievements from their resume they could have mentioned
 3. Provide feedback on how well they connected their actual background to the job requirements
-4. Suggest better ways to leverage their specific resume details in future answers`;
+4. Reference specific positions, companies, projects, or accomplishments from their resume in your feedback
+5. Suggest better ways to leverage their specific resume details when answering similar questions
+6. Include specific resume highlights or gaps in your feedback`;
   }
 
   prompt += `\n\nYou asked the candidate question ${questionNumber !== undefined ? questionNumber + 1 : 1}: "${getQuestionForNumber(questionNumber)}"
@@ -497,23 +511,24 @@ Please evaluate the candidate's response and provide constructive feedback. Focu
 1. The strengths of their answer (what they did well)
 2. Areas for improvement (what could be enhanced)
 3. A score out of 100 for this specific response
-${resumeFile ? '4. How well they highlighted relevant experience from their resume' : ''}
+${resumeFile ? '4. How well they highlighted relevant experience from their resume (mention specific details)' : ''}
 
 Format your response as a JSON object with the following structure:
 {
   "strengths": [
     "Specific strength 1",
     "Specific strength 2",
-    ${resumeFile ? '"Well-utilized experience/skill from their resume",' : ''}
+    ${resumeFile ? '"Well-utilized specific experience/skill from their resume (mention details)",' : ''}
     "Specific strength 3"
   ],
   "improvements": [
     "Specific improvement suggestion 1",
     "Specific improvement suggestion 2",
-    ${resumeFile ? '"Suggestion on how to better incorporate their resume details",' : ''}
+    ${resumeFile ? '"Suggestion on better incorporating specific resume details (mention which)",' : ''}
     "Specific improvement suggestion 3"
   ],
-  "score": 85 (a number between 0-100)
+  "score": 85 (a number between 0-100),
+  ${resumeFile ? '"feedback": "Include 1-2 paragraphs of feedback mentioning specific elements from their resume"' : '"feedback": "Include 1-2 paragraphs of feedback"'}
 }
 
 Make your feedback specific, actionable, and tailored to both the question and the job requirements.`;
@@ -653,7 +668,25 @@ function parseFeedbackResponse(response: string): FeedbackResponse {
     const jsonMatch = response.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       const jsonContent = jsonMatch[0];
-      return JSON.parse(jsonContent);
+      const parsed = JSON.parse(jsonContent);
+      
+      // If there's no feedback field but we have strengths and improvements, create it
+      if (!parsed.feedback && (parsed.strengths || parsed.improvements)) {
+        let feedback = "Feedback on your answer:\n\n";
+        
+        if (parsed.strengths && parsed.strengths.length > 0) {
+          feedback += "Strengths:\n" + parsed.strengths.map((s: string) => `• ${s}`).join('\n') + "\n\n";
+        }
+        
+        if (parsed.improvements && parsed.improvements.length > 0) {
+          feedback += "Areas for improvement:\n" + parsed.improvements.map((i: string) => `• ${i}`).join('\n') + "\n\n";
+        }
+        
+        feedback += `Score for this response: ${parsed.score || 75}/100`;
+        parsed.feedback = feedback;
+      }
+      
+      return parsed;
     }
     
     // Fallback if no JSON found

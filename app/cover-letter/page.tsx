@@ -3,19 +3,6 @@
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast, Toaster } from "react-hot-toast";
-import {
-  FileText,
-  Download,
-  Copy,
-  Info,
-  Loader2,
-  FileUp,
-  AlertTriangle,
-  Building,
-  MapPin,
-  Briefcase,
-  ArrowLeft,
-} from "lucide-react";
 import { jsPDF } from "jspdf";
 import Cookies from "js-cookie";
 import { loadResume, saveResume, deleteResume, resumeExists } from '../utils/resumeStorage';
@@ -26,6 +13,16 @@ import ResumeForm, {
   generateResumeText,
   saveResumeData
 } from "./resume-form";
+
+// Import our components
+import PageHeader from '../components/coverletter/PageHeader';
+import JobDetailsForm from '../components/coverletter/JobDetailsForm';
+import ApiKeyConfig from '../components/coverletter/ApiKeyConfig';
+import ResumeUpload from '../components/coverletter/ResumeUpload';
+import CoverLetterOutput from '../components/coverletter/CoverLetterOutput';
+import GenerateButton from '../components/coverletter/GenerateButton';
+import LoadingState from '../components/coverletter/LoadingState';
+import ErrorDisplay from '../components/resume/ErrorDisplay';
 
 // Create a client component that uses useSearchParams
 function CoverLetterForm() {
@@ -413,394 +410,99 @@ function CoverLetterForm() {
       <Toaster position="top-right" />
       
       <div className="max-w-4xl mx-auto">
-        {/* Header Section - Updated to match homepage styling */}
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl shadow-xl p-4 sm:p-10 text-white mb-4 sm:mb-8">
-          <div className="flex flex-col md:flex-row justify-between items-center">
-            <div>
-              <h1 className="text-2xl sm:text-4xl font-bold mb-2 sm:mb-3">
-                Create Your Cover Letter
-              </h1>
-              <p className="text-mobile-sm text-blue-100 max-w-2xl">
-                Generate tailored cover letters in seconds using your resume and job details.
-                Perfect for customizing your application for each position.
-              </p>
-            </div>
-          
-          </div>
-        </div>
+        {/* Header Section */}
+        <PageHeader />
         
         <div className="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden mb-8">
           {/* Job Details Section */}
-          <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-medium text-gray-900 dark:text-white">Job Details</h2>
-              
-              {!jobDetailsEditable && (
-                <button
-                  onClick={() => setJobDetailsEditable(true)}
-                  className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
-                >
-                  Edit
-                </button>
-              )}
-            </div>
-            
-            {jobDetailsEditable ? (
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Job Title *
-                    </label>
-                    <input
-                      type="text"
-                      value={jobTitle}
-                      onChange={(e) => setJobTitle(e.target.value)}
-                      placeholder="Software Engineer"
-                      className="w-full rounded-md border-gray-300 dark:border-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm dark:bg-gray-700 dark:text-white"
-                      required
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Company Name *
-                    </label>
-                    <input
-                      type="text"
-                      value={companyName}
-                      onChange={(e) => setCompanyName(e.target.value)}
-                      placeholder="Acme Inc."
-                      className="w-full rounded-md border-gray-300 dark:border-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm dark:bg-gray-700 dark:text-white"
-                      required
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Location
-                    </label>
-                    <input
-                      type="text"
-                      value={location}
-                      onChange={(e) => setLocation(e.target.value)}
-                      placeholder="New York, NY or Remote"
-                      className="w-full rounded-md border-gray-300 dark:border-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm dark:bg-gray-700 dark:text-white"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Skills
-                    </label>
-                    <input
-                      type="text"
-                      value={skills}
-                      onChange={(e) => setSkills(e.target.value)}
-                      placeholder="React, TypeScript, Node.js"
-                      className="w-full rounded-md border-gray-300 dark:border-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm dark:bg-gray-700 dark:text-white"
-                    />
-                  </div>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Job Description *
-                  </label>
-                  <textarea
-                    value={jobDescription}
-                    onChange={(e) => setJobDescription(e.target.value)}
-                    placeholder="Paste the job description here..."
-                    rows={6}
-                    className="w-full rounded-md border-gray-300 dark:border-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm dark:bg-gray-700 dark:text-white"
-                    required
-                  />
-                </div>
-                
-                {jobDetailsEditable && (
-                  <div className="flex justify-end">
-                    <button
-                      onClick={() => setJobDetailsEditable(false)}
-                      className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                      disabled={!jobTitle || !companyName || !jobDescription}
-                    >
-                      Save Job Details
-                    </button>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div className="flex items-start">
-                    <Building className="w-5 h-5 text-gray-400 dark:text-gray-500 mt-0.5 mr-2 flex-shrink-0" />
-                    <div>
-                      <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Company</p>
-                      <p className="text-base text-gray-900 dark:text-white">{companyName}</p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-start">
-                    <Briefcase className="w-5 h-5 text-gray-400 dark:text-gray-500 mt-0.5 mr-2 flex-shrink-0" />
-                    <div>
-                      <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Position</p>
-                      <p className="text-base text-gray-900 dark:text-white">{jobTitle}</p>
-                    </div>
-                  </div>
-                  
-                  {location && (
-                    <div className="flex items-start">
-                      <MapPin className="w-5 h-5 text-gray-400 dark:text-gray-500 mt-0.5 mr-2 flex-shrink-0" />
-                      <div>
-                        <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Location</p>
-                        <p className="text-base text-gray-900 dark:text-white">{location}</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                
-                <div className="mt-4">
-                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Job Description</p>
-                  <div className="text-sm text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-750 p-3 rounded border border-gray-200 dark:border-gray-700 max-h-40 overflow-y-auto">
-                    <p className="whitespace-pre-line">{jobDescription}</p>
-                  </div>
-                </div>
-                
-                {skills && (
-                  <div className="mt-4">
-                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Required Skills</p>
-                    <div className="flex flex-wrap gap-2 mt-1">
-                      {skills.split(',').map((skill, index) => (
-                        <span 
-                          key={index}
-                          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
-                        >
-                          {skill.trim()}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+          <JobDetailsForm 
+            jobTitle={jobTitle}
+            companyName={companyName}
+            jobDescription={jobDescription}
+            skills={skills}
+            location={location}
+            jobDetailsEditable={jobDetailsEditable}
+            onJobTitleChange={(e) => setJobTitle(e.target.value)}
+            onCompanyNameChange={(e) => setCompanyName(e.target.value)}
+            onJobDescriptionChange={(e) => setJobDescription(e.target.value)}
+            onSkillsChange={(e) => setSkills(e.target.value)}
+            onLocationChange={(e) => setLocation(e.target.value)}
+            onToggleEdit={() => setJobDetailsEditable(true)}
+            onSaveJobDetails={() => setJobDetailsEditable(false)}
+          />
           
           {/* API Key Section */}
-          <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-medium text-gray-900 dark:text-white">Gemini API Key</h2>
-              <button
-                type="button"
-                onClick={() => setShowApiKeyInfo(!showApiKeyInfo)}
-                className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-sm flex items-center"
-              >
-                <Info className="w-4 h-4 mr-1" />
-                {showApiKeyInfo ? "Hide Help" : "Need Help?"}
-              </button>
-            </div>
-            
-            <div className="space-y-4">
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder="Enter your Gemini API key"
-                className="w-full rounded-md border-gray-300 dark:border-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm dark:bg-gray-700 dark:text-white"
-              />
-              
-              {showApiKeyInfo && (
-                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-300 rounded-md text-sm">
-                  <p className="mb-2">To get a Gemini API key:</p>
-                  <ol className="list-decimal list-inside space-y-1 text-sm mb-2">
-                    <li>Go to <a href="https://makersuite.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="underline">Google AI Studio</a></li>
-                    <li>Sign in with your Google account</li>
-                    <li>Click on &quot;Get API key&quot; button</li>
-                    <li>Create a new API key or use an existing one</li>
-                    <li>Copy the key and paste it here</li>
-                  </ol>
-                  <p>The API key will be saved in your browser for future use.</p>
-                </div>
-              )}
-            </div>
-          </div>
+          <ApiKeyConfig 
+            apiKey={apiKey}
+            showApiKeyInfo={showApiKeyInfo}
+            onApiKeyChange={(e) => setApiKey(e.target.value)}
+            onToggleApiKeyInfo={() => setShowApiKeyInfo(!showApiKeyInfo)}
+          />
           
           {/* Resume Section */}
-          <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-medium text-gray-900 dark:text-white">Your Resume (Optional)</h2>
-              
-              <button
-                type="button"
-                onClick={() => setShowResumeForm(!showResumeForm)}
-                className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 flex items-center"
-              >
-                {showResumeForm ? 'Hide Form' : 'Show Resume Form'}
-              </button>
-            </div>
-            
-            {showResumeForm && (
+          <ResumeUpload 
+            resumeContent={resumeContent}
+            resumePdfData={resumePdfData}
+            savedResumes={savedResumes}
+            showResumeForm={showResumeForm}
+            onResumeContentChange={(e) => {
+              setResumeContent(e.target.value);
+              // Clear PDF data if user manually edits the textarea
+              if (resumePdfData) {
+                setResumePdfData(null);
+              }
+            }}
+            onResumeUpload={handleResumeUpload}
+            onLoadSavedResume={loadSavedResume}
+            onToggleResumeForm={() => setShowResumeForm(!showResumeForm)}
+          />
+          
+          {showResumeForm && (
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
               <ResumeForm 
                 resumeData={resumeData} 
                 onChangeResumeData={setResumeData} 
                 onSave={handleSaveResumeData} 
               />
-            )}
-            
-            <div className="space-y-4">
-              <ResumeStorageUI 
-                onResumeLoaded={(text, isPdf) => {
-                  setResumeContent(text);
-                  setResumePdfData(isPdf ? text : null);
-                }}
-                onResumeDeleted={() => {
-                  setResumeContent('');
-                  setResumePdfData(null);
-                }}
-                onApiKeyLoad={(apiKey) => setApiKey(apiKey)}
-              />
-              
-              {Object.keys(savedResumes).length > 0 && (
-                <div className="relative inline-block text-left">
-                  <select
-                    onChange={(e) => loadSavedResume(e.target.value)}
-                    className="block w-48 sm:w-56 rounded-md border-gray-300 dark:border-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm dark:bg-gray-700 dark:text-white px-3 py-2"
-                    defaultValue=""
-                  >
-                    <option value="" disabled>Load saved resume...</option>
-                    {Object.keys(savedResumes).map((name) => (
-                      <option key={name} value={name}>{name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              
-              <textarea
-                value={resumeContent}
-                onChange={(e) => {
-                  setResumeContent(e.target.value);
-                  // Clear PDF data if user manually edits the textarea
-                  if (resumePdfData) {
-                    setResumePdfData(null);
-                  }
-                }}
-                placeholder="Or paste your resume content here... (Adding your resume will make the cover letter more personalized to your experience)"
-                rows={8}
-                className={`w-full rounded-md border-gray-300 dark:border-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm dark:bg-gray-700 dark:text-white ${resumePdfData ? 'border-green-500 dark:border-green-600' : ''}`}
-              />
-              
-              <div className="bg-yellow-50 dark:bg-yellow-900/20 p-3 rounded-md text-yellow-800 dark:text-yellow-300 text-sm flex items-start">
-                <Info className="w-4 h-4 mr-2 mt-0.5 flex-shrink-0" />
-                <p>
-                  Adding your resume will help the AI generate a more tailored cover letter that highlights your relevant experiences and skills. For best results, include your work history, skills, and achievements.
-                </p>
-              </div>
             </div>
+          )}
+          
+          {/* Storage UI - Use as a component */}
+          <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+            <ResumeStorageUI 
+              onResumeLoaded={(text, isPdf) => {
+                setResumeContent(text);
+                setResumePdfData(isPdf ? text : null);
+              }}
+              onResumeDeleted={() => {
+                setResumeContent('');
+                setResumePdfData(null);
+              }}
+              onApiKeyLoad={(apiKey) => setApiKey(apiKey)}
+            />
           </div>
           
           {/* Generate Button */}
-          <div className="p-6">
-            {error && (
-              <div className="p-3 mb-4 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 rounded-md flex items-start">
-                <AlertTriangle className="w-4 h-4 mr-2 mt-0.5 flex-shrink-0" />
-                <p className="text-sm">{error}</p>
-              </div>
-            )}
-            
-            <div className="flex justify-center">
-              <button
-                type="button"
-                onClick={generateCoverLetter}
-                disabled={loading || !jobTitle || !companyName || !jobDescription}
-                className="inline-flex items-center px-6 py-3 border border-transparent rounded-md shadow-sm text-base font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                    Generating...
-                  </>
-                ) : (
-                  <>
-                    <FileText className="w-5 h-5 mr-2" />
-                    Generate Cover Letter
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
+          <GenerateButton 
+            loading={loading}
+            error={error}
+            disabled={!jobTitle || !companyName || !jobDescription}
+            onGenerate={generateCoverLetter}
+          />
         </div>
         
         {/* Cover Letter Result */}
         {coverLetterText && (
-          <div id="cover-letter-result" className="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
-            <div className="p-6">
-              <h2 className="text-lg font-medium text-gray-900 dark:text-white mb-4">Your Cover Letter</h2>
-              
-              <div className="p-5 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50 dark:bg-gray-750 overflow-auto mb-4">
-                <pre className="text-sm whitespace-pre-wrap font-sans text-gray-800 dark:text-gray-200">
-                  {coverLetterText}
-                </pre>
-              </div>
-              
-              <div className="flex flex-wrap gap-3 justify-center">
-                <button
-                  type="button"
-                  onClick={downloadAsPDF}
-                  className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
-                >
-                  <Download className="w-4 h-4 mr-2" />
-                  Download as PDF
-                </button>
-                <button
-                  type="button"
-                  onClick={downloadAsDocx}
-                  className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                >
-                  <Download className="w-4 h-4 mr-2" />
-                  Download as DOCX
-                </button>
-                <button
-                  type="button"
-                  onClick={copyToClipboard}
-                  className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                >
-                  <Copy className="w-4 h-4 mr-2" />
-                  Copy to Clipboard
-                </button>
-                <button
-                  type="button"
-                  onClick={generateCoverLetter}
-                  className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                >
-                  <FileText className="w-4 h-4 mr-2" />
-                  Regenerate
-                </button>
-              </div>
-            </div>
-          </div>
+          <CoverLetterOutput 
+            coverLetterText={coverLetterText}
+            jobTitle={jobTitle}
+            companyName={companyName}
+            onDownloadPdf={downloadAsPDF}
+            onDownloadDocx={downloadAsDocx}
+            onCopyToClipboard={copyToClipboard}
+            onRegenerate={generateCoverLetter}
+          />
         )}
-      </div>
-    </div>
-  );
-}
-
-// Loading fallback for Suspense
-function CoverLetterLoading() {
-  return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="max-w-4xl mx-auto">
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl shadow-xl p-4 sm:p-10 text-white mb-4 sm:mb-8">
-          <h1 className="text-2xl sm:text-4xl font-bold mb-2 sm:mb-3 animate-pulse">
-            Create Your Cover Letter
-          </h1>
-          <div className="w-2/3 h-4 bg-white/20 rounded animate-pulse"></div>
-        </div>
-        
-        <div className="bg-white dark:bg-gray-800 shadow rounded-lg p-6 flex items-center justify-center min-h-[300px]">
-          <div className="text-center">
-            <Loader2 className="h-10 w-10 mx-auto mb-4 text-blue-600 animate-spin" />
-            <p className="text-gray-700 dark:text-gray-300">Loading cover letter generator...</p>
-          </div>
-        </div>
       </div>
     </div>
   );
@@ -809,7 +511,7 @@ function CoverLetterLoading() {
 // Main page component with Suspense boundary
 export default function CoverLetterPage() {
   return (
-    <Suspense fallback={<CoverLetterLoading />}>
+    <Suspense fallback={<LoadingState />}>
       <CoverLetterForm />
     </Suspense>
   );

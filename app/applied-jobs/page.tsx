@@ -3,7 +3,14 @@
 import { useState, useEffect } from "react";
 import Cookies from "js-cookie";
 import JobCardGrid from "../components/JobCardGrid";
-import { CheckCircle, Briefcase, AlertCircle, XCircle } from "lucide-react";
+
+// Import the components we created
+import PageHeader from "../components/appliedjobs/PageHeader";
+import ErrorMessage from "../components/appliedjobs/ErrorMessage";
+import LoadingState from "../components/appliedjobs/LoadingState";
+import EmptyState from "../components/appliedjobs/EmptyState";
+import JobStatusHeader from "../components/appliedjobs/JobStatusHeader";
+import ToastNotification from "../components/appliedjobs/ToastNotification";
 
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY;
 const RANGE = process.env.NEXT_PUBLIC_RANGE;
@@ -511,43 +518,16 @@ export default function AppliedJobsPage() {
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6">
       <div className="mb-8 sm:mb-12">
-        <div className="bg-gradient-to-r from-green-600 to-emerald-700 rounded-2xl shadow-xl p-6 sm:p-10 text-white mb-8">
-          <h1 className="text-3xl sm:text-4xl font-bold mb-3">
-            Applied Jobs
-          </h1>
-          <p className="text-green-100 text-lg max-w-2xl">
-            Track and manage all the jobs you've applied to. Keep notes on your application status and interview progress.
-          </p>
-        </div>
+        <PageHeader />
       </div>
 
-      {error && (
-        <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6 rounded-md">
-          <div className="flex">
-            <div className="flex-shrink-0">
-              <AlertCircle className="h-5 w-5 text-red-500" />
-            </div>
-            <div className="ml-3">
-              <p className="text-sm">{error}</p>
-            </div>
-          </div>
-        </div>
-      )}
+      <ErrorMessage message={error || ""} />
 
       {loading ? (
-        <div className="flex justify-center items-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
-        </div>
+        <LoadingState />
       ) : filteredRows.length > 0 ? (
         <>
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center text-gray-700 dark:text-gray-300">
-              <CheckCircle className="w-5 h-5 mr-2 text-green-600 dark:text-green-500" />
-              <span className="text-lg font-medium">
-                {filteredRows.length} Applied Job{filteredRows.length !== 1 ? "s" : ""}
-              </span>
-            </div>
-          </div>
+          <JobStatusHeader count={filteredRows.length} />
 
           <JobCardGrid
             headers={headers}
@@ -562,27 +542,14 @@ export default function AppliedJobsPage() {
           />
         </>
       ) : (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-8 text-center">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 dark:bg-gray-700 mb-4">
-            <Briefcase className="h-8 w-8 text-gray-500 dark:text-gray-400" />
-          </div>
-          <h3 className="text-xl font-medium text-gray-900 dark:text-white mb-2">No Applied Jobs Yet</h3>
-          <p className="text-gray-600 dark:text-gray-400 mb-6">
-            You haven't marked any jobs as applied. When you apply for jobs, they'll appear here.
-          </p>
-        </div>
+        <EmptyState />
       )}
 
-      {/* Success toast notification */}
-      {showSuccessToast && (
-        <div className={`fixed bottom-4 right-4 ${toastMessage.includes('removed') ? 'bg-red-600' : 'bg-green-600'} text-white px-4 py-2 rounded-lg shadow-lg animate-fade-in-up z-50 flex items-center`}>
-          {toastMessage.includes('removed') ? 
-            <XCircle className="w-5 h-5 mr-2" /> : 
-            <CheckCircle className="w-5 h-5 mr-2" />
-          }
-          {toastMessage}
-        </div>
-      )}
+      {/* Toast notification */}
+      <ToastNotification 
+        message={toastMessage} 
+        show={showSuccessToast}
+      />
     </div>
   );
 } 

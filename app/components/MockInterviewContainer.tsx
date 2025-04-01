@@ -204,6 +204,7 @@ export default function MockInterviewContainer({ jobData }: MockInterviewContain
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-Gemini-API-Key': apiKey
         },
         body: JSON.stringify({
           jobTitle: jobData.title,
@@ -252,6 +253,7 @@ export default function MockInterviewContainer({ jobData }: MockInterviewContain
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-Gemini-API-Key': apiKey
         },
         body: JSON.stringify({
           jobTitle: jobData.title,
@@ -378,7 +380,27 @@ export default function MockInterviewContainer({ jobData }: MockInterviewContain
     })
   }
 
+  // Save API key when changed
+  const handleApiKeyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newKey = e.target.value;
+    setApiKey(newKey);
+    
+    // Save to cookies
+    if (newKey) {
+      Cookies.set("geminiApiKey", newKey, { expires: 30 }); // Expires in 30 days
+      localStorage.setItem("geminiApiKey", newKey); // Fallback
+      console.log("API key saved");
+    }
+  };
+
+  // Start the interview
   const startInterview = async () => {
+    // Save API key if it hasn't been saved yet
+    if (apiKey) {
+      Cookies.set("geminiApiKey", apiKey, { expires: 30 }); // Expires in 30 days
+      localStorage.setItem("geminiApiKey", apiKey); // Fallback
+    }
+    
     setInterviewStarted(true)
     setIsLoading(true)
     
@@ -419,6 +441,7 @@ export default function MockInterviewContainer({ jobData }: MockInterviewContain
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-Gemini-API-Key': apiKey
         },
         body: JSON.stringify({
           jobTitle: jobData.title,
@@ -531,15 +554,13 @@ export default function MockInterviewContainer({ jobData }: MockInterviewContain
     setMessages(prev => [...prev, questionMessage])
   }
 
-  const handleMessageSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    
-    if (!currentMessage.trim() || isLoading) return
+  const handleMessageSubmit = async (message: string) => {
+    if (!message.trim() || isLoading) return
     
     const userMessage: Message = {
       id: generateId(),
       role: 'user',
-      content: currentMessage,
+      content: message,
       timestamp: new Date(),
       showFeedback: true
     }
@@ -554,6 +575,7 @@ export default function MockInterviewContainer({ jobData }: MockInterviewContain
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-Gemini-API-Key': apiKey
         },
         body: JSON.stringify({
           jobTitle: jobData.title,
@@ -567,7 +589,7 @@ export default function MockInterviewContainer({ jobData }: MockInterviewContain
           } : null,
           resumeData: resumeBase64,
           currentQuestion: currentQuestionIndex,
-          userResponse: currentMessage,
+          userResponse: message,
           action: 'feedback'
         }),
       })
@@ -578,35 +600,43 @@ export default function MockInterviewContainer({ jobData }: MockInterviewContain
         setApiErrorCount(prev => prev + 1)
         
         // Fallback to hardcoded feedback if API fails
-        fallbackGenerateFeedback(currentMessage, currentQuestionIndex)
+        fallbackGenerateFeedback(message, currentQuestionIndex)
         return
       }
 
       const data = await response.json() as InterviewResponse
       
-      // Directly use the feedback from the API response
-      const strengths = data.strengths || []
-      const improvements = data.improvements || []
-      const score = data.score || 75
+      // Use the feedback from the API response if available
+      let formattedFeedback = data.feedback || ''
       
-      // Format feedback message
-      let formattedFeedback = `**Feedback on your answer:**\n\n`
-      
-      if (strengths.length > 0) {
-        formattedFeedback += `**Strengths:**\n${strengths.map(s => `• ${s}`).join('\n')}\n\n`
+      // If no formatted feedback is provided, construct it
+      if (!formattedFeedback) {
+        // Directly use the feedback from the API response
+        const strengths = data.strengths || []
+        const improvements = data.improvements || []
+        const score = data.score || 75
+        
+        // Format feedback message
+        formattedFeedback = `**Feedback on your answer:**\n\n`
+        
+        if (strengths.length > 0) {
+          formattedFeedback += `**Strengths:**\n${strengths.map(s => `• ${s}`).join('\n')}\n\n`
+        }
+        
+        if (improvements.length > 0) {
+          formattedFeedback += `**Areas for improvement:**\n${improvements.map(i => `• ${i}`).join('\n')}\n\n`
+        }
+        
+        formattedFeedback += `**Score for this response:** ${score}/100`
       }
-      
-      if (improvements.length > 0) {
-        formattedFeedback += `**Areas for improvement:**\n${improvements.map(i => `• ${i}`).join('\n')}\n\n`
-      }
-      
-      formattedFeedback += `**Score for this response:** ${score}/100`
       
       const feedbackMessage: Message = {
         id: generateId(),
         role: 'feedback',
         content: formattedFeedback,
-        timestamp: new Date()
+        timestamp: new Date(),
+        questionIndex: currentQuestionIndex,
+        suggestions: data.suggestions || []
       }
       
       setMessages(prev => [...prev, feedbackMessage])
@@ -622,7 +652,7 @@ export default function MockInterviewContainer({ jobData }: MockInterviewContain
       setApiErrorCount(prev => prev + 1)
       
       // Fallback to hardcoded feedback if API fails
-      fallbackGenerateFeedback(currentMessage, currentQuestionIndex)
+      fallbackGenerateFeedback(message, currentQuestionIndex)
     } finally {
       setIsLoading(false)
     }
@@ -744,6 +774,7 @@ export default function MockInterviewContainer({ jobData }: MockInterviewContain
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-Gemini-API-Key': apiKey
         },
         body: JSON.stringify({
           jobTitle: jobData.title,
@@ -1107,25 +1138,31 @@ export default function MockInterviewContainer({ jobData }: MockInterviewContain
           {/* Message input */}
           {interviewStarted && !isFinished && (
             <div className="p-3 border-t border-gray-200 dark:border-gray-700">
-              <form onSubmit={handleMessageSubmit} className="flex gap-2">
+              <form 
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  handleMessageSubmit(currentMessage)
+                }}
+                className="mt-4 flex items-center gap-2"
+              >
                 <input
                   type="text"
                   value={currentMessage}
                   onChange={(e) => setCurrentMessage(e.target.value)}
-                  placeholder="Type your response..."
-                  className="flex-1 rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm dark:bg-gray-700 dark:text-white"
-                  disabled={isLoading}
+                  placeholder="Type your answer here..."
+                  className="flex-1 p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={isLoading || isFinished}
                 />
                 <button
                   type="submit"
-                  disabled={isLoading || !currentMessage.trim()}
-                  className="inline-flex items-center px-3 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className={`px-4 py-2 rounded-lg ${
+                    isLoading || !currentMessage.trim()
+                      ? 'bg-gray-300 cursor-not-allowed'
+                      : 'bg-blue-500 hover:bg-blue-600'
+                  } text-white font-medium transition-colors`}
+                  disabled={isLoading || !currentMessage.trim() || isFinished}
                 >
-                  {isLoading ? (
-                    <Loader className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Send className="w-4 h-4" />
-                  )}
+                  {isLoading ? 'Sending...' : 'Send'}
                 </button>
               </form>
             </div>
@@ -1244,7 +1281,7 @@ export default function MockInterviewContainer({ jobData }: MockInterviewContain
                     <input
                       type="password"
                       value={apiKey}
-                      onChange={(e) => setApiKey(e.target.value)}
+                      onChange={(e) => handleApiKeyChange(e)}
                       className="w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-xs sm:text-sm dark:bg-gray-700 dark:text-white"
                       placeholder="Enter your Gemini API key"
                     />

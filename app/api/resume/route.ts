@@ -4,6 +4,32 @@ import { ResumeData, ExperienceEntry } from '../../types/resume';
 // Gemini API Configuration
 const GEMINI_MODEL = 'gemini-2.0-flash';
 
+// Gemini API Types
+interface GeminiTextPart {
+  text: string;
+}
+
+interface GeminiInlineDataPart {
+  inlineData: {
+    mimeType: string;
+    data: string;
+  };
+}
+
+type GeminiPart = GeminiTextPart | GeminiInlineDataPart;
+
+interface GeminiRequestBody {
+  contents: [{
+    parts: GeminiPart[];
+  }];
+  generationConfig?: {
+    temperature?: number;
+    topP?: number;
+    topK?: number;
+    maxOutputTokens?: number;
+  };
+}
+
 /**
  * Extracts JSON from a possibly markdown-formatted response
  * @param text The raw text from Gemini, possibly containing markdown
@@ -29,21 +55,42 @@ const extractJsonFromResponse = (text: string): string => {
 };
 
 /**
- * Clean placeholder locations from resume data
+ * Cleans placeholder locations from the resume data
+ * @param data The resume data object
+ * @returns Cleaned resume data with placeholder locations removed
  */
-const cleanPlaceholderLocations = (data: ResumeData): ResumeData => {
-  if (!data) return data;
+const cleanPlaceholderLocations = (data: any): any => {
+  // Helper function to check if a location is a placeholder
+  const isPlaceholderLocation = (loc: string): boolean => {
+    const placeholderPatterns = [
+      /city,?\s*state/i,
+      /location/i,
+      /\[.*\]/,
+      /\(.*\)/,
+      /your?\s+city/i,
+      /address/i
+    ];
+    return placeholderPatterns.some(pattern => pattern.test(loc));
+  };
+
+  // Clean the main contact location
+  if (data.contact?.location && isPlaceholderLocation(data.contact.location)) {
+    data.contact.location = '';
+  }
 
   // Clean experience locations
-  if (data.experience) {
-    data.experience = data.experience.map((exp: ExperienceEntry) => ({
+  if (Array.isArray(data.experience)) {
+    data.experience = data.experience.map((exp: any) => ({
       ...exp,
-      location: exp.location && (
-        exp.location.includes('City') ||
-        exp.location.includes('State') ||
-        exp.location === 'Remote' ||
-        exp.location.trim() === ''
-      ) ? '' : exp.location
+      location: exp.location && isPlaceholderLocation(exp.location) ? '' : exp.location
+    }));
+  }
+
+  // Clean education locations
+  if (Array.isArray(data.education)) {
+    data.education = data.education.map((edu: any) => ({
+      ...edu,
+      location: edu.location && isPlaceholderLocation(edu.location) ? '' : edu.location
     }));
   }
 
@@ -114,7 +161,7 @@ Website: ${personalInfo.website || 'Extract from resume or omit'}
 `;
     }
     
-    // Prepare the prompt for Gemini with parts array
+    // Prepare the prompt for Gemini
     const instructionText = `I need you to create a tailored resume for a job application. I'll provide you with my resume ${resumePdfData ? 'as a PDF' : 'data'} and the job details. Please create a professional resume that highlights the most relevant skills, experiences, and qualifications that match the job requirements without adding any false information.
 
 Here are the job details:
@@ -195,34 +242,38 @@ IMPORTANT: Return ONLY the JSON object with no markdown formatting, no code bloc
     // Create the API URL with the API key
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${geminiApiKey}`;
     
-    // Prepare the request body based on whether we have PDF data or JSON data
-    let requestContents;
-    
+    // Prepare the request body
+    const requestBody: GeminiRequestBody = {
+      contents: [{
+        parts: [
+          { text: instructionText }
+        ]
+      }]
+    };
+
+    // If we have PDF data, add it as a separate part
     if (resumePdfData) {
-      // Using PDF format
-      requestContents = {
-        parts: [
-          { text: instructionText },
-          {
-            inlineData: {
-              mimeType: 'application/pdf',
-              data: resumePdfData
-            }
-          }
-        ]
-      };
       console.log('Using PDF resume data for Gemini API');
-    } else {
+      requestBody.contents[0].parts.push({
+        inlineData: {
+          mimeType: 'application/pdf',
+          data: resumePdfData
+        }
+      });
+    } else if (resumeData) {
       // Using JSON format (old way)
-      requestContents = {
-        parts: [
-          { 
-            text: `${instructionText}\n\nHere is my master resume data:\n${JSON.stringify(resumeData)}`
-          }
-        ]
-      };
       console.log('Using JSON resume data for Gemini API');
+      const textPart = requestBody.contents[0].parts[0] as GeminiTextPart;
+      textPart.text += `\n\nHere is my master resume data:\n${JSON.stringify(resumeData)}`;
     }
+
+    // Add generation config
+    requestBody.generationConfig = {
+      temperature: 0.2,
+      topP: 0.8,
+      topK: 40,
+      maxOutputTokens: 4096
+    };
     
     // Call the Gemini API
     const response = await fetch(apiUrl, {
@@ -230,34 +281,12 @@ IMPORTANT: Return ONLY the JSON object with no markdown formatting, no code bloc
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        contents: [requestContents],
-        generationConfig: {
-          temperature: 0.2, // Slightly higher temperature for creativity but still mostly deterministic
-          topP: 0.8,
-          topK: 40,
-          maxOutputTokens: 4096 // Ensure we have enough tokens for a complete resume
-        }
-      })
+      body: JSON.stringify(requestBody)
     });
     
     if (!response.ok) {
       const errorData = await response.json();
       console.error('Gemini API error:', errorData);
-      
-      // Provide more specific error messages for common API key issues
-      if (response.status === 400) {
-        return NextResponse.json(
-          { error: 'Invalid request to Gemini API. Check your API key format.' },
-          { status: 400 }
-        );
-      } else if (response.status === 403) {
-        return NextResponse.json(
-          { error: 'Access denied by Gemini API. Your API key may be invalid or you may have exceeded your quota.' },
-          { status: 403 }
-        );
-      }
-      
       return NextResponse.json(
         { error: `Gemini API error: ${response.statusText}` },
         { status: response.status }
@@ -265,15 +294,18 @@ IMPORTANT: Return ONLY the JSON object with no markdown formatting, no code bloc
     }
     
     const data = await response.json();
-    console.log('Gemini API response structure:', Object.keys(data));
     
     // Extract the text from the Gemini response
-    const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-    console.log('Raw text from Gemini (start):', rawText.substring(0, 100) + '...');
+    const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!rawText) {
+      return NextResponse.json(
+        { error: 'No response text received from Gemini' },
+        { status: 500 }
+      );
+    }
     
-    // Clean up the text to extract JSON
+    // Clean up the response text
     const cleanedText = extractJsonFromResponse(rawText);
-    console.log('Cleaned text for parsing (start):', cleanedText.substring(0, 100) + '...');
     
     // Parse the text as JSON
     try {

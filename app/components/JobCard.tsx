@@ -67,7 +67,34 @@ export default function JobCard({
   const [noteText, setNoteText] = useState(job.notes || '')
   const [showSkills, setShowSkills] = useState(false)
   const [imageError, setImageError] = useState(false)
+  const [imageSrc, setImageSrc] = useState(job.company_image || '')
   const router = useRouter()
+  
+  // Log image URL on component mount for debugging
+  useEffect(() => {
+    if (job.company_image) {
+      console.log(`Loading company image for ${job.company_name}:`, job.company_image);
+    }
+  }, [job.company_name, job.company_image]);
+
+  const handleImageError = async (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
+    console.warn(`Failed to load image for ${job.company_name}:`, imageSrc);
+    
+    // Try Clearbit as a fallback if not already using it
+    if (!imageSrc.includes('clearbit.com') && job.company_name) {
+      const companyDomain = job.company_website ? 
+        new URL(job.company_website.startsWith('http') ? job.company_website : `https://${job.company_website}`).hostname :
+        `${job.company_name.toLowerCase().replace(/[^a-z0-9]/g, '')}.com`;
+      
+      const fallbackUrl = `https://logo.clearbit.com/${companyDomain}`;
+      console.log(`Trying fallback image URL: ${fallbackUrl}`);
+      setImageSrc(fallbackUrl);
+      return;
+    }
+    
+    // If we've already tried Clearbit or don't have a company name, show the fallback icon
+    setImageError(true);
+  };
   
   const truncateDescription = (text: string, maxLength = 150) => {
     if (!text || text.length <= maxLength) return text
@@ -147,15 +174,16 @@ export default function JobCard({
       <div className="p-5 sm:p-6">
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 mb-5">
           <div className="flex gap-4">
-            {job.company_image && !imageError ? (
+            {!imageError ? (
               <div className="flex-shrink-0 rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 bg-white">
                 <Image
-                  src={job.company_image}
+                  src={imageSrc}
                   alt={`${job.company_name} logo`}
                   width={56}
                   height={56}
                   className="object-contain"
-                  onError={() => setImageError(true)}
+                  onError={handleImageError}
+                  unoptimized={imageSrc.startsWith('data:')}
                 />
               </div>
             ) : (

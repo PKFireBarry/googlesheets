@@ -69,12 +69,12 @@ export default function ResumeStorageUI({
           toast.success("Your resume has been loaded from shared storage");
         } else if (resumePdfData) {
           setResumePdfData(resumePdfData);
-          const placeholderText = "[PDF resume loaded from storage] - PDF will be processed directly by AI";
+          const placeholderText = "[PDF resume loaded from storage]";
           setResumeContent(placeholderText);
           
           // Notify parent component if needed
           if (onResumeLoaded) {
-            onResumeLoaded(placeholderText, true);
+            onResumeLoaded(resumePdfData, true);
           }
           
           toast.success("Your PDF resume has been loaded from shared storage");

@@ -48,53 +48,7 @@ interface TaskStatusUpdate {
  */
 type TaskStatusCallback = (update: TaskStatusUpdate) => void;
 
-/**
- * Polls a function until it returns a truthy value or times out
- * @param fn The function to poll
- * @param interval Polling interval in milliseconds
- * @param timeout Timeout in milliseconds
- * @param onUpdate Optional callback for status updates
- * @returns The result of the function when it returns a truthy value
- */
-const poll = async <T>(
-  fn: () => Promise<T | null>, 
-  interval: number = 2000, 
-  timeout: number = 120000,
-  onUpdate?: TaskStatusCallback
-): Promise<T> => {
-  const startTime = Date.now();
-  
-  while (Date.now() - startTime < timeout) {
-    // Calculate progress as percentage of time elapsed
-    const elapsedMs = Date.now() - startTime;
-    const progress = Math.min(Math.round((elapsedMs / timeout) * 100), 99);
-    const elapsedSeconds = Math.round(elapsedMs / 1000);
-    
-    // Call the update callback if provided
-    if (onUpdate) {
-      onUpdate({
-        status: 'polling',
-        progress,
-        elapsedTime: elapsedSeconds,
-        message: `Checking task status (${elapsedSeconds}s elapsed)`
-      });
-    }
-    
-    try {
-      const result = await fn();
-      if (result) {
-        return result;
-      }
-    } catch (error) {
-      console.error('Poll function error:', error);
-      // Continue despite errors
-    }
-    
-    await delay(interval);
-  }
-  
-  throw new Error(`Polling timed out after ${timeout}ms`);
-};
+import { poll } from './polling';
 
 /**
  * Interface for LinkedIn contact data

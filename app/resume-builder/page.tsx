@@ -9,7 +9,17 @@ import { toast, Toaster } from 'react-hot-toast';
 import Cookies from 'js-cookie';
 import { saveResume, loadResume, deleteResume, resumeExists, getResumeStorageKey } from '../utils/resumeStorage';
 import ResumeStorageUI from '../components/ResumeStorageUI';
-import { jsPDF } from "jspdf";
+
+// Import our new components
+import PageHeader from '../components/resume/PageHeader';
+import ProgressBar from '../components/resume/ProgressBar';
+import ResumeUpload from '../components/resume/ResumeUpload';
+import JobDetailsForm from '../components/resume/JobDetailsForm';
+import ApiKeyConfiguration from '../components/resume/ApiKeyConfiguration';
+import TailoredResume from '../components/resume/TailoredResume';
+import ActionButtons from '../components/resume/ActionButtons';
+import DeleteConfirmDialog from '../components/resume/DeleteConfirmDialog';
+import ErrorDisplay from '../components/resume/ErrorDisplay';
 
 // Component for the Resume Builder page
 function ResumeBuilderContent(): React.ReactElement {
@@ -58,6 +68,19 @@ function ResumeBuilderContent(): React.ReactElement {
   
   // Add state for active tab in the upload section
   const [activeTab, setActiveTab] = useState<'upload' | 'manual'>('upload');
+  
+  // File input ref
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Personal info state
+  const [personalInfo, setPersonalInfo] = useState<PersonalInfo>({
+    name: '',
+    email: '',
+    phone: '',
+    location: '',
+    linkedin: '',
+    website: ''
+  });
   
   // Function to load the master resume
   const loadExistingResume = () => {
@@ -154,20 +177,7 @@ function ResumeBuilderContent(): React.ReactElement {
     
     return String(skills);
   };
-  
-  // Personal info state
-  const [personalInfo, setPersonalInfo] = useState<PersonalInfo>({
-    name: '',
-    email: '',
-    phone: '',
-    location: '',
-    linkedin: '',
-    website: ''
-  });
 
-  // File input ref
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  
   // Handle manual job data changes
   const handleManualJobChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -300,68 +310,9 @@ function ResumeBuilderContent(): React.ReactElement {
   
   // Dedicated useEffect for checking and loading existing resume
   useEffect(() => {
-    console.log('Checking for existing resume...');
-    // Debug function to show all storage contents
-    const debugStorage = () => {
-      console.log('--- DEBUG: LocalStorage Contents ---');
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key) {
-          try {
-            const value = localStorage.getItem(key);
-            console.log(`${key}: ${value?.substring(0, 50)}${value && value.length > 50 ? '...' : ''}`);
-          } catch (e) {
-            console.log(`${key}: [Error reading value]`);
-          }
-        }
-      }
-      console.log('--- DEBUG: Cookies ---');
-      console.log('Cookie string:', document.cookie);
-      console.log('lastSheetUrl from cookie:', Cookies.get('lastSheetUrl'));
-      console.log('------------------------');
-    };
-    
-    // Call debug function
-    debugStorage();
-    
     // Check if resume exists
     const exists = resumeExists();
     setMasterResumeExists(exists);
-    
-    if (exists) {
-      // Auto-load the resume if it exists
-      const { resumeData, resumePdfData: pdfData } = loadResume();
-      
-      if (resumeData) {
-        console.log('Auto-loading parsed resume data');
-        setMasterResume(resumeData);
-        
-        // Pre-fill personal info
-        setPersonalInfo({
-          name: resumeData.name || '',
-          email: resumeData.contact?.email || '',
-          phone: resumeData.contact?.phone || '',
-          location: resumeData.contact?.location || '',
-          linkedin: resumeData.contact?.linkedin || '',
-          website: resumeData.contact?.website || ''
-        });
-      } else if (pdfData) {
-        console.log('Auto-loading PDF resume data');
-        setResumePdfData(pdfData);
-        
-        // Pre-fill empty personal info (will be extracted during processing)
-        setPersonalInfo({
-          name: '',
-          email: '',
-          phone: '',
-          location: '',
-          linkedin: '',
-          website: ''
-        });
-      }
-    } else {
-      console.log('No resume found in storage');
-    }
   }, []);
   
   // Handle resume file upload
@@ -608,632 +559,130 @@ function ResumeBuilderContent(): React.ReactElement {
     }
   };
   
-  // Render different steps of the process
-  const renderStep = () => {
-    switch (step) {
-      case 1:
-        return (
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 max-w-4xl mx-auto border border-gray-100 dark:border-gray-700">
-            <h2 className="text-2xl font-bold mb-4">Step 1: Upload or Create a Resume</h2>
-            
-            <div className="mb-6">
-              {/* Tab Navigation */}
-              <div className="border-b border-gray-200 dark:border-gray-700 mb-4">
-                <nav className="flex -mb-px space-x-6">
-                  <button 
-                    onClick={() => setActiveTab('upload')}
-                    className={`pb-3 px-1 ${activeTab === 'upload' 
-                      ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400 font-medium' 
-                      : 'border-b-2 border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}
-                  >
-                    Upload Resume
-                  </button>
-                  <button 
-                    onClick={() => setActiveTab('manual')}
-                    className={`pb-3 px-1 ${activeTab === 'manual' 
-                      ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400 font-medium' 
-                      : 'border-b-2 border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'}`}
-                  >
-                    Enter Job Details
-                  </button>
-                </nav>
-              </div>
-              
-              {/* Upload Resume Tab */}
-              {activeTab === 'upload' && (
-                <>
-                  <p className="text-gray-600 dark:text-gray-300 mb-6 text-mobile-sm">
-                    Upload your existing resume or use a previously uploaded one to get started.
-                  </p>
-                  
-                  {masterResumeExists ? (
-                    <div className="border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 p-5 rounded-lg mb-6">
-                      <div className="flex items-start">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-500 mr-3 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <div>
-                          <h3 className="font-semibold text-green-800 dark:text-green-300">Resume Found</h3>
-                          <p className="text-green-700 dark:text-green-400 text-mobile-sm">
-                            We've found a previously uploaded resume. You can use it or upload a new one.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  ) : null}
-                  
-                  <ResumeStorageUI 
-                    onResumeLoaded={(resumeText, isPdf) => {
-                      if (isPdf) {
-                        // For PDF resumes, we'll handle differently
-                        setResumePdfData(resumeText);
-                        // Clear any previously parsed resume data
-                        setMasterResume(null);
-                        // Skip directly to step 2
-                        setStep(2);
-                      } else {
-                        try {
-                          // Try to parse the resume text into a structured format
-                          const parsedResume = JSON.parse(localStorage.getItem(getResumeStorageKey()) || '{}');
-                          if (parsedResume && parsedResume.data && parsedResume.type === 'parsed') {
-                            setMasterResume(parsedResume.data);
-                            // Pre-fill personal info from the parsed resume
-                            const resumeData = parsedResume.data;
-                            setPersonalInfo({
-                              name: resumeData.name || '',
-                              email: resumeData.contact.email || '',
-                              phone: resumeData.contact.phone || '',
-                              location: resumeData.contact.location || '',
-                              linkedin: resumeData.contact.linkedin || '',
-                              website: resumeData.contact.website || ''
-                            });
-                            // Skip directly to step 2
-                            setStep(2);
-                          }
-                        } catch (error) {
-                          console.error('Error parsing resume:', error);
-                          toast.error('Could not parse resume data. Please try uploading again.');
-                        }
-                      }
-                    }}
-                    onResumeDeleted={() => {
-                      setMasterResume(null);
-                      setResumePdfData(null);
-                      setMasterResumeExists(false);
-                    }}
-                    onApiKeyLoad={(apiKey) => setApiKey(apiKey)}
-                  />
-                </>
-              )}
-                
-              {/* Manual Job Entry Tab */}
-              {activeTab === 'manual' && (
-                <div className="space-y-6">
-                  <p className="text-gray-600 dark:text-gray-300 mb-6 text-mobile-sm">
-                    Enter the details of the job you're applying for to create a tailored resume.
-                  </p>
-                  <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg mb-6">
-                    <div className="flex justify-between items-center mb-4">
-                      <h3 className="font-semibold text-blue-800 dark:text-blue-300">Enter Job Details</h3>
-                      <button
-                        onClick={() => setShowJobForm(false)}
-                        className="text-blue-700 dark:text-blue-300 hover:text-blue-900 dark:hover:text-blue-100"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                          <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                        </svg>
-                      </button>
-                    </div>
-                    <div className="space-y-4">
-                      <div>
-                        <label htmlFor="jobTitle" className="block text-sm font-medium text-gray-700 mb-1">
-                          Job Title *
-                        </label>
-                        <input
-                          type="text"
-                          id="jobTitle"
-                          name="title"
-                          value={manualJobData.title}
-                          onChange={handleManualJobChange}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm dark:bg-gray-700 dark:text-white"
-                          placeholder="e.g., Senior Software Engineer"
-                          required
-                        />
-                      </div>
-
-                      <div>
-                        <label htmlFor="company" className="block text-sm font-medium text-gray-700 mb-1">
-                          Company Name *
-                        </label>
-                        <input
-                          type="text"
-                          id="company"
-                          name="company"
-                          value={manualJobData.company}
-                          onChange={handleManualJobChange}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm dark:bg-gray-700 dark:text-white"
-                          placeholder="e.g., Google"
-                          required
-                        />
-                      </div>
-
-                      <div>
-                        <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
-                          Job Description
-                        </label>
-                        <textarea
-                          id="description"
-                          name="description"
-                          value={manualJobData.description}
-                          onChange={handleManualJobChange}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm dark:bg-gray-700 dark:text-white"
-                          rows={4}
-                          placeholder="Paste the job description here..."
-                        />
-                      </div>
-
-                      <div>
-                        <label htmlFor="skills" className="block text-sm font-medium text-gray-700 mb-1">
-                          Skills
-                        </label>
-                        <textarea
-                          id="skills"
-                          name="skills"
-                          value={manualJobData.skills}
-                          onChange={handleManualJobChange}
-                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm dark:bg-gray-700 dark:text-white"
-                          rows={2}
-                          placeholder="JavaScript, React, TypeScript, etc."
-                        />
-                        <p className="text-xs text-gray-500 mt-1">Separate skills with commas</p>
-                      </div>
-
-                      <div className="flex justify-end">
-                        <button
-                          onClick={handleManualJobSubmit}
-                          className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
-                        >
-                          Save Job Details
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-            
-            {/* PDF support info box */}
-            <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-md text-blue-800 dark:text-blue-300 text-sm flex items-start mt-2 mb-4">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <div>
-                <p className="font-medium">📄 PDF Processing Feature</p>
-                <p>Upload your resume as a PDF file to have it processed directly by Gemini AI. This allows for better recognition of formatting, tables, and visual elements in your resume!</p>
-              </div>
-            </div>
-            
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center mb-6">
-              {masterResumeExists ? (
-                <div className="flex flex-col items-center">
-                  <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-md text-green-800 dark:text-green-300 text-sm flex items-start mb-4 w-full max-w-md">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <div>
-                      <p className="font-medium">Previously uploaded resume found!</p>
-                      <p>You can use your previously uploaded resume or upload a new one.</p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex flex-col sm:flex-row gap-4 mb-4">
-                    <button
-                      onClick={loadExistingResume}
-                      className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 transition focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                      </svg>
-                      Use Previous Resume
-                    </button>
-                    <div className="relative">
-                      <input
-                        type="file"
-                        ref={fileInputRef}
-                        accept=".pdf,.docx"
-                        onChange={handleResumeUpload}
-                        className="hidden"
-                        id="resume-upload-new"
-                      />
-                      <label
-                        htmlFor="resume-upload-new"
-                        className="inline-flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                        </svg>
-                        Upload New Resume
-                      </label>
-                    </div>
-                    <button
-                      onClick={() => setShowDeleteConfirm(true)}
-                      className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 transition focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                      Delete Saved Resume
-                    </button>
-                  </div>
-                  
-                  <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">Supported formats: PDF (recommended), DOCX</p>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center py-8">
-                  <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-md mb-6 text-center w-full max-w-md">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mx-auto text-blue-500 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    <h3 className="text-lg font-medium text-blue-800 dark:text-blue-300 mb-2">Upload Your Resume</h3>
-                    <p className="text-blue-700 dark:text-blue-400 mb-4">Upload your resume to get started with personalizing it for job applications.</p>
-                    
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      accept=".pdf,.docx"
-                      onChange={handleResumeUpload}
-                      className="hidden"
-                      id="resume-upload-new"
-                    />
-                    <label
-                      htmlFor="resume-upload-new"
-                      className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                      </svg>
-                      Select Resume File
-                    </label>
-                    <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">Supported formats: PDF (recommended), DOCX</p>
-                  </div>
-                </div>
-              )}
-              
-              {resumePdfData && (
-                <div className="flex items-center justify-center text-sm text-green-600 mt-3">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  PDF uploaded and ready for processing with Gemini AI
-                </div>
-              )}
-            </div>
-            
-            {/* Delete confirmation dialog */}
-            {showDeleteConfirm && (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md mx-auto shadow-xl border border-gray-100 dark:border-gray-700">
-                  <h3 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">Delete Saved Resume?</h3>
-                  <p className="text-gray-600 dark:text-gray-300 mb-6">
-                    Are you sure you want to delete your saved resume? This action cannot be undone.
-                  </p>
-                  <div className="flex justify-end space-x-4">
-                    <button
-                      onClick={() => setShowDeleteConfirm(false)}
-                      className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={() => {
-                        deleteSavedResume();
-                        setShowDeleteConfirm(false);
-                      }}
-                      className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        );
-        
-      case 2:
-        return (
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 max-w-4xl mx-auto border border-gray-100 dark:border-gray-700">
-            <h2 className="text-2xl font-bold mb-4">Step 2: Job Details</h2>
-            <p className="text-gray-600 dark:text-gray-300 mb-6 text-mobile-sm">
-              Review the job details below and make sure they're correct before generating your tailored resume.
-            </p>
-            
-            {selectedJob && (
-              <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg mb-6">
-                <h3 className="font-semibold text-blue-800 dark:text-blue-300 mb-2">Selected Job</h3>
-                <div className="text-blue-700 dark:text-blue-300 space-y-2">
-                  <p className="font-medium">{selectedJob.title || selectedJob.job_title} at {selectedJob.company_name || selectedJob.company}</p>
-                  
-                  {(selectedJob.description || selectedJob.job_description) && (
-                    <div className="mt-2">
-                      <p className="text-sm font-medium">Description:</p>
-                      <p className="text-sm">{selectedJob.description || selectedJob.job_description}</p>
-                    </div>
-                  )}
-                  
-                  {selectedJob.requirements && selectedJob.requirements.trim() !== '' && (
-                    <div className="mt-2">
-                      <p className="text-sm font-medium">Requirements:</p>
-                      <p className="text-sm">{selectedJob.requirements}</p>
-                    </div>
-                  )}
-                  
-                  {selectedJob.skills && (
-                    <div className="mt-2">
-                      <p className="text-sm font-medium">Skills:</p>
-                      <p className="text-sm">
-                        {formatSkills(selectedJob.skills)}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-            
-            {!selectedJob && (
-              <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 mb-6">
-                <h3 className="font-semibold text-yellow-800 dark:text-yellow-300 mb-2">No Job Selected</h3>
-                <p className="text-yellow-700 dark:text-yellow-400 text-sm">
-                  You haven't selected a job or entered job details. Please go back to the previous step and enter job details manually.
-                </p>
-                <button
-                  onClick={() => setStep(1)}
-                  className="mt-3 inline-flex items-center px-3 py-1.5 border border-yellow-300 dark:border-yellow-600 rounded-md shadow-sm text-xs font-medium text-yellow-800 dark:text-yellow-300 bg-yellow-50 dark:bg-yellow-900/40 focus:outline-none focus:ring-2 focus:ring-yellow-500"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 17l-5-5m0 0l5-5m-5 5h12" />
-                  </svg>
-                  Go Back
-                </button>
-              </div>
-            )}
-            
-            <div className="mb-6 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
-              <h3 className="font-semibold text-blue-800 dark:text-blue-300 mb-2">Contact Information</h3>
-              <p className="text-blue-700 dark:text-blue-300">
-                Your contact information will be automatically extracted from your uploaded {resumePdfData ? 'PDF' : 'resume'}.
-                You don't need to enter it manually.
-              </p>
-            </div>
-            
-            {!apiKey && (
-              <div className="mb-6">
-                <h3 className="font-semibold mb-3">Gemini API Key</h3>
-                <div>
-                  <input
-                    type="password"
-                    value={apiKey}
-                    onChange={handleApiKeyChange}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm dark:bg-gray-700 dark:text-white"
-                    placeholder="Enter your Gemini API key"
-                  />
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                    Your API key is stored locally and never sent to our servers. You can get a free Gemini API key from{' '}
-                    <a
-                      href="https://makersuite.google.com/app/apikey"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-600 hover:underline dark:text-blue-400"
-                    >
-                      Google&apos;s Maker Suite
-                    </a>.
-                  </p>
-                </div>
-              </div>
-            )}
-            
-            <div className="flex justify-between">
-              <button
-                onClick={() => setStep(1)}
-                className="inline-flex items-center px-3 py-1.5 sm:px-4 sm:py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                Back
-              </button>
-              
-              <button
-                onClick={handleGenerateResume}
-                disabled={isLoading || (!selectedJob && !showJobForm)}
-                className={`${
-                  isLoading ? 'bg-blue-400' : (!selectedJob && !showJobForm) ? 'bg-blue-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
-                } text-white px-3 py-1.5 sm:px-4 sm:py-2 border border-transparent rounded-md shadow-sm text-sm font-medium transition flex items-center focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500`}
-              >
-                {isLoading ? (
-                  <>
-                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Generating...
-                  </>
-                ) : (
-                  'Generate Tailored Resume'
-                )}
-              </button>
-            </div>
-          </div>
-        );
-        
-      case 3:
-        return (
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 max-w-4xl mx-auto border border-gray-100 dark:border-gray-700">
-            <h2 className="text-2xl font-bold mb-4">Step 3: Your Tailored Resume</h2>
-            <p className="text-gray-600 dark:text-gray-300 mb-6 text-mobile-sm">
-              Your tailored resume is ready! Review the changes and download it in your preferred format.
-            </p>
-            
-            {tailoringNotes && (
-              <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 mb-6">
-                <h3 className="font-semibold text-yellow-800 dark:text-yellow-300 mb-2">Tailoring Notes</h3>
-                <p className="text-yellow-700 dark:text-yellow-400 text-sm">{tailoringNotes}</p>
-              </div>
-            )}
-            
-            <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-6 mb-6 bg-white dark:bg-gray-800 shadow-sm">
-              <h3 className="font-semibold text-xl mb-3">{generatedResume?.name}</h3>
-              
-              <div className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                {generatedResume?.contact.email} • {generatedResume?.contact.phone} • {generatedResume?.contact.location}
-                {generatedResume?.contact.linkedin && ` • ${generatedResume.contact.linkedin}`}
-                {generatedResume?.contact.website && ` • ${generatedResume.contact.website}`}
-              </div>
-              
-              <div className="mb-4">
-                <h4 className="font-semibold mb-1">Summary</h4>
-                <p className="text-gray-700 dark:text-gray-300">{generatedResume?.summary}</p>
-              </div>
-              
-              <div className="mb-4">
-                <h4 className="font-semibold mb-1">Skills</h4>
-                <p className="text-gray-700 dark:text-gray-300">
-                  {generatedResume?.skills && Array.isArray(generatedResume.skills) 
-                    ? generatedResume.skills.join(', ')
-                    : formatSkills(generatedResume?.skills)}
-                </p>
-              </div>
-              
-              <div className="mb-4">
-                <h4 className="font-semibold mb-2">Experience</h4>
-                {generatedResume?.experience.map((exp, index) => (
-                  <div key={index} className="mb-3">
-                    <div className="flex justify-between items-start">
-                      <div className="font-medium">{exp.title}</div>
-                      <div className="text-sm text-gray-500">{exp.dates}</div>
-                    </div>
-                    <div className="text-sm text-gray-600 italic">{exp.company}, {exp.location}</div>
-                    <ul className="list-disc list-inside text-sm text-gray-700 mt-1">
-                      {exp.highlights.map((highlight, i) => (
-                        <li key={i}>{highlight}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-              
-              <div className="preview-truncated text-center py-4 border-t border-dashed">
-                <p className="text-gray-500">Resume preview is truncated. Download to see the full resume.</p>
-              </div>
-            </div>
-            
-            <div className="flex flex-col sm:flex-row gap-4 justify-center mb-6">
-              <button
-                onClick={() => handleDownloadResume('pdf')}
-                disabled={isLoading}
-                className={`${
-                  isLoading ? 'bg-green-400' : 'bg-green-600 hover:bg-green-700'
-                } text-white px-4 py-2 sm:px-6 sm:py-3 border border-transparent rounded-md shadow-sm text-sm font-medium transition flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500`}
-              >
-                {isLoading ? 'Downloading...' : (
-                  <>
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                    </svg>
-                    Download as PDF
-                  </>
-                )}
-              </button>
-              
-              <button
-                onClick={() => handleDownloadResume('docx')}
-                disabled={isLoading}
-                className={`${
-                  isLoading ? 'bg-blue-400' : 'bg-blue-600 hover:bg-blue-700'
-                } text-white px-4 py-2 sm:px-6 sm:py-3 border border-transparent rounded-md shadow-sm text-sm font-medium transition flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500`}
-              >
-                {isLoading ? 'Downloading...' : (
-                  <>
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                    </svg>
-                    Download as DOCX
-                  </>
-                )}
-              </button>
-            </div>
-            
-            <div className="flex justify-between">
-              <button
-                onClick={() => setStep(2)}
-                className="inline-flex items-center px-3 py-1.5 sm:px-4 sm:py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                Back
-              </button>
-              
-              <button
-                onClick={handleStartOver}
-                className="inline-flex items-center px-3 py-1.5 sm:px-4 sm:py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gray-600 hover:bg-gray-700 transition focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
-              >
-                Start Over
-              </button>
-            </div>
-          </div>
-        );
-        
-      default:
-        return null;
-    }
-  };
-  
+  // Render the resume builder
   return (
     <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 no-overflow mobile-container">
       <Toaster position="top-right" />
       <div className="max-w-6xl mx-auto">
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl shadow-xl p-4 sm:p-10 text-white mb-6 sm:mb-8">
-          <div className="flex flex-col md:flex-row justify-between items-center">
-            <div>
-              <h1 className="text-2xl sm:text-4xl font-bold mb-2 sm:mb-3">Resume Builder</h1>
-              <p className="text-mobile-sm text-blue-100 max-w-2xl">
-                Studies show that 61% of recruiters spend 5 seconds on initial screening. Tailored resumes with relevant keywords are more likely to pass Applicant Tracking Systems and get you the interview.
-              </p>
-            </div>
-          </div>
-        </div>
+        {/* Page Header */}
+        <PageHeader />
         
-        {/* Progress bar */}
-        <div className="max-w-4xl mx-auto mb-8">
-          <div className="flex justify-between mb-2">
-            {['Upload Resume', 'Job Details', 'Download'].map((stepTitle, index) => (
-              <div
-                key={index}
-                className={`text-sm font-medium ${
-                  step > index + 1 ? 'text-blue-600' : step === index + 1 ? 'text-blue-800' : 'text-gray-400'
-                }`}
-              >
-                {stepTitle}
+        {/* Progress Bar */}
+        <ProgressBar 
+          currentStep={step} 
+          totalSteps={3} 
+          stepTitles={['Upload Resume', 'Job Details', 'Download']} 
+        />
+        
+        {/* Error Display */}
+        <ErrorDisplay error={error} />
+        
+        {/* Step Content */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 max-w-4xl mx-auto border border-gray-100 dark:border-gray-700">
+          {step === 1 && (
+            <>
+              <h2 className="text-2xl font-bold mb-4">Step 1: Upload or Create a Resume</h2>
+              
+              <div className="mb-6">
+                <ResumeUpload 
+                  onUpload={handleResumeUpload}
+                  isLoading={isLoading}
+                  resumePdfData={resumePdfData}
+                  masterResumeExists={masterResumeExists}
+                  onLoadExisting={loadExistingResume}
+                  onShowDeleteConfirm={() => setShowDeleteConfirm(true)}
+                  activeTab={activeTab}
+                  onTabChange={(tab) => setActiveTab(tab)}
+                />
+                
+                {activeTab === 'manual' && (
+                  <JobDetailsForm 
+                    manualJobData={manualJobData}
+                    onChange={handleManualJobChange}
+                    onSubmit={handleManualJobSubmit}
+                    selectedJob={selectedJob}
+                    formatSkills={formatSkills}
+                  />
+                )}
               </div>
-            ))}
-          </div>
-          <div className="h-2 bg-gray-200 rounded-full">
-            <div
-              className="h-full bg-blue-600 rounded-full transition-all duration-300"
-              style={{ width: `${((step - 1) / 2) * 100}%` }}
-            ></div>
-          </div>
+            </>
+          )}
+          
+          {step === 2 && (
+            <>
+              <h2 className="text-2xl font-bold mb-4">Step 2: Job Details</h2>
+              <p className="text-gray-600 dark:text-gray-300 mb-6 text-mobile-sm">
+                Review the job details below and make sure they're correct before generating your tailored resume.
+              </p>
+              
+              <JobDetailsForm 
+                manualJobData={manualJobData}
+                onChange={handleManualJobChange}
+                onSubmit={handleManualJobSubmit}
+                selectedJob={selectedJob}
+                formatSkills={formatSkills}
+              />
+              
+              <div className="mb-6 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                <h3 className="font-semibold text-blue-800 dark:text-blue-300 mb-2">Contact Information</h3>
+                <p className="text-blue-700 dark:text-blue-300">
+                  Your contact information will be automatically extracted from your uploaded {resumePdfData ? 'PDF' : 'resume'}.
+                  You don't need to enter it manually.
+                </p>
+              </div>
+              
+              {!apiKey && (
+                <ApiKeyConfiguration
+                  apiKey={apiKey}
+                  onChange={handleApiKeyChange}
+                />
+              )}
+              
+              <ActionButtons 
+                step={step}
+                onPrevious={() => setStep(1)}
+                onNext={handleGenerateResume}
+                nextLabel="Generate Tailored Resume"
+                isLoading={isLoading}
+                isNextDisabled={!selectedJob && !showJobForm}
+                nextDisabledReason="Please select a job or enter job details"
+              />
+            </>
+          )}
+          
+          {step === 3 && (
+            <>
+              <h2 className="text-2xl font-bold mb-4">Step 3: Your Tailored Resume</h2>
+              <p className="text-gray-600 dark:text-gray-300 mb-6 text-mobile-sm">
+                Your tailored resume is ready! Review the changes and download it in your preferred format.
+              </p>
+              
+              <TailoredResume 
+                generatedResume={generatedResume}
+                tailoringNotes={tailoringNotes}
+                isLoading={isLoading}
+                formatSkills={formatSkills}
+                onDownload={handleDownloadResume}
+              />
+              
+              <ActionButtons 
+                step={step}
+                onPrevious={() => setStep(2)}
+                onStartOver={handleStartOver}
+              />
+            </>
+          )}
         </div>
         
-        {/* Error message */}
-        {error && (
-          <div className="max-w-4xl mx-auto mb-6">
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg relative flex items-center" role="alert">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-              <p>{error}</p>
-            </div>
-          </div>
-        )}
-        
-        {/* Step content */}
-        {renderStep()}
+        {/* Delete Confirmation Dialog */}
+        <DeleteConfirmDialog
+          show={showDeleteConfirm}
+          onConfirm={() => {
+            deleteSavedResume();
+            setShowDeleteConfirm(false);
+          }}
+          onCancel={() => setShowDeleteConfirm(false)}
+        />
       </div>
     </div>
   );
