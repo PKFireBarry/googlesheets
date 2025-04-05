@@ -3,7 +3,14 @@
 import { useState, useEffect } from "react";
 import Cookies from "js-cookie";
 import JobCardGrid from "../components/JobCardGrid";
-import { CheckCircle, Briefcase, AlertCircle, XCircle } from "lucide-react";
+
+// Import the components we created
+import PageHeader from "../components/appliedjobs/PageHeader";
+import ErrorMessage from "../components/appliedjobs/ErrorMessage";
+import LoadingState from "../components/appliedjobs/LoadingState";
+import EmptyState from "../components/appliedjobs/EmptyState";
+import JobStatusHeader from "../components/appliedjobs/JobStatusHeader";
+import ToastNotification from "../components/appliedjobs/ToastNotification";
 
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY;
 const RANGE = process.env.NEXT_PUBLIC_RANGE;
@@ -108,8 +115,11 @@ export default function AppliedJobsPage() {
     console.log("Total rows from fetched data:", rows.length);
     console.log("Applied jobs IDs:", appliedJobs);
     
-    // Filter rows to show only applied jobs
-    const appliedJobRows = rows.filter((row) => {
+    // Create a map to track unique jobs by title-company combination
+    const uniqueJobsMap = new Map();
+    
+    // Filter rows to show only applied jobs and handle duplicates
+    rows.forEach((row) => {
       try {
         const titleIndex = findColumnIndex("title");
         const companyIndex = findColumnIndex("company_name");
@@ -127,20 +137,10 @@ export default function AppliedJobsPage() {
           company = companyIndex !== -1 && rowData.length > companyIndex ? rowData[companyIndex] : "";
         }
         
-        if (!title) return false;
+        if (!title) return;
         
         // Generate job ID to match against applied jobs list
         const jobId = `${title}-${company}`.replace(/\s+/g, '-');
-        
-        // Map the row to include original index for reference later
-        if (Array.isArray(row)) {
-          // Process for a regular array row
-          const rowIndex = rows.indexOf(row) + 1; // Add 1 to account for header
-          Object.defineProperty(row, 'originalIndex', {
-            value: rowIndex,
-            enumerable: true
-          });
-        }
         
         // Check if this job is in the applied jobs list in any format:
         // 1. As a compound ID (title-company)
@@ -157,18 +157,35 @@ export default function AppliedJobsPage() {
                            return id === title;
                          });
                          
-        return isApplied;
+        if (isApplied) {
+          // Create a unique key for this job (title + company)
+          const uniqueKey = `${title}-${company}`;
+          
+          // Only add to map if we haven't seen this job before
+          if (!uniqueJobsMap.has(uniqueKey)) {
+            // Map the row to include original index for reference later
+            if (Array.isArray(row)) {
+              // Process for a regular array row
+              const rowIndex = rows.indexOf(row) + 1; // Add 1 to account for header
+              Object.defineProperty(row, 'originalIndex', {
+                value: rowIndex,
+                enumerable: true
+              });
+            }
+            
+            uniqueJobsMap.set(uniqueKey, row);
+          }
+        }
       } catch (e) {
         console.error("Error filtering applied job:", e);
-        return false;
       }
     });
     
-    console.log("Applied job rows found:", appliedJobRows.length);
+    // Convert map values to array
+    const uniqueAppliedJobRows = Array.from(uniqueJobsMap.values());
+    console.log("Unique applied job rows found:", uniqueAppliedJobRows.length);
     
-    // Unlike the main page, we don't apply any filters here
-    // We want to show ALL applied jobs regardless of other criteria
-    setFilteredRows(appliedJobRows);
+    setFilteredRows(uniqueAppliedJobRows);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, appliedJobs]);
 
@@ -257,11 +274,11 @@ export default function AppliedJobsPage() {
     
     if (wasRemoved) {
       // Job was removed
-      setToastMessage(`"${jobTitle}" removed from applied jobs`);
+      setToastMessage(`"${jobTitle}" removed from Applied Jobs`);
     } else {
       // This shouldn't usually happen on the applied page, but just in case
       newAppliedJobs.push(jobId);
-      setToastMessage(`"${jobTitle}" marked as applied`);
+      setToastMessage(`"${jobTitle}" moved to Applied Jobs`);
     }
     
     console.log("New applied jobs list:", newAppliedJobs);
@@ -501,78 +518,64 @@ export default function AppliedJobsPage() {
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6">
       <div className="mb-8 sm:mb-12">
-        <div className="bg-gradient-to-r from-green-600 to-emerald-700 rounded-2xl shadow-xl p-6 sm:p-10 text-white mb-8">
-          <h1 className="text-3xl sm:text-4xl font-bold mb-3">
-            Applied Jobs
-          </h1>
-          <p className="text-green-100 text-lg max-w-2xl">
-            Track and manage all the jobs you've applied to. Keep notes on your application status and interview progress.
-          </p>
-        </div>
+        <PageHeader />
       </div>
 
-      {error && (
-        <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6 rounded-md">
-          <div className="flex">
-            <div className="flex-shrink-0">
-              <AlertCircle className="h-5 w-5 text-red-500" />
-            </div>
-            <div className="ml-3">
-              <p className="text-sm">{error}</p>
-            </div>
-          </div>
-        </div>
-      )}
+      <ErrorMessage message={error || ""} />
 
       {loading ? (
-        <div className="flex justify-center items-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
-        </div>
+        <LoadingState />
       ) : filteredRows.length > 0 ? (
         <>
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center text-gray-700 dark:text-gray-300">
-              <CheckCircle className="w-5 h-5 mr-2 text-green-600 dark:text-green-500" />
-              <span className="text-lg font-medium">
-                {filteredRows.length} Applied Job{filteredRows.length !== 1 ? "s" : ""}
-              </span>
-            </div>
-          </div>
+          <JobStatusHeader count={filteredRows.length} />
 
-          <JobCardGrid
-            headers={headers}
-            jobs={filteredRows}
-            appliedJobs={appliedJobs}
-            onApply={handleToggleApplied}
-            onDelete={handleDeleteJob}
-            onUpdateNote={handleUpdateNote}
-            viewMode={viewMode}
-            onToggleViewMode={toggleViewMode}
-            hideViewToggle={false}
-          />
+          {/* Make sure all shown jobs are in the appliedJobs list */}
+          {(() => {
+            // Create a new set to hold both existing and current job IDs
+            const allAppliedJobs = new Set(appliedJobs);
+            
+            // Add all current job IDs to ensure they show as "Applied"
+            filteredRows.forEach((row, index) => {
+              // Get the job title and company for this row
+              const rowData = Array.isArray(row) ? row : (row as any).data || [];
+              const title = titleIndex !== -1 && rowData[titleIndex] ? rowData[titleIndex] : '';
+              const company = findColumnIndex('company_name') !== -1 && rowData[findColumnIndex('company_name')] 
+                ? rowData[findColumnIndex('company_name')] : '';
+              
+              if (title) {
+                // Create a consistent job ID from title and company
+                const consistentJobId = title && company ? 
+                  `${title}-${company}`.replace(/\s+/g, '-') : title;
+                
+                // Add this ID to the set
+                allAppliedJobs.add(consistentJobId);
+              }
+            });
+            
+            return (
+              <JobCardGrid
+                headers={headers}
+                jobs={filteredRows}
+                appliedJobs={Array.from(allAppliedJobs)}
+                onApply={handleToggleApplied}
+                onDelete={handleDeleteJob}
+                onUpdateNote={handleUpdateNote}
+                viewMode={viewMode}
+                onToggleViewMode={toggleViewMode}
+                hideViewToggle={false}
+              />
+            );
+          })()}
         </>
       ) : (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-8 text-center">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 dark:bg-gray-700 mb-4">
-            <Briefcase className="h-8 w-8 text-gray-500 dark:text-gray-400" />
-          </div>
-          <h3 className="text-xl font-medium text-gray-900 dark:text-white mb-2">No Applied Jobs Yet</h3>
-          <p className="text-gray-600 dark:text-gray-400 mb-6">
-            You haven't marked any jobs as applied. When you apply for jobs, they'll appear here.
-          </p>
-        </div>
+        <EmptyState />
       )}
 
-      {/* Success toast notification */}
-      {showSuccessToast && (
-        <div className={`fixed bottom-4 right-4 ${toastMessage.includes('removed') ? 'bg-red-600' : 'bg-green-600'} text-white px-4 py-2 rounded-lg shadow-lg animate-fade-in-up z-50 flex items-center`}>
-          {toastMessage.includes('removed') ? 
-            <XCircle className="w-5 h-5 mr-2" /> : 
-            <CheckCircle className="w-5 h-5 mr-2" />
-          }
-          {toastMessage}
-        </div>
-      )}
+      {/* Toast notification */}
+      <ToastNotification 
+        message={toastMessage} 
+        show={showSuccessToast}
+      />
     </div>
   );
 } 

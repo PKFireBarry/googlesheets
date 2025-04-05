@@ -1,34 +1,40 @@
 "use client"
 
-import { useState, useEffect, useRef, TouchEvent } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import JobCard from './JobCard'
 import { ChevronLeft, ChevronRight, Grid, List, MapPin, Calendar, Link2, CheckCircle, Filter, ArrowUpDown } from 'lucide-react'
-import { generateJobId, getFieldValue, formatDateSafely, type RowData as UtilRowData } from '../utils/dataHelpers'
+import { generateJobId, getFieldValue, formatDateSafely } from '../utils/dataHelpers'
+import { RowData } from '../types/data'
 
-// Define types for job data
-interface JobData extends UtilRowData {
-  // Additional JobData specific properties can be added here
+interface JobData {
+  data?: string[];
+  originalIndex?: number;
+  source?: string;
+  [key: string]: any;
 }
 
 interface PreparedJob {
+  [key: string]: string | undefined | number | boolean;
   id: string;
   originalIndex: number;
   is_applied: boolean;
   title: string;
   company_name: string;
-  location?: string;
-  description?: string;
-  skills?: string;
-  date_posted?: string;
-  currentDate?: string;
-  currentdate?: string;
-  url?: string;
-  company_website?: string;
-  company_image?: string;
-  experience?: string;
-  notes?: string;
+  location: string;
+  description: string;
+  skills: string;
+  date_posted: string;
+  currentDate: string;
+  currentdate: string;
+  url: string;
+  company_website: string;
+  company_image: string;
+  experience: string;
+  notes: string;
   source: string;
-  [key: string]: any;
+  job_type: string;
+  type: string;
+  salary: string;
 }
 
 interface JobCardGridProps {
@@ -39,10 +45,17 @@ interface JobCardGridProps {
   onDelete: (rowIndex: number) => void;
   onUpdateNote: (rowIndex: number, note: string, columnIndex: number) => void;
   onHide?: (jobId: string, title: string, company: string) => void;
-  viewMode?: 'card' | 'list'; // Optional prop to control view mode externally
-  onToggleViewMode?: () => void; // Optional callback for view mode toggle
-  hideViewToggle?: boolean; // Whether to hide the internal view toggle
+  viewMode?: 'card' | 'list';
+  onToggleViewMode?: () => void;
+  hideViewToggle?: boolean;
 }
+
+// Define a local helper function to check if a job is applied
+const checkIfJobApplied = (consistentJobId: string, title: string, company: string, appliedJobs: string[]): boolean => {
+  return appliedJobs.includes(consistentJobId) || 
+          appliedJobs.includes(title) || 
+          appliedJobs.some(id => company ? id.startsWith(`${title}-${company}`) : id === title);
+};
 
 export default function JobCardGrid({
   jobs,
@@ -56,64 +69,89 @@ export default function JobCardGrid({
   onToggleViewMode,
   hideViewToggle = false
 }: JobCardGridProps) {
-  const [currentIndex, setCurrentIndex] = useState(0)
-  const [touchStart, setTouchStart] = useState<number | null>(null)
-  const [touchEnd, setTouchEnd] = useState<number | null>(null)
-  const [sortedJobs, setSortedJobs] = useState<JobData[]>([])
-  const [isAnimating, setIsAnimating] = useState(false)
-  const [direction, setDirection] = useState<'left' | 'right' | null>(null)
-  const cardRef = useRef<HTMLDivElement>(null)
-  const [internalViewMode, setInternalViewMode] = useState<'card' | 'list'>('card')
-  const [selectedJobForDetail, setSelectedJobForDetail] = useState<PreparedJob | null>(null)
-  const [keyboardListIndex, setKeyboardListIndex] = useState<number>(-1)
-  const keyboardSelectedRef = useRef<HTMLDivElement | HTMLTableRowElement | null>(null)
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [sortedJobs, setSortedJobs] = useState<JobData[]>([]);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [selectedJobForDetail, setSelectedJobForDetail] = useState<PreparedJob | null>(null);
+  const [keyboardListIndex, setKeyboardListIndex] = useState<number>(-1);
+  const keyboardSelectedRef = useRef<HTMLTableRowElement>(null);
   
-  // Determine which view mode to use (external or internal)
-  const viewMode = externalViewMode !== undefined ? externalViewMode : internalViewMode;
+  // Animation states - only used in card view
+  const [isAnimating, setIsAnimating] = useState(false);
+  const [direction, setDirection] = useState<'left' | 'right' | null>(null);
+  
+  // Only use internal view mode if external is not provided
+  const viewMode = externalViewMode ?? 'card';
   
   // Minimum swipe distance (in px)
-  const minSwipeDistance = 50
-  
-  // Log jobs data for debugging
+  const minSwipeDistance = 50;
+
   useEffect(() => {
-    console.log("Jobs data in JobCardGrid:", jobs);
-    console.log("Headers in JobCardGrid:", headers);
-    
     // Sort jobs by date (newest first)
     if (jobs.length > 0) {
-      const datePostedIndex = findColumnIndex('date_posted')
-      const currentDateIndex = findColumnIndex('currentdate')
+      const datePostedIndex = findColumnIndex('date_posted');
+      const currentDateIndex = findColumnIndex('currentdate');
       
       const sortedJobsCopy = [...jobs].sort((a, b) => {
-        const jobA = Array.isArray(a) ? a : a.data
-        const jobB = Array.isArray(b) ? b : b.data
+        const jobA = Array.isArray(a) ? a : a.data || [];
+        const jobB = Array.isArray(b) ? b : b.data || [];
         
-        let dateA: Date | null = null
-        let dateB: Date | null = null
+        let dateA: Date | null = null;
+        let dateB: Date | null = null;
         
         // Try to get dates from either date_posted or currentDate
         if (datePostedIndex !== -1) {
-          dateA = new Date(jobA[datePostedIndex] || '')
-          dateB = new Date(jobB[datePostedIndex] || '')
+          dateA = new Date(jobA[datePostedIndex] || '');
+          dateB = new Date(jobB[datePostedIndex] || '');
         } else if (currentDateIndex !== -1) {
-          dateA = new Date(jobA[currentDateIndex] || '')
-          dateB = new Date(jobB[currentDateIndex] || '')
+          dateA = new Date(jobA[currentDateIndex] || '');
+          dateB = new Date(jobB[currentDateIndex] || '');
         }
         
         // If both dates are valid, compare them
         if (dateA && dateB && !isNaN(dateA.getTime()) && !isNaN(dateB.getTime())) {
-          return dateB.getTime() - dateA.getTime()
+          return dateB.getTime() - dateA.getTime();
         }
         
         // Default to original order
-        return 0
-      })
+        return 0;
+      });
       
-      setSortedJobs(sortedJobsCopy)
+      setSortedJobs(sortedJobsCopy);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jobs, headers])
-  
+  }, [jobs, headers]);
+
+  const onTouchStart = (e: React.TouchEvent) => {
+    if (viewMode !== 'card') return;
+    const touchStart = e.touches[0].clientX;
+    
+    const handleTouchMove = (e: TouchEvent) => {
+      const touchEnd = (e as TouchEvent).touches[0].clientX;
+      const distance = touchStart - touchEnd;
+      
+      if (Math.abs(distance) > minSwipeDistance) {
+        if (distance > 0) {
+          goToNextJob();
+        } else {
+          goToPrevJob();
+        }
+        cleanup();
+      }
+    };
+    
+    const handleTouchEnd = () => {
+      cleanup();
+    };
+    
+    const cleanup = () => {
+      document.removeEventListener('touchmove', handleTouchMove);
+      document.removeEventListener('touchend', handleTouchEnd);
+    };
+    
+    document.addEventListener('touchmove', handleTouchMove);
+    document.addEventListener('touchend', handleTouchEnd);
+  };
+
   const findColumnIndex = (fieldName: string) => {
     if (!headers || headers.length === 0) return -1
     
@@ -166,35 +204,12 @@ export default function JobCardGrid({
     }, 200)
   }
   
-  const onTouchStart = (e: TouchEvent) => {
-    setTouchEnd(null)
-    setTouchStart(e.targetTouches[0].clientX)
-  }
-  
-  const onTouchMove = (e: TouchEvent) => {
-    setTouchEnd(e.targetTouches[0].clientX)
-  }
-  
-  const onTouchEnd = () => {
-    if (!touchStart || !touchEnd) return
-    
-    const distance = touchStart - touchEnd
-    const isLeftSwipe = distance > minSwipeDistance
-    const isRightSwipe = distance < -minSwipeDistance
-    
-    if (isLeftSwipe) {
-      goToNextJob()
-    } else if (isRightSwipe) {
-      goToPrevJob()
-    }
-  }
-  
   const isJobInAppliedList = (job: JobData, index: number): boolean => {
     const id = generateJobId(job, index, headers)
     return appliedJobs.includes(id)
   }
   
-  const prepareJobData = (job: JobData, index: number): PreparedJob => {
+  const prepareJobData = (job: JobData, index: number): any => {
     // Use our utility function
     const id = generateJobId(job, index, headers)
     
@@ -213,10 +228,47 @@ export default function JobCardGrid({
     const skills = getFieldValue(job, "skills", headers)
     const notes = getFieldValue(job, "notes", headers)
     
+    // Create a consistent job ID for checking applied status
+    const consistentJobId = title && company ? 
+      `${title}-${company}`.replace(/\s+/g, '-') : 
+      title || id;
+    
+    // Check if this job is in the applied list using the helper function
+    const is_applied = checkIfJobApplied(consistentJobId, title, company, appliedJobs);
+    
+    // Determine the source of the job
+    let source = job.source || '';
+    
+    // If source is not provided or is "Unknown", try to detect it
+    if (!source || source === 'Unknown') {
+      // Try to extract from URLs if available
+      const jobUrl = url || companyWebsite || '';
+      if (jobUrl) {
+        try {
+          // Import and use the extractSourceFromUrl helper
+          const { extractSourceFromUrl } = require('../utils/dataHelpers');
+          source = extractSourceFromUrl(jobUrl);
+        } catch (error) {
+          console.warn('Error extracting source from URL:', error);
+        }
+      }
+      
+      // If still no source, try to infer from company name
+      if (!source || source === 'Unknown') {
+        const companyLower = company?.toLowerCase() || '';
+        if (companyLower.includes('linkedin')) source = 'LinkedIn';
+        else if (companyLower.includes('indeed')) source = 'Indeed';
+        else if (companyLower.includes('ziprecruiter')) source = 'ZipRecruiter';
+        else if (companyLower.includes('monster')) source = 'Monster';
+        else if (companyLower.includes('glassdoor')) source = 'Glassdoor';
+        else if (companyLower.includes('dice')) source = 'Dice';
+      }
+    }
+    
     return {
       id,
       originalIndex: typeof job.originalIndex === 'number' ? job.originalIndex : index,
-      is_applied: appliedJobs.includes(id),
+      is_applied,
       title,
       company_name: company,
       location,
@@ -233,7 +285,7 @@ export default function JobCardGrid({
       experience,
       skills,
       notes,
-      source: job.source || 'Unknown'
+      source: source || 'Unknown'
     }
   }
   
@@ -299,7 +351,7 @@ export default function JobCardGrid({
       onToggleViewMode();
     } else {
       // Otherwise use internal toggle
-      setInternalViewMode(viewMode === 'card' ? 'list' : 'card');
+      setCurrentIndex(0);
     }
     setSelectedJobForDetail(null);
   }
@@ -451,9 +503,16 @@ export default function JobCardGrid({
   if (viewMode === 'list') {
     if (selectedJobForDetail) {
       // Show detail view for selected job
-      const isJobApplied = isJobInAppliedList(selectedJobForDetail, 0) || 
-                          appliedJobs.includes(selectedJobForDetail.id) || 
-                          appliedJobs.includes(selectedJobForDetail.title);
+      const title = selectedJobForDetail.title;
+      const company = selectedJobForDetail.company_name;
+      
+      // Create a consistent job ID for checking applied status
+      const consistentJobId = title && company ? 
+        `${title}-${company}`.replace(/\s+/g, '-') : 
+        title;
+      
+      // Check if this job is in the applied list using the helper function
+      const isJobApplied = checkIfJobApplied(consistentJobId, title, company, appliedJobs);
 
       return (
         <div className="animate-fade-in">
@@ -478,6 +537,7 @@ export default function JobCardGrid({
             </div>
           </div>
           <JobCard
+            key={`job-card-${selectedJobForDetail.id}-${currentIndex}`}
             job={selectedJobForDetail}
             isApplied={isJobApplied}
             onApply={() => {
@@ -542,13 +602,20 @@ export default function JobCardGrid({
             <div className="grid gap-3 overflow-y-auto px-3 py-2 h-full custom-scrollbar">
               {sortedJobs.map((job, index) => {
                 const preparedJob = prepareJobData(job, index);
-                const isJobApplied = isJobInAppliedList(job, index) || 
-                                  appliedJobs.includes(preparedJob.id) || 
-                                  appliedJobs.includes(preparedJob.title);
+                const title = preparedJob.title;
+                const company = preparedJob.company_name;
+                
+                // Create a consistent job ID for checking applied status
+                const consistentJobId = title && company ? 
+                  `${title}-${company}`.replace(/\s+/g, '-') : 
+                  title;
+                
+                // Check if this job is in the applied list using the helper function
+                const isJobApplied = checkIfJobApplied(consistentJobId, title, company, appliedJobs);
                 
                 return (
                   <div 
-                    key={preparedJob.id || index}
+                    key={`${preparedJob.id}-${index}`}
                     ref={keyboardListIndex === index ? keyboardSelectedRef : null}
                     onClick={() => handleListItemClick(job, index)}
                     className={`hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer p-4 border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg shadow-sm transition-all hover:shadow-md animate-fade-in ${
@@ -625,13 +692,20 @@ export default function JobCardGrid({
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                 {sortedJobs.map((job, index) => {
                   const preparedJob = prepareJobData(job, index);
-                  const isJobApplied = isJobInAppliedList(job, index) || 
-                                    appliedJobs.includes(preparedJob.id) || 
-                                    appliedJobs.includes(preparedJob.title);
+                  const title = preparedJob.title;
+                  const company = preparedJob.company_name;
+                  
+                  // Create a consistent job ID for checking applied status
+                  const consistentJobId = title && company ? 
+                    `${title}-${company}`.replace(/\s+/g, '-') : 
+                    title;
+                  
+                  // Check if this job is in the applied list using the helper function
+                  const isJobApplied = checkIfJobApplied(consistentJobId, title, company, appliedJobs);
                   
                   return (
                     <tr 
-                      key={preparedJob.id || index}
+                      key={`${preparedJob.id}-${index}`}
                       ref={keyboardListIndex === index ? keyboardSelectedRef : null}
                       onClick={() => handleListItemClick(job, index)}
                       className={`hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors ${
@@ -691,9 +765,14 @@ export default function JobCardGrid({
   const preparedJob = prepareJobData(currentJob, currentIndex)
   
   // Replace the existing isJobApplied check with our more robust function
-  const isJobApplied = isJobInAppliedList(currentJob, currentIndex) || 
-                       appliedJobs.includes(preparedJob.id) || 
-                       appliedJobs.includes(preparedJob.title);
+  const isJobApplied = checkIfJobApplied(
+    preparedJob.title && preparedJob.company_name ? 
+      `${preparedJob.title}-${preparedJob.company_name}`.replace(/\s+/g, '-') : 
+      preparedJob.title,
+    preparedJob.title,
+    preparedJob.company_name,
+    appliedJobs
+  );
   
   const animationClass = direction === 'left' 
     ? 'animate-slide-out-left' 
@@ -708,10 +787,9 @@ export default function JobCardGrid({
         ref={cardRef}
         className={`relative ${animationClass}`}
         onTouchStart={onTouchStart}
-        onTouchMove={onTouchMove}
-        onTouchEnd={onTouchEnd}
       >
         <JobCard
+          key={`job-card-${preparedJob.id}-${currentIndex}`}
           job={preparedJob}
           isApplied={isJobApplied}
           onApply={handleApply}

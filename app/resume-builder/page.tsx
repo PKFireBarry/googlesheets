@@ -1,14 +1,28 @@
 'use client';
 
-import { useState, useRef, useEffect, Suspense } from 'react';
+import React, { useState, useRef, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { parseResumeFile } from '../utils/resumeParser';
 import { generateResumeFile } from '../utils/resumeGenerator';
 import { ResumeData, PersonalInfo } from '../types/resume';
 import { toast, Toaster } from 'react-hot-toast';
+import Cookies from 'js-cookie';
+import { saveResume, loadResume, deleteResume, resumeExists, getResumeStorageKey } from '../utils/resumeStorage';
+import ResumeStorageUI from '../components/ResumeStorageUI';
+
+// Import our new components
+import PageHeader from '../components/resume/PageHeader';
+import ProgressBar from '../components/resume/ProgressBar';
+import ResumeUpload from '../components/resume/ResumeUpload';
+import JobDetailsForm from '../components/resume/JobDetailsForm';
+import ApiKeyConfiguration from '../components/resume/ApiKeyConfiguration';
+import TailoredResume from '../components/resume/TailoredResume';
+import ActionButtons from '../components/resume/ActionButtons';
+import DeleteConfirmDialog from '../components/resume/DeleteConfirmDialog';
+import ErrorDisplay from '../components/resume/ErrorDisplay';
 
 // Component for the Resume Builder page
-function ResumeBuilderContent() {
+function ResumeBuilderContent(): React.ReactElement {
   const searchParams = useSearchParams();
   const jobId = searchParams.get('jobId');
   
@@ -22,7 +36,7 @@ function ResumeBuilderContent() {
     description?: string;
     job_description?: string;
     requirements?: string;
-    skills?: string;
+    skills?: string | string[];
     company?: string;
     company_name?: string;
     id?: string;
@@ -33,6 +47,30 @@ function ResumeBuilderContent() {
   const [apiKey, setApiKey] = useState<string>('');
   const [generatedResume, setGeneratedResume] = useState<ResumeData | null>(null);
   const [tailoringNotes, setTailoringNotes] = useState<string>('');
+  const [showJobForm, setShowJobForm] = useState<boolean>(false);
+  const [manualJobData, setManualJobData] = useState<{
+    title: string;
+    description: string;
+    skills: string;
+    company: string;
+  }>({
+    title: '',
+    description: '',
+    skills: '',
+    company: ''
+  });
+  
+  // Add state for checking if master resume exists
+  const [masterResumeExists, setMasterResumeExists] = useState<boolean>(false);
+  
+  // Add state for confirmation dialog
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<boolean>(false);
+  
+  // Add state for active tab in the upload section
+  const [activeTab, setActiveTab] = useState<'upload' | 'manual'>('upload');
+  
+  // File input ref
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Personal info state
   const [personalInfo, setPersonalInfo] = useState<PersonalInfo>({
@@ -43,10 +81,145 @@ function ResumeBuilderContent() {
     linkedin: '',
     website: ''
   });
-
-  // File input ref
-  const fileInputRef = useRef<HTMLInputElement>(null);
   
+  // Function to load the master resume
+  const loadExistingResume = () => {
+    try {
+      const { resumeData, resumePdfData: pdfData } = loadResume();
+      
+      if (resumeData) {
+        // For parsed resume data
+        setMasterResume(resumeData);
+        
+        // Pre-fill personal info
+        setPersonalInfo({
+          name: resumeData.name || '',
+          email: resumeData.contact?.email || '',
+          phone: resumeData.contact?.phone || '',
+          location: resumeData.contact?.location || '',
+          linkedin: resumeData.contact?.linkedin || '',
+          website: resumeData.contact?.website || ''
+        });
+        
+        // Move to step 2
+        setStep(2);
+        toast.success('Your resume has been loaded from storage');
+      } else if (pdfData) {
+        // For PDF data
+        setResumePdfData(pdfData);
+        
+        // Pre-fill empty personal info (will be extracted during processing)
+        setPersonalInfo({
+          name: '',
+          email: '',
+          phone: '',
+          location: '',
+          linkedin: '',
+          website: ''
+        });
+        
+        // Move to step 2
+        setStep(2);
+        toast.success('Your PDF resume has been loaded from storage');
+      } else {
+        throw new Error('No resume found in storage');
+      }
+    } catch (e) {
+      console.error('Error loading stored resume:', e);
+      setError('Failed to load your stored resume. Please upload it again.');
+    }
+  };
+  
+  // Function to delete the saved resume
+  const deleteSavedResume = () => {
+    try {
+      // Remove the resume from localStorage
+      const success = deleteResume();
+      
+      if (success) {
+        // Update UI state
+        setMasterResumeExists(false);
+        
+        // Show success message
+        toast.success('Your saved resume has been deleted');
+        
+        console.log('Deleted resume from localStorage');
+      } else {
+        throw new Error('Failed to delete resume');
+      }
+    } catch (e) {
+      console.error('Error deleting resume:', e);
+      toast.error('Failed to delete your saved resume');
+    }
+  };
+  
+  // Format skills for display - helper function
+  const formatSkills = (skills: string | string[] | undefined): string => {
+    if (!skills) return '';
+    
+    if (typeof skills === 'string') {
+      if (skills.trim().startsWith('[')) {
+        try {
+          const parsed = JSON.parse(skills);
+          return Array.isArray(parsed) 
+            ? parsed.map((skill: string) => skill.trim()).filter(Boolean).join(', ')
+            : skills;
+        } catch {
+          return skills;
+        }
+      }
+      return skills;
+    } 
+    
+    if (Array.isArray(skills)) {
+      return skills.join(', ');
+    }
+    
+    return String(skills);
+  };
+
+  // Handle manual job data changes
+  const handleManualJobChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setManualJobData(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  // Handle manual job submission
+  const handleManualJobSubmit = () => {
+    // Validate required fields
+    if (!manualJobData.title || !manualJobData.company) {
+      setError('Please fill in at least the job title and company name.');
+      return;
+    }
+
+    // Format the skills as an array if they were entered as comma-separated
+    const formattedSkills = manualJobData.skills
+      ? manualJobData.skills
+          .split(',')
+          .map(skill => skill.trim())
+          .filter(Boolean)
+      : [];
+
+    // Set the selected job with manual data
+    setSelectedJob({
+      title: manualJobData.title,
+      job_title: manualJobData.title,
+      description: manualJobData.description,
+      job_description: manualJobData.description,
+      requirements: '',
+      skills: formattedSkills,
+      company: manualJobData.company,
+      company_name: manualJobData.company
+    });
+
+    // Hide the form
+    setShowJobForm(false);
+    setError(null);
+  };
+
   // Load jobs and job details directly from the URL parameter
   useEffect(() => {
     const loadJobs = async () => {
@@ -56,25 +229,24 @@ function ResumeBuilderContent() {
           let jobData = null;
           
           // Try to find the job in different storage locations
-        const savedJobsData = localStorage.getItem('savedJobs');
-        if (savedJobsData) {
-          try {
-            const savedJobs = JSON.parse(savedJobsData);
-            if (savedJobs && typeof savedJobs === 'object') {
+          const savedJobsData = localStorage.getItem('savedJobs');
+          if (savedJobsData) {
+            try {
+              const savedJobs = JSON.parse(savedJobsData);
+              if (savedJobs && typeof savedJobs === 'object') {
                 // Find the job with the matching id
                 const job = savedJobs[jobId];
                 if (job) {
                   console.log('Found job from URL parameter:', job.title || job.job_title);
                   setSelectedJob(job);
-                  // No need to load all other jobs since we're going directly to customize step
                   return;
                 }
+              }
+            } catch (e) {
+              console.error('Error parsing savedJobs:', e);
             }
-          } catch (e) {
-            console.error('Error parsing savedJobs:', e);
           }
-        }
-        
+          
           // If job not found in savedJobs, look in other storage locations
           const storedData = localStorage.getItem('jobData');
           if (storedData) {
@@ -88,8 +260,8 @@ function ResumeBuilderContent() {
                   setSelectedJob(job);
                   return;
                 }
-            }
-          } catch (e) {
+              }
+            } catch (e) {
               console.error('Error parsing jobData:', e);
             }
           }
@@ -97,6 +269,8 @@ function ResumeBuilderContent() {
           console.warn('Job not found with ID:', jobId);
         } else {
           console.log('No job ID provided, user will need to choose a job manually');
+          // Do NOT automatically show job form - leave it collapsed by default
+          setShowJobForm(false);
         }
       } catch (error) {
         console.error('Error loading job data:', error);
@@ -104,55 +278,42 @@ function ResumeBuilderContent() {
       }
     };
     
-    // Load API key from various sources
+    // Load API key from localStorage or cookie
     const loadApiKey = () => {
-      // First, check if API key is in URL query params
-      const apiKeyParam = searchParams.get('apiKey') || searchParams.get('geminiApiKey') || searchParams.get('key');
-      if (apiKeyParam) {
-        console.log('Found API key in URL query parameters');
-        setApiKey(apiKeyParam);
-        // Save to localStorage for future use
-        localStorage.setItem('geminiApiKey', apiKeyParam);
+      // First try from cookie (cross-page consistency)
+      const cookieApiKey = Cookies.get('geminiApiKey');
+      if (cookieApiKey) {
+        setApiKey(cookieApiKey);
+        console.log('API key loaded from cookie');
         return;
       }
       
-      // Check localStorage and cookies for the API key
-      const storedApiKey = localStorage.getItem('geminiApiKey');
-      if (storedApiKey) {
-        console.log('Found API key in localStorage');
-        setApiKey(storedApiKey);
-        return;
-      }
-      
-      // Try other common API key storage locations
-      ['apiKey', 'googleApiKey', 'GEMINI_API_KEY', 'gemini_api_key'].forEach(keyName => {
-        const keyValue = localStorage.getItem(keyName);
-        if (keyValue && !apiKey) {
-          console.log(`Found API key in localStorage (${keyName})`);
-          setApiKey(keyValue);
-        }
-      });
-      
-      // Check cookies for API key
-      const getCookieValue = (name: string) => {
-        const value = `; ${document.cookie}`;
-        const parts = value.split(`; ${name}=`);
-        if (parts.length === 2) {
-          return parts.pop()?.split(';').shift() || '';
-        }
-        return '';
-      };
-      
-      const cookieValue = getCookieValue('geminiApiKey');
-        if (cookieValue) {
-        console.log('Found API key in cookies');
-          setApiKey(cookieValue);
+      // Fall back to localStorage
+      const localStorageApiKey = localStorage.getItem('geminiApiKey');
+      if (localStorageApiKey) {
+        setApiKey(localStorageApiKey);
+        console.log('API key loaded from localStorage');
+        
+        // Also save to cookie for cross-page consistency
+        Cookies.set('geminiApiKey', localStorageApiKey, { expires: 30 });
       }
     };
     
+    // Debug logging for finding sheets
+    console.log('Checking for sheet URL in cookie:', Cookies.get('lastSheetUrl'));
+    console.log('Checking for sheet URL in localStorage:', localStorage.getItem('lastSheetUrl'));
+    
+    // Check for existing resume - moved to its own useEffect for focus
     loadJobs();
     loadApiKey();
   }, [jobId, searchParams, apiKey]);
+  
+  // Dedicated useEffect for checking and loading existing resume
+  useEffect(() => {
+    // Check if resume exists
+    const exists = resumeExists();
+    setMasterResumeExists(exists);
+  }, []);
   
   // Handle resume file upload
   const handleResumeUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -199,7 +360,13 @@ function ResumeBuilderContent() {
                 website: ''
               });
               
-              // Skip directly to step 2 (customize - was step 3 before)
+              // Store the resume for future use
+              setTimeout(() => {
+                saveResume(null, base64Data);
+                setMasterResumeExists(true);
+              }, 500);
+              
+              // Skip directly to step 2
               setStep(2);
             } else {
               toast.error("Failed to extract PDF data");
@@ -222,24 +389,30 @@ function ResumeBuilderContent() {
         fileReader.readAsDataURL(file);
       } else {
         // For other formats, use the existing parser
-      const parsedResume = await parseResumeFile(file);
-      setMasterResume(parsedResume);
+        const parsedResume = await parseResumeFile(file);
+        setMasterResume(parsedResume);
         
         // Clear any previously stored PDF data
         setResumePdfData(null);
       
-      // Pre-fill personal info from the parsed resume
-      setPersonalInfo({
-        name: parsedResume.name || '',
-        email: parsedResume.contact.email || '',
-        phone: parsedResume.contact.phone || '',
-        location: parsedResume.contact.location || '',
-        linkedin: parsedResume.contact.linkedin || '',
-        website: parsedResume.contact.website || ''
-      });
-      
-        // Skip directly to step 2 (customize - was step 3 before)
-      setStep(2);
+        // Pre-fill personal info from the parsed resume
+        setPersonalInfo({
+          name: parsedResume.name || '',
+          email: parsedResume.contact.email || '',
+          phone: parsedResume.contact.phone || '',
+          location: parsedResume.contact.location || '',
+          linkedin: parsedResume.contact.linkedin || '',
+          website: parsedResume.contact.website || ''
+        });
+        
+        // Store the resume for future use
+        setTimeout(() => {
+          saveResume(parsedResume, null);
+          setMasterResumeExists(true);
+        }, 500);
+        
+        // Skip directly to step 2
+        setStep(2);
       }
     } catch (error) {
       console.error('Error processing resume:', error);
@@ -261,8 +434,23 @@ function ResumeBuilderContent() {
   
   // Generate the tailored resume
   const handleGenerateResume = async () => {
-    if ((!masterResume && !resumePdfData) || !selectedJob || (!apiKey && !localStorage.getItem('geminiApiKey'))) {
-      setError('Please upload a resume, select a job, and provide a Gemini API key.');
+    // Check if we have a resume and API key
+    if ((!masterResume && !resumePdfData)) {
+      setError('Please upload a resume before continuing.');
+      return;
+    }
+    
+    if (!apiKey && !localStorage.getItem('geminiApiKey')) {
+      setError('Please provide a Gemini API key to continue.');
+      return;
+    }
+    
+    // Check if we have job details from either selectedJob or manualJobData
+    const hasSelectedJob = !!selectedJob;
+    const hasManualJobData = !!(manualJobData.title && manualJobData.company);
+    
+    if (!hasSelectedJob && !hasManualJobData) {
+      setError('Please select a job or enter job details manually.');
       return;
     }
     
@@ -270,14 +458,24 @@ function ResumeBuilderContent() {
       setIsLoading(true);
       setError(null);
       
-      // Extract job data to send to the API
-      const jobData = {
-        title: selectedJob.title || selectedJob.job_title,
-        description: selectedJob.description || selectedJob.job_description,
-        requirements: selectedJob.requirements || '',
-        skills: selectedJob.skills || '',
-        company: selectedJob.company_name || selectedJob.company
-      };
+      // Extract job data to send to the API - either from selectedJob or manualJobData
+      const jobData = hasSelectedJob 
+        ? {
+            title: selectedJob.title || selectedJob.job_title,
+            description: selectedJob.description || selectedJob.job_description,
+            requirements: selectedJob.requirements || '',
+            skills: Array.isArray(selectedJob.skills) 
+              ? selectedJob.skills.join(', ') 
+              : formatSkills(selectedJob.skills) || '',
+            company: selectedJob.company_name || selectedJob.company
+          }
+        : {
+            title: manualJobData.title,
+            description: manualJobData.description,
+            requirements: '',
+            skills: manualJobData.skills,
+            company: manualJobData.company
+          };
       
       // Call the resume API
       const response = await fetch('/api/resume', {
@@ -361,300 +559,130 @@ function ResumeBuilderContent() {
     }
   };
   
-  // Render different steps of the process
-  const renderStep = () => {
-    switch (step) {
-      case 1:
-        return (
-          <div className="bg-white shadow-md rounded-lg p-6 max-w-4xl mx-auto">
-            <h2 className="text-2xl font-bold mb-4">Step 1: Upload Your Resume</h2>
-            <p className="text-gray-600 mb-6">
-              Upload your resume in PDF or DOCX format. This will be used to create a tailored resume
-              that matches the job description.
-            </p>
-            
-            {/* PDF support info box */}
-            <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-md text-blue-800 dark:text-blue-300 text-sm flex items-start mt-2 mb-4">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <div>
-                <p className="font-medium">📄 PDF Processing Feature</p>
-                <p>Upload your resume as a PDF file to have it processed directly by Gemini AI. This allows for better recognition of formatting, tables, and visual elements in your resume!</p>
-              </div>
-            </div>
-            
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center mb-6">
-              <input
-                type="file"
-                ref={fileInputRef}
-                accept=".pdf,.docx"
-                onChange={handleResumeUpload}
-                className="hidden"
-                id="resume-upload"
-              />
-              <label
-                htmlFor="resume-upload"
-                className="bg-blue-600 text-white px-4 py-2 rounded cursor-pointer hover:bg-blue-700 transition"
-              >
-                Select Resume File
-              </label>
-              <p className="mt-2 text-sm text-gray-500">Supported formats: PDF (recommended), DOCX</p>
-              
-              {resumePdfData && (
-                <div className="flex items-center justify-center text-sm text-green-600 mt-3">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  PDF uploaded and ready for processing with Gemini AI
-                </div>
-              )}
-            </div>
-            
-            {selectedJob && (
-              <div className="bg-blue-50 p-4 rounded-lg mb-6">
-                <h3 className="font-semibold text-blue-800">Selected Job</h3>
-                <p className="text-blue-700">
-                  {selectedJob.title || selectedJob.job_title} at {selectedJob.company_name || selectedJob.company}
-                </p>
-              </div>
-            )}
-            
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <h3 className="font-semibold mb-2">Why Tailor Your Resume?</h3>
-              <p className="text-gray-700 text-sm">
-                Studies show that 61% of employees believe tailoring your resume for each specific job is the best way to ensure its effectiveness.
-                Recruiters often spend as little as 5 seconds on initial screening, and applications that do not contain relevant keywords may be
-                filtered out by Applicant Tracking Systems (ATS) before a human even sees them.
-              </p>
-            </div>
-          </div>
-        );
-        
-      case 2:
-        return (
-          <div className="bg-white shadow-md rounded-lg p-6 max-w-4xl mx-auto">
-            <h2 className="text-2xl font-bold mb-4">Step 2: Customize Your Resume</h2>
-            <p className="text-gray-600 mb-6">
-              Provide your Gemini API key to generate your tailored resume.
-            </p>
-            
-            <div className="mb-6 bg-blue-50 p-4 rounded-lg">
-              <h3 className="font-semibold text-blue-800 mb-2">Contact Information</h3>
-              <p className="text-blue-700">
-                Your contact information will be automatically extracted from your uploaded {resumePdfData ? 'PDF' : 'resume'}.
-                You don't need to enter it manually.
-              </p>
-            </div>
-            
-            <div className="mb-6">
-              <h3 className="font-semibold mb-3">Gemini API Key</h3>
-              <div>
-                <input
-                  type="password"
-                  value={apiKey}
-                  onChange={handleApiKeyChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                  placeholder="Enter your Gemini API key"
-                />
-                <p className="text-sm text-gray-500 mt-1">
-                  Your API key is stored locally and never sent to our servers. You can get a free Gemini API key from{' '}
-                  <a
-                    href="https://makersuite.google.com/app/apikey"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-600 hover:underline"
-                  >
-                    Google&apos;s Maker Suite
-                  </a>.
-                </p>
-              </div>
-            </div>
-            
-            {selectedJob && (
-            <div className="bg-blue-50 p-4 rounded-lg mb-6">
-              <h3 className="font-semibold text-blue-800">Selected Job</h3>
-              <p className="text-blue-700">
-                {selectedJob.title || selectedJob.job_title} at {selectedJob.company_name || selectedJob.company}
-              </p>
-            </div>
-            )}
-            
-            <div className="flex justify-between">
-              <button
-                onClick={() => setStep(1)}
-                className="bg-gray-200 text-gray-700 px-4 py-2 rounded hover:bg-gray-300 transition"
-              >
-                Back
-              </button>
-              
-              <button
-                onClick={handleGenerateResume}
-                disabled={isLoading}
-                className={`${
-                  isLoading ? 'bg-blue-400' : 'bg-blue-600 hover:bg-blue-700'
-                } text-white px-4 py-2 rounded transition flex items-center`}
-              >
-                {isLoading ? (
-                  <>
-                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Generating...
-                  </>
-                ) : (
-                  'Generate Tailored Resume'
-                )}
-              </button>
-            </div>
-          </div>
-        );
-        
-      case 3:
-        return (
-          <div className="bg-white shadow-md rounded-lg p-6 max-w-4xl mx-auto">
-            <h2 className="text-2xl font-bold mb-4">Step 3: Your Tailored Resume</h2>
-            <p className="text-gray-600 mb-6">
-              Your tailored resume is ready! Review the changes and download it in your preferred format.
-            </p>
-            
-            {tailoringNotes && (
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
-                <h3 className="font-semibold text-yellow-800 mb-2">Tailoring Notes</h3>
-                <p className="text-yellow-700 text-sm">{tailoringNotes}</p>
-              </div>
-            )}
-            
-            <div className="border rounded-lg p-6 mb-6">
-              <h3 className="font-semibold text-xl mb-3">{generatedResume?.name}</h3>
-              
-              <div className="text-sm text-gray-600 mb-4">
-                {generatedResume?.contact.email} • {generatedResume?.contact.phone} • {generatedResume?.contact.location}
-                {generatedResume?.contact.linkedin && ` • ${generatedResume.contact.linkedin}`}
-                {generatedResume?.contact.website && ` • ${generatedResume.contact.website}`}
-              </div>
-              
-              <div className="mb-4">
-                <h4 className="font-semibold mb-1">Summary</h4>
-                <p className="text-gray-700">{generatedResume?.summary}</p>
-              </div>
-              
-              <div className="mb-4">
-                <h4 className="font-semibold mb-1">Skills</h4>
-                <p className="text-gray-700">{generatedResume?.skills.join(', ')}</p>
-              </div>
-              
-              <div className="mb-4">
-                <h4 className="font-semibold mb-2">Experience</h4>
-                {generatedResume?.experience.map((exp, index) => (
-                  <div key={index} className="mb-3">
-                    <div className="flex justify-between items-start">
-                      <div className="font-medium">{exp.title}</div>
-                      <div className="text-sm text-gray-500">{exp.dates}</div>
-                    </div>
-                    <div className="text-sm text-gray-600 italic">{exp.company}, {exp.location}</div>
-                    <ul className="list-disc list-inside text-sm text-gray-700 mt-1">
-                      {exp.highlights.map((highlight, i) => (
-                        <li key={i}>{highlight}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-              
-              <div className="preview-truncated text-center py-4 border-t border-dashed">
-                <p className="text-gray-500">Resume preview is truncated. Download to see the full resume.</p>
-              </div>
-            </div>
-            
-            <div className="flex flex-col sm:flex-row gap-4 justify-center mb-6">
-              <button
-                onClick={() => handleDownloadResume('pdf')}
-                disabled={isLoading}
-                className={`${
-                  isLoading ? 'bg-green-400' : 'bg-green-600 hover:bg-green-700'
-                } text-white px-6 py-3 rounded transition flex items-center justify-center`}
-              >
-                {isLoading ? 'Downloading...' : 'Download as PDF'}
-              </button>
-              
-              <button
-                onClick={() => handleDownloadResume('docx')}
-                disabled={isLoading}
-                className={`${
-                  isLoading ? 'bg-blue-400' : 'bg-blue-600 hover:bg-blue-700'
-                } text-white px-6 py-3 rounded transition flex items-center justify-center`}
-              >
-                {isLoading ? 'Downloading...' : 'Download as DOCX'}
-              </button>
-            </div>
-            
-            <div className="flex justify-between">
-              <button
-                onClick={() => setStep(2)}
-                className="bg-gray-200 text-gray-700 px-4 py-2 rounded hover:bg-gray-300 transition"
-              >
-                Back
-              </button>
-              
-              <button
-                onClick={handleStartOver}
-                className="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition"
-              >
-                Start Over
-              </button>
-            </div>
-          </div>
-        );
-        
-      default:
-        return null;
-    }
-  };
-  
+  // Render the resume builder
   return (
-    <div className="min-h-screen bg-gray-50 py-12 px-4">
+    <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 no-overflow mobile-container">
       <Toaster position="top-right" />
-      <div className="max-w-7xl mx-auto">
-        <div className="text-center mb-10">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Resume Builder</h1>
-          <p className="text-gray-600">Create a tailored resume for your job application</p>
-        </div>
+      <div className="max-w-6xl mx-auto">
+        {/* Page Header */}
+        <PageHeader />
         
-        {/* Progress bar */}
-        <div className="max-w-4xl mx-auto mb-8">
-          <div className="flex justify-between mb-2">
-            {['Upload Resume', 'Customize', 'Download'].map((stepTitle, index) => (
-              <div
-                key={index}
-                className={`text-sm font-medium ${
-                  step > index + 1 ? 'text-blue-600' : step === index + 1 ? 'text-blue-800' : 'text-gray-400'
-                }`}
-              >
-                {stepTitle}
+        {/* Progress Bar */}
+        <ProgressBar 
+          currentStep={step} 
+          totalSteps={3} 
+          stepTitles={['Upload Resume', 'Job Details', 'Download']} 
+        />
+        
+        {/* Error Display */}
+        <ErrorDisplay error={error} />
+        
+        {/* Step Content */}
+        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 max-w-4xl mx-auto border border-gray-100 dark:border-gray-700">
+          {step === 1 && (
+            <>
+              <h2 className="text-2xl font-bold mb-4">Step 1: Upload or Create a Resume</h2>
+              
+              <div className="mb-6">
+                <ResumeUpload 
+                  onUpload={handleResumeUpload}
+                  isLoading={isLoading}
+                  resumePdfData={resumePdfData}
+                  masterResumeExists={masterResumeExists}
+                  onLoadExisting={loadExistingResume}
+                  onShowDeleteConfirm={() => setShowDeleteConfirm(true)}
+                  activeTab={activeTab}
+                  onTabChange={(tab) => setActiveTab(tab)}
+                />
+                
+                {activeTab === 'manual' && (
+                  <JobDetailsForm 
+                    manualJobData={manualJobData}
+                    onChange={handleManualJobChange}
+                    onSubmit={handleManualJobSubmit}
+                    selectedJob={selectedJob}
+                    formatSkills={formatSkills}
+                  />
+                )}
               </div>
-            ))}
-          </div>
-          <div className="h-2 bg-gray-200 rounded-full">
-            <div
-              className="h-full bg-blue-600 rounded-full transition-all duration-300"
-              style={{ width: `${((step - 1) / 2) * 100}%` }}
-            ></div>
-          </div>
+            </>
+          )}
+          
+          {step === 2 && (
+            <>
+              <h2 className="text-2xl font-bold mb-4">Step 2: Job Details</h2>
+              <p className="text-gray-600 dark:text-gray-300 mb-6 text-mobile-sm">
+                Review the job details below and make sure they're correct before generating your tailored resume.
+              </p>
+              
+              <JobDetailsForm 
+                manualJobData={manualJobData}
+                onChange={handleManualJobChange}
+                onSubmit={handleManualJobSubmit}
+                selectedJob={selectedJob}
+                formatSkills={formatSkills}
+              />
+              
+              <div className="mb-6 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                <h3 className="font-semibold text-blue-800 dark:text-blue-300 mb-2">Contact Information</h3>
+                <p className="text-blue-700 dark:text-blue-300">
+                  Your contact information will be automatically extracted from your uploaded {resumePdfData ? 'PDF' : 'resume'}.
+                  You don't need to enter it manually.
+                </p>
+              </div>
+              
+              {!apiKey && (
+                <ApiKeyConfiguration
+                  apiKey={apiKey}
+                  onChange={handleApiKeyChange}
+                />
+              )}
+              
+              <ActionButtons 
+                step={step}
+                onPrevious={() => setStep(1)}
+                onNext={handleGenerateResume}
+                nextLabel="Generate Tailored Resume"
+                isLoading={isLoading}
+                isNextDisabled={!selectedJob && !showJobForm}
+                nextDisabledReason="Please select a job or enter job details"
+              />
+            </>
+          )}
+          
+          {step === 3 && (
+            <>
+              <h2 className="text-2xl font-bold mb-4">Step 3: Your Tailored Resume</h2>
+              <p className="text-gray-600 dark:text-gray-300 mb-6 text-mobile-sm">
+                Your tailored resume is ready! Review the changes and download it in your preferred format.
+              </p>
+              
+              <TailoredResume 
+                generatedResume={generatedResume}
+                tailoringNotes={tailoringNotes}
+                isLoading={isLoading}
+                formatSkills={formatSkills}
+                onDownload={handleDownloadResume}
+              />
+              
+              <ActionButtons 
+                step={step}
+                onPrevious={() => setStep(2)}
+                onStartOver={handleStartOver}
+              />
+            </>
+          )}
         </div>
         
-        {/* Error message */}
-        {error && (
-          <div className="max-w-4xl mx-auto mb-6">
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
-              <p>{error}</p>
-            </div>
-          </div>
-        )}
-        
-        {/* Step content */}
-        {renderStep()}
+        {/* Delete Confirmation Dialog */}
+        <DeleteConfirmDialog
+          show={showDeleteConfirm}
+          onConfirm={() => {
+            deleteSavedResume();
+            setShowDeleteConfirm(false);
+          }}
+          onCancel={() => setShowDeleteConfirm(false)}
+        />
       </div>
     </div>
   );
@@ -662,7 +690,14 @@ function ResumeBuilderContent() {
 
 export default function ResumeBuilderPage() {
   return (
-    <Suspense fallback={<div>Loading...</div>}>
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-400">Loading Resume Builder...</p>
+        </div>
+      </div>
+    }>
       <ResumeBuilderContent />
     </Suspense>
   );

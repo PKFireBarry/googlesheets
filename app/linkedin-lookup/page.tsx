@@ -3,8 +3,15 @@
 import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import CookieUtil from '../utils/cookies'
-import { Loader2, Search, Linkedin, Globe, Settings, ArrowRight, Plus, Key, ExternalLink, HelpCircle, X, Copy, Check, MessageSquare, ChevronDown, Sparkles } from 'lucide-react'
+import { Loader2, Linkedin, HelpCircle, ChevronDown } from 'lucide-react'
 import { lookupLinkedInHR, LinkedInContactData } from '../utils/webhook'
+import ApiKeyConfiguration from '../components/linkedin/ApiKeyConfiguration'
+import CompanySelector from '../components/linkedin/CompanySelector'
+import JobDetails from '../components/linkedin/JobDetails'
+import LinkedInContacts from '../components/linkedin/LinkedInContacts'
+import HowItWorksModal from '../components/linkedin/HowItWorksModal'
+import ApiInfoModal from '../components/linkedin/ApiInfoModal'
+import PageHeader from '../components/linkedin/PageHeader'
 
 // Helper function to extract spreadsheet ID from URL
 function extractSpreadsheetId(url: string): string | null {
@@ -17,17 +24,24 @@ function extractSpreadsheetId(url: string): string | null {
 const formatUrl = (url: string): string => {
   if (!url || url === 'n/a' || url === 'N/A') return '';
   
+  // Remove any whitespace
+  url = url.trim();
+  
   // If the URL already has a protocol, return it as is
   if (url.startsWith('http://') || url.startsWith('https://')) {
     return url;
   }
   
-  // For LinkedIn URLs, add https://www. if needed
+  // For LinkedIn URLs, handle various formats
   if (url.includes('linkedin.com')) {
-    if (url.startsWith('www.')) {
-      return `https://${url}`;
-    } else {
+    // Remove any leading slashes or www.
+    url = url.replace(/^\/+/, '').replace(/^www\./, '');
+    
+    // Make sure it doesn't already start with linkedin.com and add https://www.
+    if (!url.startsWith('linkedin.com')) {
       return `https://www.${url}`;
+    } else {
+    return `https://www.${url}`;
     }
   }
   
@@ -48,8 +62,9 @@ function LinkedInLookupContent() {
   const [useCustomCompany, setUseCustomCompany] = useState(false)
   const [searchResults, setSearchResults] = useState<LinkedInContactData[]>([])
   const [isSearching, setIsSearching] = useState(false)
-  const [autoSearchDone, setAutoSearchDone] = useState(false) // Track if auto-search has been done
+  const [autoSearchDone, setAutoSearchDone] = useState(false)
   const [geminiApiKey, setGeminiApiKey] = useState('')
+  const [autoSearchEnabled, setAutoSearchEnabled] = useState(false)
   
   // Add state variables for tracking the task status
   const [taskStatus, setTaskStatus] = useState<string>('idle')
@@ -62,14 +77,16 @@ function LinkedInLookupContent() {
   
   const [selectedJob, setSelectedJob] = useState<Record<string, unknown> | null>(null)
   const [copiedMessageIds, setCopiedMessageIds] = useState<Record<string, boolean>>({})
-  const [messageTemplates] = useState([
-    { id: 'default', name: 'Standard Introduction' },
-    { id: 'specific', name: 'Skill-Specific' },
-    { id: 'referral', name: 'Job Referral' },
-    { id: 'connection', name: 'Connection Request' },
-    { id: 'ai', name: '✨ AI-Generated' }
-  ])
-  const [selectedTemplateIds, setSelectedTemplateIds] = useState<Record<string, string>>({})
+  
+  // We only need the referral template
+  const [messageTemplate] = useState('referral')
+  
+  // State for editable messages
+  const [editableMessages, setEditableMessages] = useState<Record<string, string>>({})
+  const [isEditingMessage, setIsEditingMessage] = useState<Record<string, boolean>>({})
+  
+  // Add state for how it works modal
+  const [showHowItWorksModal, setShowHowItWorksModal] = useState(false)
   
   useEffect(() => {
     // Load companies from cookie or search params on mount
@@ -82,6 +99,32 @@ function LinkedInLookupContent() {
         if (savedApiKey) {
           console.log('Found saved Gemini API key, loading...')
           setGeminiApiKey(savedApiKey)
+          
+          // Add debug log to verify the API key is being loaded correctly
+          console.log(`API key loaded from cookie: ${savedApiKey.substring(0, 3)}...`)
+        }
+        
+        // Check if we have a jobId in the URL - if so, try to load from localStorage first
+        const jobId = searchParams.get("jobId")
+        if (jobId) {
+          console.log('JobID found in URL:', jobId)
+          try {
+            // Try to get job data from localStorage
+            const savedJobs = JSON.parse(localStorage.getItem('savedJobs') || '{}')
+            if (savedJobs[jobId]) {
+              console.log('Found saved job data in localStorage:', savedJobs[jobId])
+              setSelectedJob(savedJobs[jobId])
+              
+              // If we have a company name, set it as the selected company
+              if (savedJobs[jobId].company_name) {
+                setSelectedCompany(savedJobs[jobId].company_name)
+              }
+            } else {
+              console.log('No saved job data found for jobId:', jobId)
+            }
+          } catch (error) {
+            console.error('Error loading job data from localStorage:', error)
+          }
         }
         
         // Load or extract company names
@@ -112,6 +155,14 @@ function LinkedInLookupContent() {
             if (companyNames.length > 0) {
               console.log('Setting', companyNames.length, 'unique companies from sheet data cookie')
               setCompanies(companyNames)
+              
+              // Try to find matching job for selected company (if any)
+              if (companyParam) {
+                console.log('Selected company from URL:', companyParam);
+                const jobInfo = extractJobInfo(companyParam, data);
+                setSelectedJob(jobInfo);
+              }
+              
               setLoading(false)
               return
             } else {
@@ -153,7 +204,7 @@ function LinkedInLookupContent() {
     }
     
     loadData()
-  }, [searchParams])
+  }, [searchParams, companyParam])
   
   // Helper function to extract company names from data
   const extractCompanyNames = (data: Record<string, any>[]) => {
@@ -268,23 +319,37 @@ function LinkedInLookupContent() {
   // Auto-trigger search when company is provided in URL
   useEffect(() => {
     // Only auto-search if:
-    // 1. We have a company parameter
+    // 1. We have a company parameter (either from URL or selected from our company list)
     // 2. We're not already searching
     // 3. We haven't done an auto-search yet
-    // 4. The URL has an 'autoSearch=true' parameter
+    // 4. Either autoSearch=true parameter is present OR jobId is present
+    // 5. Auto-search is explicitly enabled via URL parameter
+    const companyToSearch = companyParam || selectedCompany;
     const shouldAutoSearch = 
-      companyParam && 
+      companyToSearch && 
       !isSearching && 
       !autoSearchDone && 
-      searchParams.get('autoSearch') === 'true';
+      autoSearchEnabled && // Only auto-search if explicitly enabled
+      (searchParams.get('autoSearch') === 'true' || searchParams.get('jobId'));
     
     if (shouldAutoSearch) {
-      console.log('Auto-triggering search for company:', companyParam);
+      console.log('Auto-triggering search for company:', companyToSearch);
+      // Set a slight delay to allow the company to be set
+      setTimeout(() => {
       handleSearch();
       setAutoSearchDone(true); // Mark auto-search as done
+      }, 500);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [companyParam, isSearching, autoSearchDone, searchParams]);
+  }, [companyParam, selectedCompany, isSearching, autoSearchDone, searchParams, autoSearchEnabled]);
+  
+  // Check for autoSearch parameter in URL to enable/disable auto-search
+  useEffect(() => {
+    const autoSearchParam = searchParams.get('autoSearch');
+    if (autoSearchParam === 'true') {
+      setAutoSearchEnabled(true);
+    }
+  }, [searchParams]);
   
   const handleSaveSettings = () => {
     try {
@@ -330,10 +395,22 @@ function LinkedInLookupContent() {
       return
     }
     
-    // For LinkedIn direct method, we need a Gemini API key
+    // Log the current API key state to debug
+    console.log('Current geminiApiKey state:', geminiApiKey ? `${geminiApiKey.substring(0, 3)}...` : 'not set')
+    console.log('Environment API key:', process.env.NEXT_PUBLIC_GEMINI_API_KEY ? 'set' : 'not set')
+    
+    // Check if we have an API key in cookie but not in state
     if (!geminiApiKey && !process.env.NEXT_PUBLIC_GEMINI_API_KEY) {
+      const cookieApiKey = CookieUtil.get("geminiApiKey")
+      if (cookieApiKey) {
+        console.log('Found API key in cookie but not in state, using cookie value')
+        // Use the cookie value directly
+        setGeminiApiKey(cookieApiKey)
+        // Continue with the search using the cookie value
+      } else {
       setError('Please configure the Gemini API key first')
       return
+      }
     }
     
     console.log(`Starting search for company: ${companyToSearch}`)
@@ -351,8 +428,8 @@ function LinkedInLookupContent() {
     try {
       console.log(`Starting search for company: ${companyToSearch}`);
       
-      // Get job data for this company to pass to the LinkedIn lookup
-      const jobInfo = extractJobInfo();
+      // Pass the full job data from selectedJob if available
+      const jobInfo = selectedJob || extractJobInfo();
       console.log('Job data for lookup:', jobInfo);
       
       try {
@@ -372,11 +449,14 @@ function LinkedInLookupContent() {
           }
         };
         
+        // Use the cookie value if state is not set yet
+        const apiKeyToUse = geminiApiKey || CookieUtil.get("geminiApiKey") || undefined
+        
         // Use the direct LinkedIn lookup method with polling and status updates
         // Pass the job data as the third parameter
         const responseData = await lookupLinkedInHR(
           companyToSearch, 
-          geminiApiKey,
+          apiKeyToUse,
           jobInfo, // Pass job data to enhance personalization
           180000, // 3 minutes timeout
           statusUpdateCallback
@@ -387,10 +467,10 @@ function LinkedInLookupContent() {
         if (responseData && responseData.length > 0) {
           // If the API returned a suggested message, default to the AI template
           if (responseData[0].suggestedMessage) {
-            // Set AI template as default for this contact
-            setSelectedTemplateIds(prev => ({
+            // Initialize editable message with the suggested message
+            setEditableMessages(prev => ({
               ...prev,
-              [responseData[0].linkedinUrl || responseData[0].name]: 'ai'
+              [responseData[0].linkedinUrl || responseData[0].name]: responseData[0].suggestedMessage as string
             }));
           }
           
@@ -430,44 +510,73 @@ function LinkedInLookupContent() {
   }
   
   // Helper function to extract job information for message generation
-  const extractJobInfo = () => {
+  const extractJobInfo = (companyName: string | null = null, data: any[] | null = null) => {
     try {
+      const targetCompany = companyName || selectedCompany;
+      let parsedData = data;
+      
+      if (!parsedData) {
       const sheetData = CookieUtil.get("sheetData")
       if (!sheetData) {
-        return null
+          return null;
       }
       
-      const data = JSON.parse(sheetData)
+        parsedData = JSON.parse(sheetData);
+      }
       
       // For simplicity, we'll use the first job in the list that matches the company
       // In a more advanced implementation, you could add a job selector
-      if (selectedCompany && data && Array.isArray(data)) {
-        const matchingJob = data.find((job: Record<string, unknown>) => {
-          const jobCompany = (job.company_name || job.company || '') as string
-          return jobCompany.toLowerCase().includes(selectedCompany.toLowerCase())
-        })
+      if (targetCompany && parsedData && Array.isArray(parsedData)) {
+        const matchingJob = parsedData.find((job: Record<string, unknown>) => {
+          const jobCompany = (job.company_name || job.company || '') as string;
+          return jobCompany.toLowerCase().includes(targetCompany.toLowerCase());
+        });
         
-        return matchingJob || null
+        return matchingJob || null;
       }
       
-      return null
+      return null;
     } catch (error) {
-      console.error("Error extracting job info:", error)
-      return null
+      console.error("Error extracting job info:", error);
+      return null;
     }
   }
   
-  // Generate outreach message based on job and contact details and template
-  const generateOutreachMessage = (
-    contact: LinkedInContactData, 
-    job: Record<string, unknown> | null,
-    templateId: string = 'default'
-  ) => {
-    // If the AI has generated a message for this contact, use it
-    if (templateId === 'ai' && contact.suggestedMessage) {
-      return contact.suggestedMessage as string;
+  // Helper function to safely get string value from job object
+  const getJobValue = (job: Record<string, unknown> | null, keys: string[]): string => {
+    if (!job) return '';
+    
+    for (const key of keys) {
+      if (job[key] !== undefined && job[key] !== null) {
+        if (typeof job[key] === 'string') return job[key] as string;
+        return String(job[key]);
+      }
     }
     
+    return '';
+  }
+  
+  // Helper function to safely get skills array from job object
+  const getSkillsArray = (job: Record<string, unknown> | null): string[] => {
+    if (!job || !job.skills) return [];
+    
+    if (typeof job.skills === 'string') {
+      return job.skills.split(',').map(s => s.trim());
+    }
+    
+    if (Array.isArray(job.skills)) {
+      return job.skills.map(s => String(s).trim());
+    }
+    
+    return [];
+  }
+  
+  // Generate outreach message based on job and contact details
+  const generateOutreachMessage = (
+    contact: LinkedInContactData, 
+    job: Record<string, unknown> | null
+  ) => {
+    // We'll use the original referral template
     const contactName = contact.name !== 'n/a' ? contact.name.split(' ')[0] : 'Hiring Manager'
     const jobTitle = (job?.title || job?.job_title || 'the open position') as string
     const companyName = contact.company || selectedCompany || 'your company'
@@ -481,38 +590,7 @@ function LinkedInLookupContent() {
       }
     }
     
-    // Standard introduction template
-    if (templateId === 'default') {
-      return `Hi ${contactName},
-
-I hope this message finds you well. I noticed you're a ${contact.title} at ${companyName}, and I'm very interested in ${jobTitle} at your company.
-
-${skills.length > 0 ? `I have experience with ${skills.join(', ')}, which I believe aligns well with what you're looking for.` : `I'm particularly drawn to this role because of the company's reputation and the opportunity to contribute my skills.`}
-
-Would you be open to a brief conversation about this opportunity and how my background might be a good fit? I'd appreciate any insights you could share.
-
-Thank you for your time and consideration.
-
-Best regards`
-    }
-    
-    // Skill-specific template
-    if (templateId === 'specific') {
-      return `Hi ${contactName},
-
-I came across the ${jobTitle} role at ${companyName} and wanted to connect directly with you as the ${contact.title}.
-
-${skills.length > 0 ? 
-`I've been working extensively with ${skills.join(', ')}, and was excited to see these skills mentioned in the job description. I've successfully delivered projects using these technologies at my current position.` : 
-`I have several years of relevant experience that aligns perfectly with the requirements in your job description.`}
-
-I'd love to discuss how my background could benefit your team. Are you available for a quick chat this week?
-
-Thanks,`
-    }
-    
-    // Job referral template
-    if (templateId === 'referral') {
+    // Original job referral template
       return `Hello ${contactName},
 
 I hope I'm reaching out to the right person. I'm interested in the ${jobTitle} position at ${companyName} and was wondering if you're involved in the hiring process.
@@ -522,42 +600,6 @@ I've carefully reviewed the job description and believe my background in ${skill
 Could you kindly let me know if you're the appropriate contact for this role or if you could refer me to the right person? I'd be grateful for any guidance you can provide.
 
 Thank you for your assistance,`
-    }
-    
-    // Connection request template
-    if (templateId === 'connection') {
-      return `Hi ${contactName},
-
-I'm reaching out to connect with you as a ${contact.title} at ${companyName}. I'm currently exploring opportunities in ${jobTitle.includes('at') ? jobTitle.split('at')[0].trim() : jobTitle} and would love to join your professional network.
-
-${skills.length > 0 ? `My background includes experience with ${skills.join(', ')}, and I'm always looking to connect with professionals in the field.` : `I've been following ${companyName} and am impressed with the work your team is doing.`}
-
-Looking forward to connecting!
-
-Best regards,`
-    }
-    
-    // Default to standard template if templateId doesn't match
-    return `Hi ${contactName},
-
-I'm interested in connecting regarding the ${jobTitle} role at ${companyName}.
-
-Would you be open to a brief conversation about this opportunity?
-
-Thank you,`
-  }
-  
-  // Set default template for a contact
-  const setTemplateForContact = (contactId: string, templateId: string) => {
-    setSelectedTemplateIds(prev => ({
-      ...prev,
-      [contactId]: templateId
-    }))
-  }
-  
-  // Get current template for a contact
-  const getTemplateForContact = (contactId: string): string => {
-    return selectedTemplateIds[contactId] || 'default'
   }
   
   // Handle copy message to clipboard
@@ -574,98 +616,78 @@ Thank you,`
       })
   }
   
-  // When search results are loaded, try to find matching job info
+  // When search results are loaded, try to find matching job info if not already set
   useEffect(() => {
-    if (searchResults.length > 0) {
-      const jobInfo = extractJobInfo()
-      setSelectedJob(jobInfo)
+    if (searchResults.length > 0 && !selectedJob) {
+      const jobInfo = extractJobInfo();
+      if (jobInfo) {
+        setSelectedJob(jobInfo);
+      }
     }
-  }, [searchResults, selectedCompany])
+  }, [searchResults, selectedJob])
+  
+  // Handle editing a message
+  const handleEditMessage = (contactId: string) => {
+    // If not currently editing, prepare the editable message first
+    if (!isEditingMessage[contactId]) {
+      // Use the existing editable message or generate a new one
+      const message = editableMessages[contactId] || 
+                     generateOutreachMessage(
+                       // Find the matching contact
+                       searchResults.find(c => (c.linkedinUrl || c.name) === contactId) as LinkedInContactData, 
+                       selectedJob
+                     );
+                     
+      // Set the editable message
+      setEditableMessages(prev => ({
+        ...prev,
+        [contactId]: message
+      }));
+    }
+    
+    // Toggle editing mode for this contact
+    setIsEditingMessage(prev => ({
+      ...prev,
+      [contactId]: !prev[contactId]
+    }));
+  }
+  
+  // Handle saving edited message
+  const handleSaveMessage = (contactId: string) => {
+    setIsEditingMessage(prev => ({
+      ...prev,
+      [contactId]: false
+    }))
+  }
+  
+  // Handle message text change
+  const handleMessageChange = (contactId: string, newMessage: string) => {
+    setEditableMessages(prev => ({
+      ...prev,
+      [contactId]: newMessage
+    }))
+  }
+  
+  // Handle regenerating a message (reset to original)
+  const handleRegenerateMessage = (contactId: string, contact: LinkedInContactData) => {
+    // Generate a fresh message based on the contact and selected job
+    const freshMessage = generateOutreachMessage(contact, selectedJob);
+    
+    // Update the editable message state
+    setEditableMessages(prev => ({
+      ...prev,
+      [contactId]: freshMessage
+    }));
+  }
   
   return (
-    <div className="max-w-6xl mx-auto">
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 no-overflow mobile-container">
       {/* API Key Information Modal */}
       {showApiInfoModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center">
-                  <Key className="w-6 h-6 mr-2 text-blue-600" />
-                  Getting Your Free Gemini API Key
-                </h2>
-                <button 
-                  onClick={() => setShowApiInfoModal(false)}
-                  className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
-                >
-                  <X className="w-6 h-6" />
-                </button>
-              </div>
-              
-              <div className="space-y-6">
-                <div>
-                  <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">Why Use Your Own API Key?</h3>
-                  <ul className="list-disc pl-5 space-y-1 text-gray-700 dark:text-gray-300">
-                    <li>It's completely <span className="font-medium">FREE</span> to get and use</li>
-                    <li>Unlimited LinkedIn searches with no additional cost</li>
-                    <li>Faster results without relying on our shared API resources</li>
-                    <li>More reliable service without quota limitations</li>
-                    <li>Better privacy as all AI processing happens with your own key</li>
-                  </ul>
-                </div>
-                
-                <div>
-                  <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">How to Get Your API Key:</h3>
-                  <ol className="list-decimal pl-5 space-y-3 text-gray-700 dark:text-gray-300">
-                    <li>
-                      <p>Visit the Google AI Studio API Key page:</p>
-                      <a 
-                        href="https://aistudio.google.com/app/apikey" 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="text-blue-600 hover:text-blue-800 dark:text-blue-400 hover:underline inline-flex items-center mt-1"
-                      >
-                        https://aistudio.google.com/app/apikey
-                        <ExternalLink className="w-3 h-3 ml-1" />
-                      </a>
-                    </li>
-                    <li>Sign in with your Google Account (or create one if needed)</li>
-                    <li>Click on "Create API Key" button</li>
-                    <li>Give your key a name (e.g., "LinkedIn Lookup")</li>
-                    <li>Copy the generated API key</li>
-                    <li>Paste it in the API Key field on this page</li>
-                    <li>Click "Save Configuration" to securely store your key</li>
-                  </ol>
-                </div>
-                
-                <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 p-4 rounded-md">
-                  <h3 className="text-md font-medium text-blue-800 dark:text-blue-300 mb-1">Your API Key is Stored Securely</h3>
-                  <p className="text-sm text-blue-700 dark:text-blue-400">
-                    Your API key is stored only in your browser's cookies with secure settings.
-                    We never store your API key on our servers or share it with third parties.
-                  </p>
-                </div>
-              </div>
-              
-              <div className="mt-6 flex justify-end">
-                <button
-                  onClick={() => setShowApiInfoModal(false)}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md"
-                >
-                  Got it
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <ApiInfoModal onClose={() => setShowApiInfoModal(false)} />
       )}
       
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold mb-2 text-gray-900 dark:text-white">LinkedIn HR Lookup</h1>
-        <p className="text-gray-600 dark:text-gray-400">
-          Find HR personnel and recruiters at companies to help with your job applications
-        </p>
-      </div>
+      <PageHeader />
       
       {error && (
         <div className="mb-6 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-300 px-4 py-3 rounded-md">
@@ -683,522 +705,102 @@ Thank you,`
         </div>
       )}
       
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="md:col-span-1">
-          {/* API Key Configuration */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
-            <div className="flex items-center mb-4">
-              <Settings className="w-5 h-5 mr-2 text-blue-600 dark:text-blue-400" />
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">LinkedIn Lookup Configuration</h2>
+      {/* How To Use Section - Moved to top */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border border-gray-100 dark:border-gray-700 mb-6 sm:mb-8">
+        <button 
+          onClick={() => setShowHowItWorksModal(true)}
+          className="w-full flex items-center justify-between"
+        >
+          <div className="flex items-center">
+            <div className="bg-blue-100 dark:bg-blue-900/30 p-2 rounded-lg mr-3">
+              <HelpCircle className="w-5 h-5 text-blue-600 dark:text-blue-400" />
             </div>
-            
-            <div className="mb-4">
-              <div className="flex items-center justify-between">
-                <label htmlFor="gemini-api-key" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Gemini API Key
-                </label>
-                <button
-                  onClick={() => setShowApiInfoModal(true)}
-                  className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 inline-flex items-center text-xs"
-                >
-                  <HelpCircle className="w-3 h-3 mr-1" />
-                  How to get an API key
-                </button>
-              </div>
-              <div className="relative">
-                <input
-                  id="gemini-api-key"
-                  type="password"
-                  value={geminiApiKey}
-                  onChange={(e) => setGeminiApiKey(e.target.value)}
-                  placeholder="Enter your Google Gemini API key"
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white pr-10"
-                />
-                <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-                  <Key className="h-4 w-4 text-gray-500" />
-                </div>
-              </div>
-              <div className="mt-1">
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Get a <span className="font-medium">FREE</span> API key from{" "}
-                  <a 
-                    href="https://aistudio.google.com/app/apikey" 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 underline"
-                  >
-                    Google AI Studio
-                  </a>
-                </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Using your own API key allows unlimited searches at no cost to you.
-                </p>
-              </div>
-            </div>
-            
-            <div className="flex space-x-2">
-              <button
-                onClick={handleSaveSettings}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md"
-              >
-                Save Configuration
-              </button>
-            </div>
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white">How to Use LinkedIn Connection Finder</h2>
           </div>
-          
-          {/* Company Selection */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-            <div className="flex items-center mb-4">
-              <Globe className="w-5 h-5 mr-2 text-blue-600 dark:text-blue-400" />
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">Company Selection</h2>
-            </div>
-            
-            {loading ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-              </div>
-            ) : error ? (
-              <div className="bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-300 px-4 py-3 rounded-md">
-                <p>{error}</p>
-                {!CookieUtil.get("lastSheetUrl") && (
-                  <p className="mt-2 text-sm">Please load a Google Sheet on the home page first.</p>
-                )}
-              </div>
-            ) : companies.length === 0 ? (
-              <div className="bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-400 text-yellow-700 dark:text-yellow-300 px-4 py-3 rounded-md">
-                <p>No companies found</p>
-                <p className="mt-2 text-sm">Please load a Google Sheet with company data on the home page or use the custom company input below.</p>
-                
-                {/* Add custom company input when no companies are found */}
-                <div className="mt-4">
-                  <label htmlFor="customCompany" className="block text-sm font-medium text-yellow-800 dark:text-yellow-300 mb-1">
-                    Custom Company:
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      id="customCompanyFallback"
-                      value={customCompany}
-                      onChange={(e) => setCustomCompany(e.target.value)}
-                      placeholder="Enter company name"
-                      className="flex-1 px-3 py-2 border border-yellow-400 bg-white dark:bg-yellow-900/20 rounded-md shadow-sm text-yellow-800 dark:text-yellow-200"
-                    />
-                    <button
-                      onClick={handleSearch}
-                      disabled={!customCompany || isSearching}
-                      className={`px-4 py-2 rounded-md font-medium flex items-center ${
-                        !customCompany || isSearching
-                          ? 'bg-yellow-300/50 cursor-not-allowed text-yellow-700/50'
-                          : 'bg-yellow-500 hover:bg-yellow-600 text-white'
-                      }`}
-                    >
-                      <Search className="w-4 h-4 mr-2" />
-                      Search
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <>
-                <div className="space-y-4">
-                  <h2 className="text-lg font-medium text-gray-900 dark:text-white">LinkedIn Lookup</h2>
-                  
-                  <div className="space-y-4">
-                    {/* Company Selection */}
-                    <div>
-                      <label htmlFor="company" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                        Company
-                      </label>
-                      
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1">
-                          {useCustomCompany ? (
-                            <input
-                              type="text"
-                              id="customCompany"
-                              value={customCompany}
-                              onChange={(e) => setCustomCompany(e.target.value)}
-                              placeholder="Enter company name"
-                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:text-white"
-                            />
-                          ) : (
-                            <select
-                              id="company"
-                              value={selectedCompany}
-                              onChange={(e) => setSelectedCompany(e.target.value)}
-                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:text-white"
-                            >
-                              <option value="">Select a company</option>
-                              {companies.map((company) => (
-                                <option key={company} value={company}>
-                                  {company}
-                                </option>
-                              ))}
-                            </select>
-                          )}
-                        </div>
-                        
-                        <button
-                          type="button"
-                          onClick={() => setUseCustomCompany(!useCustomCompany)}
-                          className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-700 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700"
-                        >
-                          <Plus className="w-4 h-4 mr-1.5" />
-                          {useCustomCompany ? "Use List" : "Custom"}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                
-                <button
-                  onClick={handleSearch}
-                  disabled={!selectedCompany || isSearching}
-                  className={`w-full px-4 py-2 rounded-md font-medium flex items-center justify-center ${
-                    !selectedCompany || isSearching
-                      ? 'bg-gray-400 cursor-not-allowed text-gray-200'
-                      : 'bg-blue-600 hover:bg-blue-700 text-white'
-                  }`}
-                >
-                  {isSearching ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Searching...
-                    </>
-                  ) : (
-                    <>
-                      <Search className="w-4 h-4 mr-2" />
-                      Find HR Contacts
-                    </>
-                  )}
-                </button>
-              </>
-            )}
-          </div>
-        </div>
+          <ChevronDown className="w-5 h-5 text-gray-500 dark:text-gray-400" />
+        </button>
         
-        <div className="md:col-span-2">
-          {/* Search Results */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-            <div className="flex items-center mb-4">
-              <Linkedin className="w-5 h-5 mr-2 text-blue-600 dark:text-blue-400" />
-              <h2 className="text-xl font-bold text-gray-900 dark:text-white">LinkedIn HR Contacts</h2>
-            </div>
-            
-            {/* Display based on search state */}
-            {!geminiApiKey && !process.env.NEXT_PUBLIC_GEMINI_API_KEY ? (
-              <div className="bg-yellow-100 dark:bg-yellow-900/30 border border-yellow-400 text-yellow-700 dark:text-yellow-300 px-4 py-3 rounded-md">
-                <p className="font-medium">Gemini API Key not configured</p>
-                <p className="mt-2 text-sm">Please enter and save your Google Gemini API key to enable LinkedIn lookups.</p>
-                <div className="mt-3">
-                  <a 
-                    href="https://aistudio.google.com/app/apikey" 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center text-sm font-medium text-yellow-800 dark:text-yellow-200 hover:underline"
-                  >
-                    <ExternalLink className="h-4 w-4 mr-1" />
-                    Get a free API key from Google AI Studio
-                  </a>
-                </div>
-              </div>
-            ) : isSearching ? (
-              <div className="flex flex-col items-center justify-center py-12">
-                <Loader2 className="w-12 h-12 animate-spin text-blue-600 mb-4" />
-                <p className="text-gray-700 dark:text-gray-300">Searching for HR contacts at {selectedCompany}...</p>
-                
-                {/* Show current task status */}
-                <p className="text-sm text-blue-600 dark:text-blue-400 mt-2">
-                  {statusMessage || 'Initializing search...'}
-                </p>
-                
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-                  {taskElapsedTime > 0 ? `${taskElapsedTime} seconds elapsed` : 'This may take 2-3 minutes to complete'}
-                </p>
-                
-                {/* Progress bar */}
-                <div className="mt-4 w-64 bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
-                  <div 
-                    className="bg-blue-600 h-2.5 rounded-full transition-all duration-300 ease-in-out" 
-                    style={{ width: `${Math.min(taskProgress, 100)}%` }}
-                  ></div>
-                </div>
-                
-                {/* Show additional status info based on current stage */}
-                {taskStatus === 'polling' && (
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                    Checking if browser automation is complete...
-                  </p>
-                )}
-                
-                {taskStatus === 'processing' && (
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                    Browser automation complete! Processing data with AI...
-                  </p>
-                )}
-              </div>
-            ) : error ? (
-              <div className="bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-300 px-4 py-3 rounded-md">
-                <p className="font-medium">Lookup unsuccessful</p>
-                <p className="mt-2 text-sm">{error}</p>
-                {error.includes('timeout') && (
-                  <div className="mt-4">
-                    <p className="font-medium">What happened?</p>
-                    <p className="text-sm mt-1">
-                      The search is still running, but our server timed out waiting for a response.
-                      This happens because free Vercel hosting has a 10-second timeout limit.
-                    </p>
-                    <p className="text-sm mt-1">
-                      Your search might complete in the background. You can try again in a few minutes.
-                    </p>
-                  </div>
-                )}
-              </div>
-            ) : searchResults.length > 0 ? (
-              <div className="space-y-4">
-                {searchResults.map((contact, index) => (
-                  <div key={index} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-750">
-                    <div className="flex justify-between items-start">
-                      <div className="flex items-start">
-                        {contact.profileImage && (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img 
-                            src={contact.profileImage} 
-                            alt={`${contact.name} profile`}
-                            className="w-12 h-12 rounded-full mr-3 object-cover"
-                            onError={(e) => {
-                              // Handle image load errors by hiding the image
-                              (e.target as HTMLImageElement).style.display = 'none'
-                            }}
-                          />
-                        )}
-                        <div>
-                          <h3 className="font-medium text-gray-900 dark:text-white">{contact.name}</h3>
-                          <p className="text-sm text-gray-600 dark:text-gray-400">{contact.title}</p>
-                          {contact.location && (
-                            <p className="text-sm text-gray-500 dark:text-gray-500">{contact.location}</p>
-                          )}
-                        </div>
-                      </div>
-                      {contact.linkedinUrl && (
-                        <a 
-                          href={contact.linkedinUrl} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="flex items-center text-blue-600 dark:text-blue-400 text-sm hover:underline"
-                        >
-                          View Profile
-                          <ArrowRight className="w-3 h-3 ml-1" />
-                        </a>
-                      )}
-                    </div>
-                    
-                    {contact.email && (
-                      <div className="mt-2 text-sm">
-                        <span className="font-medium text-gray-700 dark:text-gray-300">Email: </span>
-                        <a href={`mailto:${contact.email}`} className="text-blue-600 dark:text-blue-400 hover:underline">
-                          {contact.email}
-                        </a>
-                      </div>
-                    )}
-                    
-                    {contact.linkedinUrl && (
-                      <div className="mt-1 text-sm">
-                        <span className="font-medium text-gray-700 dark:text-gray-300">LinkedIn: </span>
-                        <a 
-                          href={contact.linkedinUrl} 
-                          target="_blank" 
-                          rel="noopener noreferrer" 
-                          className="text-blue-600 dark:text-blue-400 hover:underline"
-                        >
-                          {contact.linkedinUrl}
-                        </a>
-                      </div>
-                    )}
-                    
-                    {contact.phone && (
-                      <div className="mt-1 text-sm">
-                        <span className="font-medium text-gray-700 dark:text-gray-300">Phone: </span>
-                        <a href={`tel:${contact.phone}`} className="text-blue-600 dark:text-blue-400 hover:underline">
-                          {contact.phone}
-                        </a>
-                      </div>
-                    )}
-                    
-                    {contact.website && (
-                      <div className="mt-1 text-sm">
-                        <span className="font-medium text-gray-700 dark:text-gray-300">Website: </span>
-                        <a href={contact.website} target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">
-                          {contact.website}
-                        </a>
-                      </div>
-                    )}
-                    
-                    {contact.birthday && (
-                      <div className="mt-1 text-sm">
-                        <span className="font-medium text-gray-700 dark:text-gray-300">Birthday: </span>
-                        <span className="text-gray-600 dark:text-gray-400">{contact.birthday}</span>
-                      </div>
-                    )}
-                    
-                    <div className="border-t border-gray-200 dark:border-gray-700 mt-4 pt-4">
-                      <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Contact Actions</h3>
-                      <div className="flex flex-wrap gap-2">
-                        {contact.linkedinUrl && contact.linkedinUrl !== 'n/a' && (
-                          <a 
-                            href={formatUrl(contact.linkedinUrl)} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900/50"
-                          >
-                            <Linkedin className="w-3.5 h-3.5 mr-1.5" />
-                            View Profile
-                          </a>
-                        )}
-                      </div>
-                    </div>
-                    
-                    {/* LinkedIn Outreach Message Generator */}
-                    <div className="border-t border-gray-200 dark:border-gray-700 mt-4 pt-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">LinkedIn Message Template</h3>
-                        
-                        <div className="flex items-center gap-2">
-                          {/* Template Selector */}
-                          <div className="relative">
-                            <select
-                              value={getTemplateForContact(contact.linkedinUrl || contact.name)}
-                              onChange={(e) => setTemplateForContact(contact.linkedinUrl || contact.name, e.target.value)}
-                              className="text-xs bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md py-1 pl-2 pr-6 appearance-none"
-                            >
-                              {messageTemplates.map(template => (
-                                <option 
-                                  key={template.id} 
-                                  value={template.id}
-                                  className={template.id === 'ai' ? 'text-blue-600 font-medium' : ''}
-                                >
-                                  {template.name}
-                                </option>
-                              ))}
-                            </select>
-                            <ChevronDown className="absolute right-1 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none text-gray-500" />
-                          </div>
-                          
-                          {/* Copy Button */}
-                          <button
-                            onClick={() => copyMessageToClipboard(
-                              generateOutreachMessage(
-                                contact, 
-                                selectedJob,
-                                getTemplateForContact(contact.linkedinUrl || contact.name)
-                              ),
-                              contact.linkedinUrl || contact.name
-                            )}
-                            className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-md bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-900/50"
-                          >
-                            {copiedMessageIds[contact.linkedinUrl || contact.name] ? (
-                              <>
-                                <Check className="w-3.5 h-3.5 mr-1" />
-                                Copied!
-                              </>
-                            ) : (
-                              <>
-                                <Copy className="w-3.5 h-3.5 mr-1" />
-                                Copy Message
-                              </>
-                            )}
-                          </button>
-                        </div>
-                      </div>
-                      
-                      <div className="mt-3 p-3 text-xs bg-gray-50 dark:bg-gray-900 rounded-md border border-gray-200 dark:border-gray-700 font-mono whitespace-pre-wrap">
-                        {generateOutreachMessage(
-                          contact, 
-                          selectedJob, 
-                          getTemplateForContact(contact.linkedinUrl || contact.name)
-                        )}
-                      </div>
-                      
-                      <div className="mt-2 flex justify-end">
-                        {contact.linkedinUrl && contact.linkedinUrl !== 'n/a' && (
-                          <a 
-                            href={`${formatUrl(contact.linkedinUrl)}/message`} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700"
-                          >
-                            <MessageSquare className="w-3.5 h-3.5 mr-1.5" />
-                            Message on LinkedIn
-                          </a>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : selectedCompany ? (
-              <div className="bg-blue-100 dark:bg-blue-900/30 border border-blue-400 text-blue-700 dark:text-blue-300 px-4 py-3 rounded-md">
-                <p>Click &quot;Find HR Contacts" to search for HR personnel at {selectedCompany}</p>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center py-12 text-center">
-                <Search className="w-12 h-12 text-gray-400 dark:text-gray-600 mb-4" />
-                <p className="text-gray-700 dark:text-gray-300">Select a company and click "Find HR Contacts"</p>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-                  This will use browser automation to find HR contacts on LinkedIn
-                </p>
-              </div>
-            )}
-          </div>
-          
-          {/* How It Works */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mt-6">
-            <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">How It Works</h2>
-            
-            <div className="space-y-4">
-              <div className="flex items-start">
-                <div className="flex-shrink-0 bg-blue-100 dark:bg-blue-900/30 rounded-full p-2 mr-3">
-                  <span className="text-blue-600 dark:text-blue-400 font-bold">1</span>
-                </div>
-                <div>
-                  <h3 className="font-medium text-gray-900 dark:text-white">Configure API Key</h3>
-                  <p className="text-gray-600 dark:text-gray-400">Set up your Google Gemini API key to enable AI processing</p>
-                </div>
-              </div>
-              
-              <div className="flex items-start">
-                <div className="flex-shrink-0 bg-blue-100 dark:bg-blue-900/30 rounded-full p-2 mr-3">
-                  <span className="text-blue-600 dark:text-blue-400 font-bold">2</span>
-                </div>
-                <div>
-                  <h3 className="font-medium text-gray-900 dark:text-white">Select Company</h3>
-                  <p className="text-gray-600 dark:text-gray-400">Choose a company from your Google Sheet</p>
-                </div>
-              </div>
-              
-              <div className="flex items-start">
-                <div className="flex-shrink-0 bg-blue-100 dark:bg-blue-900/30 rounded-full p-2 mr-3">
-                  <span className="text-blue-600 dark:text-blue-400 font-bold">3</span>
-                </div>
-                <div>
-                  <h3 className="font-medium text-gray-900 dark:text-white">Automated Search</h3>
-                  <p className="text-gray-600 dark:text-gray-400">The system uses browser automation to search LinkedIn for HR personnel</p>
-                </div>
-              </div>
-              
-              <div className="flex items-start">
-                <div className="flex-shrink-0 bg-blue-100 dark:bg-blue-900/30 rounded-full p-2 mr-3">
-                  <span className="text-blue-600 dark:text-blue-400 font-bold">4</span>
-                </div>
-                <div>
-                  <h3 className="font-medium text-gray-900 dark:text-white">AI Processing</h3>
-                  <p className="text-gray-600 dark:text-gray-400">Google's Gemini Flash 2.0 processes the results into structured data</p>
-                </div>
-              </div>
-            </div>
-          </div>
+        <div className="mt-4 text-gray-600 dark:text-gray-400">
+          <p>Click to learn how this tool works and what you can do with it.</p>
         </div>
       </div>
+      
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+        {/* API Key Configuration - Only show if no API key is available */}
+        {(!geminiApiKey && !process.env.NEXT_PUBLIC_GEMINI_API_KEY) ? (
+          <div className="lg:col-span-1">
+            <ApiKeyConfiguration 
+              geminiApiKey={geminiApiKey}
+              setGeminiApiKey={setGeminiApiKey}
+              onSave={handleSaveSettings}
+              onHelp={() => setShowApiInfoModal(true)}
+            />
+          </div>
+        ) : null}
+        
+        {/* Company Selection */}
+        {!selectedJob && (
+          <div className={(!geminiApiKey && !process.env.NEXT_PUBLIC_GEMINI_API_KEY) ? 'lg:col-span-2' : 'lg:col-span-3'}>
+            <CompanySelector
+              loading={loading}
+              error={error}
+              companies={companies}
+              selectedCompany={selectedCompany}
+              setSelectedCompany={setSelectedCompany}
+              customCompany={customCompany}
+              setCustomCompany={setCustomCompany}
+              useCustomCompany={useCustomCompany}
+              setUseCustomCompany={setUseCustomCompany}
+              isSearching={isSearching}
+              onSearch={handleSearch}
+            />
+          </div>
+        )}
+      </div>
+      
+      {/* Combined Job Details and LinkedIn Contacts Section */}
+      <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 mb-6 sm:mb-8 border border-gray-100 dark:border-gray-700">
+        {/* Job Details Section (within combined container) */}
+        {selectedJob && (
+          <JobDetails 
+            job={selectedJob}
+            getJobValue={getJobValue}
+            getSkillsArray={getSkillsArray}
+            isSearching={isSearching}
+            onSearch={handleSearch}
+          />
+        )}
+        
+        {/* Search Results (within combined container) */}
+        <LinkedInContacts
+          geminiApiKey={geminiApiKey}
+          selectedCompany={selectedCompany}
+          isSearching={isSearching}
+          taskStatus={taskStatus}
+          taskProgress={taskProgress}
+          taskElapsedTime={taskElapsedTime}
+          statusMessage={statusMessage}
+          searchResults={searchResults}
+          selectedJob={selectedJob}
+          error={error}
+          editableMessages={editableMessages}
+          isEditingMessage={isEditingMessage}
+          copiedMessageIds={copiedMessageIds}
+          formatUrl={formatUrl}
+          onEditMessage={handleEditMessage}
+          onSaveMessage={handleSaveMessage}
+          onMessageChange={handleMessageChange}
+          onRegenerateMessage={handleRegenerateMessage}
+          onCopyMessage={copyMessageToClipboard}
+          generateOutreachMessage={generateOutreachMessage}
+          onSearch={handleSearch}
+        />
+      </div>
+      
+      {/* How To Use Modal - Full Screen Version */}
+      {showHowItWorksModal && (
+        <HowItWorksModal onClose={() => setShowHowItWorksModal(false)} />
+      )}
     </div>
   )
 }
@@ -1207,9 +809,17 @@ Thank you,`
 export default function LinkedInLookupPage() {
   return (
     <Suspense fallback={
-      <div className="max-w-6xl mx-auto p-8 flex justify-center items-center">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-        <span className="ml-2 text-gray-700 dark:text-gray-300">Loading...</span>
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col justify-center items-center p-8">
+        <div className="text-center">
+          <div className="inline-block relative">
+            <div className="w-16 h-16 rounded-full border-4 border-blue-200 dark:border-blue-800 border-t-blue-600 dark:border-t-blue-400 animate mb-4"></div>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Linkedin className="w-8 h-8 text-blue-600 dark:text-blue-400" />
+            </div>
+          </div>
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white mt-4 mb-2">Loading LinkedIn Lookup</h2>
+          <p className="text-gray-600 dark:text-gray-400">Please wait while we prepare your HR contact finder</p>
+        </div>
       </div>
     }>
       <LinkedInLookupContent />
