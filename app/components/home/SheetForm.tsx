@@ -80,14 +80,6 @@ const SheetForm: React.FC<SheetFormProps> = ({
             )}
           </div>
         </div>
-        
-        <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">
-          To start tracking jobs, create a Google Sheet with job listings and make it public (File &gt; Share &gt; "Anyone with the link").
-        </p>
-        <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">
-          Required columns: "title", "company", "location", "link", "applied" (true/false), "date" (mm/dd/yyyy).<br />
-          Optional columns: "salary" (Format: $XX-$YY/hr or $XXk-$YYk/yr), "description", "skills", "notes".
-        </p>
       </form>
     </div>
   );

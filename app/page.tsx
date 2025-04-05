@@ -66,12 +66,14 @@ export default function Home() {
     showLastDayOnly: false,
     minSalary: 0,
     salaryType: "any" as SalaryType,
-    excludedWords: []
+    excludedWords: [],
+    sourceFilter: ""
   });
   
   const [uniqueLocations, setUniqueLocations] = useState<string[]>([]);
   const [uniqueSkills, setUniqueSkills] = useState<string[]>([]);
   const [newExcludeWord, setNewExcludeWord] = useState<string>("");
+  const [newSkill, setNewSkill] = useState<string>("");
   const [viewMode, setViewMode] = useState<'card' | 'list'>(() => {
     const savedViewMode = Cookies.get("viewMode");
     return savedViewMode === 'list' ? 'list' : 'card';
@@ -81,9 +83,9 @@ export default function Home() {
 
   // Load saved filters on initial render
   useEffect(() => {
-    const savedFilters = Cookies.get("savedFilters");
-    if (savedFilters) {
-      try {
+    try {
+      const savedFilters = Cookies.get("savedFilters");
+      if (savedFilters) {
         const parsedFilters = JSON.parse(savedFilters);
         setFilters({
           filterText: parsedFilters.filterText || "",
@@ -93,11 +95,12 @@ export default function Home() {
           showLastDayOnly: parsedFilters.showLastDayOnly || false,
           minSalary: parsedFilters.minSalary || 0,
           salaryType: parsedFilters.salaryType || "any",
-          excludedWords: parsedFilters.excludedWords || []
+          excludedWords: parsedFilters.excludedWords || [],
+          sourceFilter: parsedFilters.sourceFilter || ""
         });
-      } catch (e) {
-        console.error("Error loading saved filters:", e);
       }
+    } catch (e) {
+      console.error("Error loading saved filters:", e);
     }
   }, []);
 
@@ -201,6 +204,19 @@ export default function Home() {
       });
     }
 
+    // Apply source filter
+    if (filters.sourceFilter) {
+      filtered = filtered.filter((row) => {
+        const source = getFieldValue(row, "source", headers) || '';
+        const url = getFieldValue(row, "url", headers) || '';
+        const companyWebsite = getFieldValue(row, "company_website", headers) || '';
+        
+        // Check both explicit source field and extract from URL if needed
+        const jobSource = source || extractSourceFromUrl(url || companyWebsite).toLowerCase();
+        return jobSource.toLowerCase().includes(filters.sourceFilter.toLowerCase());
+      });
+    }
+
     // Apply salary filter
     if (filters.minSalary > 0) {
       filtered = filtered.filter((row) => {
@@ -213,8 +229,11 @@ export default function Home() {
     // Apply excluded words filter
     if (filters.excludedWords.length > 0) {
       filtered = filtered.filter((row) => {
+        const title = getFieldValue(row, "title", headers).toLowerCase();
         const description = getFieldValue(row, "description", headers).toLowerCase();
-        return !filters.excludedWords.some(word => description.includes(word.toLowerCase()));
+        return !filters.excludedWords.some(word => 
+          title.includes(word.toLowerCase()) || description.includes(word.toLowerCase())
+        );
       });
     }
 
@@ -246,7 +265,7 @@ export default function Home() {
     }));
 
     setFilteredRows(filteredWithIndices);
-  }, [data, filters.filterText, filters.selectedLocation, filters.skillFilter, filters.showLastDayOnly, filters.minSalary, filters.salaryType, filters.excludedWords, appliedJobs]);
+  }, [data, filters.filterText, filters.selectedLocation, filters.skillFilter, filters.showLastDayOnly, filters.minSalary, filters.salaryType, filters.excludedWords, appliedJobs, filters.sourceFilter]);
 
   const handleUrlSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -565,6 +584,7 @@ export default function Home() {
           minSalary: filters.minSalary,
           salaryType: filters.salaryType,
           excludedWords: updatedWords,
+          sourceFilter: filters.sourceFilter
         };
         Cookies.set("savedFilters", JSON.stringify(filtersToSave), { expires: 30 });
       }
@@ -585,6 +605,7 @@ export default function Home() {
       minSalary: filters.minSalary,
       salaryType: filters.salaryType,
       excludedWords: updatedWords,
+      sourceFilter: filters.sourceFilter
     };
     Cookies.set("savedFilters", JSON.stringify(filtersToSave), { expires: 30 });
   };
@@ -599,6 +620,7 @@ export default function Home() {
       minSalary: filters.minSalary,
       salaryType: filters.salaryType,
       excludedWords: filters.excludedWords,
+      sourceFilter: filters.sourceFilter
     };
     Cookies.set("savedFilters", JSON.stringify(filtersToSave), { expires: 30 }); // Save for 30 days
   };
@@ -613,7 +635,8 @@ export default function Home() {
       showLastDayOnly: false,
       minSalary: 0,
       salaryType: "any" as SalaryType,
-      excludedWords: []
+      excludedWords: [],
+      sourceFilter: ""
     });
     // Also clear saved filters from cookies
     Cookies.remove("savedFilters");
@@ -656,6 +679,65 @@ export default function Home() {
   const headers = data.length > 0 ? data[0] : [];
   const jobsLoaded = data.length > 1;
 
+  // Add new skill
+  const handleAddSkill = () => {
+    if (newSkill.trim() !== "") {
+      const skill = newSkill.trim();
+      // Convert to array of skills if it's a string
+      const currentSkills = filters.skillFilter.length 
+        ? filters.skillFilter.split(',').map(s => s.trim()) 
+        : [];
+        
+      if (!currentSkills.includes(skill)) {
+        const updatedSkills = [...currentSkills, skill];
+        setFilters(prev => ({ 
+          ...prev, 
+          skillFilter: updatedSkills.join(',') 
+        }));
+        setNewSkill("");
+        
+        // Save to cookies immediately
+        const filtersToSave = {
+          filterText: filters.filterText,
+          selectedLocation: filters.selectedLocation,
+          skillFilter: updatedSkills.join(','),
+          showFilters: filters.showFilters,
+          showLastDayOnly: filters.showLastDayOnly,
+          minSalary: filters.minSalary,
+          salaryType: filters.salaryType,
+          excludedWords: filters.excludedWords,
+          sourceFilter: filters.sourceFilter
+        };
+        Cookies.set("savedFilters", JSON.stringify(filtersToSave), { expires: 30 });
+      }
+    }
+  };
+
+  // Remove skill
+  const handleRemoveSkill = (skill: string) => {
+    const currentSkills = filters.skillFilter.split(',').map(s => s.trim());
+    const updatedSkills = currentSkills.filter(s => s !== skill);
+    
+    setFilters(prev => ({ 
+      ...prev, 
+      skillFilter: updatedSkills.join(',') 
+    }));
+    
+    // Save to cookies immediately
+    const filtersToSave = {
+      filterText: filters.filterText,
+      selectedLocation: filters.selectedLocation,
+      skillFilter: updatedSkills.join(','),
+      showFilters: filters.showFilters,
+      showLastDayOnly: filters.showLastDayOnly,
+      minSalary: filters.minSalary,
+      salaryType: filters.salaryType,
+      excludedWords: filters.excludedWords,
+      sourceFilter: filters.sourceFilter
+    };
+    Cookies.set("savedFilters", JSON.stringify(filtersToSave), { expires: 30 });
+  };
+
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 no-overflow mobile-container">
       {/* Page Header */}
@@ -695,7 +777,8 @@ export default function Home() {
             showLastDayOnly: filters.showLastDayOnly,
             minSalary: filters.minSalary,
             salaryType: filters.salaryType,
-            excludedWords: filters.excludedWords
+            excludedWords: filters.excludedWords,
+            sourceFilter: filters.sourceFilter
           }}
           onClearFilters={clearFilters}
         />
@@ -721,6 +804,10 @@ export default function Home() {
             setNewExcludeWord={setNewExcludeWord}
             handleAddExcludedWord={handleAddExcludedWord}
             handleRemoveExcludedWord={handleRemoveExcludedWord}
+            newSkill={newSkill}
+            setNewSkill={setNewSkill}
+            handleAddSkill={handleAddSkill}
+            handleRemoveSkill={handleRemoveSkill}
             saveFilters={saveFilters}
             clearFilters={clearFilters}
             viewMode={viewMode}

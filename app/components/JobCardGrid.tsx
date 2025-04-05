@@ -14,7 +14,7 @@ interface JobData {
 }
 
 interface PreparedJob {
-  [key: string]: string | undefined;
+  [key: string]: string | undefined | number | boolean;
   id: string;
   originalIndex: number;
   is_applied: boolean;
@@ -49,6 +49,13 @@ interface JobCardGridProps {
   onToggleViewMode?: () => void;
   hideViewToggle?: boolean;
 }
+
+// Define a local helper function to check if a job is applied
+const checkIfJobApplied = (consistentJobId: string, title: string, company: string, appliedJobs: string[]): boolean => {
+  return appliedJobs.includes(consistentJobId) || 
+          appliedJobs.includes(title) || 
+          appliedJobs.some(id => company ? id.startsWith(`${title}-${company}`) : id === title);
+};
 
 export default function JobCardGrid({
   jobs,
@@ -202,7 +209,7 @@ export default function JobCardGrid({
     return appliedJobs.includes(id)
   }
   
-  const prepareJobData = (job: JobData, index: number): PreparedJob => {
+  const prepareJobData = (job: JobData, index: number): any => {
     // Use our utility function
     const id = generateJobId(job, index, headers)
     
@@ -221,10 +228,47 @@ export default function JobCardGrid({
     const skills = getFieldValue(job, "skills", headers)
     const notes = getFieldValue(job, "notes", headers)
     
+    // Create a consistent job ID for checking applied status
+    const consistentJobId = title && company ? 
+      `${title}-${company}`.replace(/\s+/g, '-') : 
+      title || id;
+    
+    // Check if this job is in the applied list using the helper function
+    const is_applied = checkIfJobApplied(consistentJobId, title, company, appliedJobs);
+    
+    // Determine the source of the job
+    let source = job.source || '';
+    
+    // If source is not provided or is "Unknown", try to detect it
+    if (!source || source === 'Unknown') {
+      // Try to extract from URLs if available
+      const jobUrl = url || companyWebsite || '';
+      if (jobUrl) {
+        try {
+          // Import and use the extractSourceFromUrl helper
+          const { extractSourceFromUrl } = require('../utils/dataHelpers');
+          source = extractSourceFromUrl(jobUrl);
+        } catch (error) {
+          console.warn('Error extracting source from URL:', error);
+        }
+      }
+      
+      // If still no source, try to infer from company name
+      if (!source || source === 'Unknown') {
+        const companyLower = company?.toLowerCase() || '';
+        if (companyLower.includes('linkedin')) source = 'LinkedIn';
+        else if (companyLower.includes('indeed')) source = 'Indeed';
+        else if (companyLower.includes('ziprecruiter')) source = 'ZipRecruiter';
+        else if (companyLower.includes('monster')) source = 'Monster';
+        else if (companyLower.includes('glassdoor')) source = 'Glassdoor';
+        else if (companyLower.includes('dice')) source = 'Dice';
+      }
+    }
+    
     return {
       id,
       originalIndex: typeof job.originalIndex === 'number' ? job.originalIndex : index,
-      is_applied: appliedJobs.includes(id),
+      is_applied,
       title,
       company_name: company,
       location,
@@ -241,7 +285,7 @@ export default function JobCardGrid({
       experience,
       skills,
       notes,
-      source: job.source || 'Unknown'
+      source: source || 'Unknown'
     }
   }
   
@@ -459,9 +503,16 @@ export default function JobCardGrid({
   if (viewMode === 'list') {
     if (selectedJobForDetail) {
       // Show detail view for selected job
-      const isJobApplied = isJobInAppliedList(selectedJobForDetail, 0) || 
-                          appliedJobs.includes(selectedJobForDetail.id) || 
-                          appliedJobs.includes(selectedJobForDetail.title);
+      const title = selectedJobForDetail.title;
+      const company = selectedJobForDetail.company_name;
+      
+      // Create a consistent job ID for checking applied status
+      const consistentJobId = title && company ? 
+        `${title}-${company}`.replace(/\s+/g, '-') : 
+        title;
+      
+      // Check if this job is in the applied list using the helper function
+      const isJobApplied = checkIfJobApplied(consistentJobId, title, company, appliedJobs);
 
       return (
         <div className="animate-fade-in">
@@ -486,6 +537,7 @@ export default function JobCardGrid({
             </div>
           </div>
           <JobCard
+            key={`job-card-${selectedJobForDetail.id}-${currentIndex}`}
             job={selectedJobForDetail}
             isApplied={isJobApplied}
             onApply={() => {
@@ -550,13 +602,20 @@ export default function JobCardGrid({
             <div className="grid gap-3 overflow-y-auto px-3 py-2 h-full custom-scrollbar">
               {sortedJobs.map((job, index) => {
                 const preparedJob = prepareJobData(job, index);
-                const isJobApplied = isJobInAppliedList(job, index) || 
-                                  appliedJobs.includes(preparedJob.id) || 
-                                  appliedJobs.includes(preparedJob.title);
+                const title = preparedJob.title;
+                const company = preparedJob.company_name;
+                
+                // Create a consistent job ID for checking applied status
+                const consistentJobId = title && company ? 
+                  `${title}-${company}`.replace(/\s+/g, '-') : 
+                  title;
+                
+                // Check if this job is in the applied list using the helper function
+                const isJobApplied = checkIfJobApplied(consistentJobId, title, company, appliedJobs);
                 
                 return (
                   <div 
-                    key={preparedJob.id || index}
+                    key={`${preparedJob.id}-${index}`}
                     ref={keyboardListIndex === index ? keyboardSelectedRef : null}
                     onClick={() => handleListItemClick(job, index)}
                     className={`hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer p-4 border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg shadow-sm transition-all hover:shadow-md animate-fade-in ${
@@ -633,13 +692,20 @@ export default function JobCardGrid({
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                 {sortedJobs.map((job, index) => {
                   const preparedJob = prepareJobData(job, index);
-                  const isJobApplied = isJobInAppliedList(job, index) || 
-                                    appliedJobs.includes(preparedJob.id) || 
-                                    appliedJobs.includes(preparedJob.title);
+                  const title = preparedJob.title;
+                  const company = preparedJob.company_name;
+                  
+                  // Create a consistent job ID for checking applied status
+                  const consistentJobId = title && company ? 
+                    `${title}-${company}`.replace(/\s+/g, '-') : 
+                    title;
+                  
+                  // Check if this job is in the applied list using the helper function
+                  const isJobApplied = checkIfJobApplied(consistentJobId, title, company, appliedJobs);
                   
                   return (
                     <tr 
-                      key={preparedJob.id || index}
+                      key={`${preparedJob.id}-${index}`}
                       ref={keyboardListIndex === index ? keyboardSelectedRef : null}
                       onClick={() => handleListItemClick(job, index)}
                       className={`hover:bg-gray-50 dark:hover:bg-gray-700/50 cursor-pointer transition-colors ${
@@ -699,9 +765,14 @@ export default function JobCardGrid({
   const preparedJob = prepareJobData(currentJob, currentIndex)
   
   // Replace the existing isJobApplied check with our more robust function
-  const isJobApplied = isJobInAppliedList(currentJob, currentIndex) || 
-                       appliedJobs.includes(preparedJob.id) || 
-                       appliedJobs.includes(preparedJob.title);
+  const isJobApplied = checkIfJobApplied(
+    preparedJob.title && preparedJob.company_name ? 
+      `${preparedJob.title}-${preparedJob.company_name}`.replace(/\s+/g, '-') : 
+      preparedJob.title,
+    preparedJob.title,
+    preparedJob.company_name,
+    appliedJobs
+  );
   
   const animationClass = direction === 'left' 
     ? 'animate-slide-out-left' 
@@ -718,6 +789,7 @@ export default function JobCardGrid({
         onTouchStart={onTouchStart}
       >
         <JobCard
+          key={`job-card-${preparedJob.id}-${currentIndex}`}
           job={preparedJob}
           isApplied={isJobApplied}
           onApply={handleApply}

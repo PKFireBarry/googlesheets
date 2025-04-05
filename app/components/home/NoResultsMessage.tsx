@@ -10,6 +10,7 @@ interface NoResultsMessageProps {
     minSalary: number;
     salaryType: string;
     excludedWords: string[];
+    sourceFilter: string;
   };
   onClearFilters: () => void;
 }
@@ -34,6 +35,7 @@ const NoResultsMessage: React.FC<NoResultsMessageProps> = ({
               {filters.filterText && <li>Search text: "{filters.filterText}"</li>}
               {filters.selectedLocation && <li>Location: {filters.selectedLocation}</li>}
               {filters.skillFilter && <li>Skills: {filters.skillFilter}</li>}
+              {filters.sourceFilter && <li>Source: {filters.sourceFilter}</li>}
               {filters.showLastDayOnly && <li>Last 24 hours only</li>}
               {filters.minSalary > 0 && <li>Minimum salary: {filters.minSalary} ({filters.salaryType})</li>}
               {filters.excludedWords.length > 0 && (

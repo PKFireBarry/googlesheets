@@ -3,7 +3,6 @@ const nextConfig = {
   images: {
     domains: [
       'kg.diffbot.com',
-      'logo.clearbit.com',
       'www.google.com',
       'upload.wikimedia.org',
       'media.licdn.com',

@@ -40,4 +40,5 @@ export type FilterState = {
   minSalary: number;
   salaryType: SalaryType;
   excludedWords: string[];
+  sourceFilter: string;
 }; 

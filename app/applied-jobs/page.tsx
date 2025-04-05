@@ -529,17 +529,43 @@ export default function AppliedJobsPage() {
         <>
           <JobStatusHeader count={filteredRows.length} />
 
-          <JobCardGrid
-            headers={headers}
-            jobs={filteredRows}
-            appliedJobs={appliedJobs}
-            onApply={handleToggleApplied}
-            onDelete={handleDeleteJob}
-            onUpdateNote={handleUpdateNote}
-            viewMode={viewMode}
-            onToggleViewMode={toggleViewMode}
-            hideViewToggle={false}
-          />
+          {/* Make sure all shown jobs are in the appliedJobs list */}
+          {(() => {
+            // Create a new set to hold both existing and current job IDs
+            const allAppliedJobs = new Set(appliedJobs);
+            
+            // Add all current job IDs to ensure they show as "Applied"
+            filteredRows.forEach((row, index) => {
+              // Get the job title and company for this row
+              const rowData = Array.isArray(row) ? row : (row as any).data || [];
+              const title = titleIndex !== -1 && rowData[titleIndex] ? rowData[titleIndex] : '';
+              const company = findColumnIndex('company_name') !== -1 && rowData[findColumnIndex('company_name')] 
+                ? rowData[findColumnIndex('company_name')] : '';
+              
+              if (title) {
+                // Create a consistent job ID from title and company
+                const consistentJobId = title && company ? 
+                  `${title}-${company}`.replace(/\s+/g, '-') : title;
+                
+                // Add this ID to the set
+                allAppliedJobs.add(consistentJobId);
+              }
+            });
+            
+            return (
+              <JobCardGrid
+                headers={headers}
+                jobs={filteredRows}
+                appliedJobs={Array.from(allAppliedJobs)}
+                onApply={handleToggleApplied}
+                onDelete={handleDeleteJob}
+                onUpdateNote={handleUpdateNote}
+                viewMode={viewMode}
+                onToggleViewMode={toggleViewMode}
+                hideViewToggle={false}
+              />
+            );
+          })()}
         </>
       ) : (
         <EmptyState />

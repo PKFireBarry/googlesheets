@@ -19,26 +19,6 @@ export const validateImageUrl = (url: string): string => {
     
     // If it's a relative URL starting with /, assume it's from the same domain
     if (url.startsWith('/')) return url;
-
-    // Handle problematic domains that block hotlinking
-    const problematicDomains = [
-      'glassdoor.com',
-      'media.glassdoor.com',
-      // Add other problematic domains here
-    ];
-
-    // Check if URL is from a problematic domain
-    if (problematicDomains.some(domain => url.includes(domain))) {
-      // For Glassdoor specifically, try to get company name from URL
-      if (url.includes('glassdoor.com')) {
-        const companyName = url.split('/').pop()?.split('-')[0] || '';
-        if (companyName) {
-          // Use Clearbit as a fallback for company logos
-          return `https://logo.clearbit.com/${companyName}.com`;
-        }
-      }
-      return ""; // Return empty if we can't get a fallback
-    }
     
     // If it doesn't start with http(s), add https://
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
@@ -49,7 +29,7 @@ export const validateImageUrl = (url: string): string => {
     new URL(url);
     
     return url;
-  } catch {
+  } catch (error) {
     console.warn(`Invalid image URL: ${url}`);
     return "";
   }
@@ -143,20 +123,65 @@ export const extractSourceFromUrl = (url: string): string => {
   if (!url) return 'Unknown';
   
   try {
+    // Normalize the URL: remove protocol and www
     let domain = url.replace(/^(https?:\/\/)?(www\.)?/i, '');
-    domain = domain.split('/')[0];
+    // Get just the domain part
+    domain = domain.split('/')[0].toLowerCase();
     
-    if (domain.includes('linkedin')) return 'LinkedIn';
-    if (domain.includes('indeed')) return 'Indeed';
-    if (domain.includes('ziprecruiter')) return 'ZipRecruiter';
-    if (domain.includes('monster')) return 'Monster';
-    if (domain.includes('glassdoor')) return 'Glassdoor';
-    if (domain.includes('dice')) return 'Dice';
-    if (domain.includes('simplyhired')) return 'SimplyHired';
-    if (domain.includes('careerbuilder')) return 'CareerBuilder';
+    // Common job board domains
+    const jobBoards = {
+      'linkedin': 'LinkedIn',
+      'indeed': 'Indeed',
+      'ziprecruiter': 'ZipRecruiter',
+      'monster': 'Monster',
+      'glassdoor': 'Glassdoor',
+      'dice': 'Dice',
+      'simplyhired': 'SimplyHired',
+      'careerbuilder': 'CareerBuilder',
+      'angel.co': 'AngelList',
+      'wellfound': 'Wellfound',
+      'lever.co': 'Lever',
+      'greenhouse.io': 'Greenhouse',
+      'workday': 'Workday',
+      'jobvite': 'Jobvite',
+      'bamboohr': 'BambooHR',
+      'smartrecruiters': 'SmartRecruiters',
+      'recruitee': 'Recruitee',
+      'stackoverflow': 'Stack Overflow Jobs',
+      'stackoverflow.com/jobs': 'Stack Overflow Jobs',
+      'remoteco': 'Remote.co',
+      'remote.co': 'Remote.co',
+      'weworkremotely': 'We Work Remotely',
+      'flexjobs': 'FlexJobs'
+    };
     
-    return domain;
-  } catch {
+    // Check for known job boards
+    for (const [key, value] of Object.entries(jobBoards)) {
+      if (domain.includes(key)) {
+        return value;
+      }
+    }
+    
+    // If not a recognized job board, return just the domain name
+    // Clean up the domain - remove subdomains if present
+    let cleanDomain = domain.split('.').slice(-2).join('.');
+    // Remove TLD if possible and capitalize first letter
+    const tlds = ['.com', '.org', '.net', '.io', '.co', '.jobs'];
+    for (const tld of tlds) {
+      if (cleanDomain.endsWith(tld)) {
+        cleanDomain = cleanDomain.slice(0, -tld.length);
+        break;
+      }
+    }
+    
+    // Capitalize first letter for nicer display
+    if (cleanDomain) {
+      return cleanDomain.charAt(0).toUpperCase() + cleanDomain.slice(1);
+    }
+    
+    return domain || 'Unknown';
+  } catch (error) {
+    console.warn('Error extracting source from URL:', error);
     return 'Unknown';
   }
 };
