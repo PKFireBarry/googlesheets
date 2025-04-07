@@ -11,6 +11,7 @@ import LoadingState from "../components/appliedjobs/LoadingState";
 import EmptyState from "../components/appliedjobs/EmptyState";
 import JobStatusHeader from "../components/appliedjobs/JobStatusHeader";
 import ToastNotification from "../components/appliedjobs/ToastNotification";
+import { dedupJobs } from "../utils/dataHelpers";
 
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY;
 const RANGE = process.env.NEXT_PUBLIC_RANGE;
@@ -232,10 +233,17 @@ export default function AppliedJobsPage() {
         throw new Error("No valid job listings found");
       }
 
-      // Keep the original structure with originalIndex for JobCardGrid
-      setData([headers, ...validRows]);
+      // Deduplicate jobs - keep only the newest instance of each job
+      const uniqueRows = dedupJobs(validRows, headers);
+      console.log("Unique rows after deduplication:", uniqueRows.length);
+      console.log("Removed duplicate jobs:", validRows.length - uniqueRows.length);
 
-      const indices = validRows.map((row: RowData) => row.originalIndex);
+      // Keep the original structure with originalIndex for JobCardGrid
+      setData([headers, ...uniqueRows]);
+
+      const indices = uniqueRows.map((row: any) => 
+        Array.isArray(row) ? -1 : (row.originalIndex || -1)
+      );
       setRowIndices(indices);
     } catch (error: any) {
       console.error("Error fetching data:", error);

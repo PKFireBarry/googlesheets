@@ -117,6 +117,34 @@ export default function JobCardGrid({
         return 0;
       });
       
+      // Diagnostic: Check for duplicate jobs
+      const jobMap = new Map<string, JobData[]>();
+      sortedJobsCopy.forEach((job) => {
+        const title = getFieldValue(job, "title", headers);
+        const company = getFieldValue(job, "company_name", headers);
+        
+        if (title && company) {
+          const key = `${title.trim()}_${company.trim()}`.toLowerCase().replace(/\s+/g, '_');
+          if (!jobMap.has(key)) {
+            jobMap.set(key, []);
+          }
+          jobMap.get(key)!.push(job);
+        }
+      });
+      
+      // Log any duplicates found
+      let duplicatesFound = false;
+      jobMap.forEach((jobList, key) => {
+        if (jobList.length > 1) {
+          duplicatesFound = true;
+          console.warn(`Found duplicates for job: ${key} (${jobList.length} instances)`);
+        }
+      });
+      
+      if (!duplicatesFound) {
+        console.log("No duplicate jobs found in the current view");
+      }
+      
       setSortedJobs(sortedJobsCopy);
     }
   }, [jobs, headers]);

@@ -36,9 +36,10 @@ export type FilterState = {
   selectedLocation: string;
   skillFilter: string;
   showFilters: boolean;
-  showLastDayOnly: boolean;
+  timeRangeFilter: number;
   minSalary: number;
   salaryType: SalaryType;
   excludedWords: string[];
   sourceFilter: string;
+  titleFilter: string;
 }; 

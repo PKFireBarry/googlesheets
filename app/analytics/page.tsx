@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import Cookies from 'js-cookie'
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area, Treemap, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts'
-import { Loader2, Database, Briefcase, Code, Building, MapPin, TrendingUp } from 'lucide-react'
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area, Treemap, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, LabelList, ReferenceLine } from 'recharts'
+import { Loader2, Database, Briefcase, Code, Building, MapPin, TrendingUp, DollarSign, BarChart2, Users, Award, Filter } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
@@ -76,34 +76,69 @@ const JobSourceBreakdown = ({ data }: { data: any[] }) => {
       }
     }
     
-    sources[source] = (sources[source] || 0) + 1
+    // Skip "Unknown" sources
+    if (source !== 'Unknown') {
+      sources[source] = (sources[source] || 0) + 1
+    }
   })
   
   const sourceData = Object.entries(sources)
     .map(([name, value]) => ({ name, value }))
     .sort((a, b) => b.value - a.value)
-    .slice(0, 10) // Top 10 sources
+    .slice(0, 8) // Limit to top 8 sources to prevent overcrowding
   
-  const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#0088FE', '#00C49F']
+  // Create a more consistent and accessible color palette
+  const COLORS = [
+    '#8884d8', '#82ca9d', '#ffc658', '#ff8042', 
+    '#0088FE', '#00C49F', '#FFBB28', '#FF8042'
+  ]
+  
+  const RADIAN = Math.PI / 180
+  const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, index, name }: any) => {
+    const radius = innerRadius + (outerRadius - innerRadius) * 0.5
+    const x = cx + radius * Math.cos(-midAngle * RADIAN)
+    const y = cy + radius * Math.sin(-midAngle * RADIAN)
+    
+    // Only show percentage for segments that are large enough
+    return percent > 0.05 ? (
+      <text 
+        x={x} 
+        y={y} 
+        fill="#fff" 
+        textAnchor="middle" 
+        dominantBaseline="central"
+        fontSize={12}
+        fontWeight="bold"
+      >
+        {`${(percent * 100).toFixed(0)}%`}
+      </text>
+    ) : null
+  }
   
   return (
     <div>
-      <ResponsiveContainer width="100%" height={200}>
+      <ResponsiveContainer width="100%" height={300}>
         <PieChart>
           <Pie
             data={sourceData}
             cx="50%"
             cy="50%"
             labelLine={false}
-            outerRadius={80}
+            outerRadius={90}
             fill="#8884d8"
             dataKey="value"
+            nameKey="name"
+            label={renderCustomizedLabel}
           >
             {sourceData.map((entry, index) => (
               <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
             ))}
           </Pie>
-          <Tooltip contentStyle={{ backgroundColor: '#333', border: 'none' }} itemStyle={{ color: '#fff' }} />
+          <Tooltip 
+            contentStyle={{ backgroundColor: '#333', border: 'none', borderRadius: '4px', padding: '8px' }}
+            itemStyle={{ color: '#fff' }}
+            formatter={(value: any, name: any) => [`${value} jobs`, name]}
+          />
           <Legend layout="horizontal" verticalAlign="bottom" align="center" />
         </PieChart>
       </ResponsiveContainer>
@@ -113,7 +148,7 @@ const JobSourceBreakdown = ({ data }: { data: any[] }) => {
         {sourceData.map((entry, index) => (
           <div key={`legend-${index}`} className="flex items-center">
             <div 
-              className="w-3 h-3 mr-2" 
+              className="w-3 h-3 mr-2 rounded-sm" 
               style={{ backgroundColor: COLORS[index % COLORS.length] }}
             ></div>
             <span className="truncate">{entry.name}</span>
@@ -127,13 +162,14 @@ const JobSourceBreakdown = ({ data }: { data: any[] }) => {
 
 // JobTitlesChart component
 const JobTitlesChart = ({ titlesData }: { titlesData: any[] }) => {
+  // Create a more consistent color palette
   const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#0088FE', '#00C49F']
   
   return (
-    <ResponsiveContainer width="100%" height={300}>
+    <ResponsiveContainer width="100%" height={360}>
       <BarChart
         data={titlesData}
-        margin={{ top: 5, right: 5, left: 5, bottom: 5 }}
+        margin={{ top: 10, right: 5, left: 10, bottom: 50 }}
         layout="vertical"
       >
         <CartesianGrid strokeDasharray="3 3" stroke="#333" />
@@ -141,15 +177,21 @@ const JobTitlesChart = ({ titlesData }: { titlesData: any[] }) => {
         <YAxis 
           dataKey="name" 
           type="category"
-          width={150}
-          tick={{ fontSize: 10, fill: '#999' }}
-          tickFormatter={(value) => value.length > 25 ? `${value.substring(0, 25)}...` : value}
+          width={170}
+          tick={{ fontSize: 11, fill: '#fff' }}
+          tickFormatter={(value) => value.length > 30 ? `${value.substring(0, 30)}...` : value}
         />
-        <Tooltip contentStyle={{ backgroundColor: '#333', border: 'none' }} itemStyle={{ color: '#fff' }} />
-        <Bar dataKey="count" name="Job Count" fill="#8884d8" radius={[0, 4, 4, 0]}>
+        <Tooltip 
+          contentStyle={{ backgroundColor: '#333', border: 'none', borderRadius: '4px', padding: '8px' }} 
+          itemStyle={{ color: '#fff' }}
+          formatter={(value: any) => [`${value} jobs`, 'Count']}
+          labelFormatter={(label) => `Job Title: ${label}`}
+        />
+        <Bar dataKey="count" name="Job Count" radius={[0, 4, 4, 0]}>
           {titlesData.map((entry, index) => (
             <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
           ))}
+          <LabelList dataKey="count" position="right" fill="#fff" fontSize={10} />
         </Bar>
       </BarChart>
     </ResponsiveContainer>
@@ -214,12 +256,18 @@ const SummaryStats = ({ data }: { data: any[] }) => {
 
 // SkillsAnalytics component
 const SkillsAnalytics = ({ skillsData }: { skillsData: any[] }) => {
+  // Create a more consistent color palette
+  const COLORS = [
+    '#8884d8', '#82ca9d', '#ffc658', '#ff8042', 
+    '#0088FE', '#00C49F', '#FFBB28', '#FF8042'
+  ]
+  
   return (
     <>
-      <ResponsiveContainer width="100%" height={300}>
+      <ResponsiveContainer width="100%" height={360}>
         <BarChart
           data={skillsData.slice(0, 10)}
-          margin={{ top: 10, right: 5, left: 5, bottom: 5 }}
+          margin={{ top: 15, right: 50, left: 10, bottom: 10 }}
           layout="vertical"
         >
           <CartesianGrid strokeDasharray="3 3" stroke="#333" />
@@ -227,24 +275,34 @@ const SkillsAnalytics = ({ skillsData }: { skillsData: any[] }) => {
           <YAxis 
             dataKey="name" 
             type="category"
-            width={100}
-            tick={{ fill: '#999' }}
+            width={120}
+            tick={{ fill: '#fff', fontSize: 11 }}
           />
           <Tooltip 
-            contentStyle={{ backgroundColor: '#333', border: 'none' }}
+            contentStyle={{ backgroundColor: '#333', border: 'none', borderRadius: '4px', padding: '8px' }}
             itemStyle={{ color: '#fff' }}
+            formatter={(value: any) => [`${value} job postings`, 'Count']}
+            labelFormatter={(label) => `Skill: ${label}`}
           />
-          <Bar dataKey="count" name="Job Count" fill="#3b82f6" radius={[0, 4, 4, 0]} />
+          <Bar dataKey="count" name="Job Count" radius={[0, 4, 4, 0]}>
+            {skillsData.slice(0, 10).map((entry, index) => (
+              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+            ))}
+            <LabelList dataKey="count" position="right" fill="#fff" fontSize={10} />
+          </Bar>
         </BarChart>
       </ResponsiveContainer>
       
-      {/* Skills List */}
+      {/* Skills List - Improved layout */}
       <div className="mt-6 max-h-96 overflow-y-auto pr-2">
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
           {skillsData.slice(0, 50).map((skill, index) => (
-            <div key={index} className="flex justify-between items-center bg-[#252525] p-2 rounded">
-              <span className="text-sm">{skill.name}</span>
-              <span className="text-xs bg-blue-900/40 px-2 py-1 rounded-full text-blue-300">{skill.count}</span>
+            <div 
+              key={index} 
+              className="flex justify-between items-center bg-[#252525] p-2 rounded hover:bg-[#303030] transition-colors duration-150"
+            >
+              <span className="text-sm truncate max-w-[75%]" title={skill.name}>{skill.name}</span>
+              <span className="text-xs bg-blue-900/40 px-2 py-1 rounded-full text-blue-300 whitespace-nowrap">{skill.count}</span>
             </div>
           ))}
         </div>
@@ -271,7 +329,30 @@ const ExperienceLevelsChart = ({ experienceData }: { experienceData: any[] }) =>
   
   const averageExperience = totalJobs > 0 ? (weightedSum / totalJobs).toFixed(1) : 'N/A'
   
+  // Create a more consistent color palette
   const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#0088FE', '#00C49F']
+  
+  // Custom rendering for pie chart labels
+  const RADIAN = Math.PI / 180
+  const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, index, name }: any) => {
+    const radius = innerRadius + (outerRadius - innerRadius) * 1.2
+    const x = cx + radius * Math.cos(-midAngle * RADIAN)
+    const y = cy + radius * Math.sin(-midAngle * RADIAN)
+    
+    // Only show percentage for segments that are large enough
+    return percent > 0.05 ? (
+      <text 
+        x={x} 
+        y={y} 
+        fill="#fff" 
+        textAnchor={x > cx ? 'start' : 'end'}
+        dominantBaseline="central"
+        fontSize={10}
+      >
+        {`${name}: ${(percent * 100).toFixed(0)}%`}
+      </text>
+    ) : null
+  }
   
   return (
     <div>
@@ -279,24 +360,29 @@ const ExperienceLevelsChart = ({ experienceData }: { experienceData: any[] }) =>
         <p className="text-sm text-gray-400">Average Experience Required</p>
         <p className="text-2xl font-bold">{averageExperience} years</p>
       </div>
-      <ResponsiveContainer width="100%" height={200}>
+      <ResponsiveContainer width="100%" height={240}>
         <PieChart>
           <Pie
             data={experienceData.filter(d => d.name !== 'Not Specified')}
             cx="50%"
             cy="50%"
-            labelLine={false}
+            labelLine={true}
             outerRadius={80}
             fill="#8884d8"
             dataKey="count"
             nameKey="name"
+            label={renderCustomizedLabel}
+            paddingAngle={2}
           >
             {experienceData.filter(d => d.name !== 'Not Specified').map((entry, index) => (
               <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
             ))}
           </Pie>
-          <Tooltip contentStyle={{ backgroundColor: '#333', border: 'none' }} itemStyle={{ color: '#fff' }} />
-          <Legend layout="horizontal" verticalAlign="bottom" align="center" />
+          <Tooltip 
+            contentStyle={{ backgroundColor: '#333', border: 'none', borderRadius: '4px', padding: '8px' }}
+            itemStyle={{ color: '#fff' }}
+            formatter={(value: any, name: any) => [`${value} jobs (${((value/totalJobs)*100).toFixed(1)}%)`, name]}
+          />
         </PieChart>
       </ResponsiveContainer>
       
@@ -305,7 +391,7 @@ const ExperienceLevelsChart = ({ experienceData }: { experienceData: any[] }) =>
         {experienceData.filter(d => d.name !== 'Not Specified').map((entry, index) => (
           <div key={`legend-${index}`} className="flex items-center">
             <div 
-              className="w-3 h-3 mr-2" 
+              className="w-3 h-3 mr-2 rounded-sm" 
               style={{ backgroundColor: COLORS[index % COLORS.length] }}
             ></div>
             <span>{entry.name}</span>
@@ -316,6 +402,856 @@ const ExperienceLevelsChart = ({ experienceData }: { experienceData: any[] }) =>
     </div>
   )
 }
+
+// Add these new components for enhanced salary analysis
+const SalaryAnalysis = ({ data }: { data: any[] }) => {
+  // Prepare salary data for analysis
+  const salaryData = data.reduce((acc: any[], job: any) => {
+    if (!job.salary) return acc;
+    
+    const salary = job.salary.toString();
+    let parsedSalary = {
+      title: job.title || 'Unknown',
+      company: job.company_name || 'Unknown',
+      skills: job.skills || '',
+      location: job.location || 'Unknown',
+      min: 0,
+      max: 0,
+      avg: 0,
+      isHourly: false
+    };
+    
+    // Detect if it's hourly or yearly
+    let isHourlyRate = salary.toLowerCase().includes('hour') || 
+                       salary.toLowerCase().includes('/hr') ||
+                       salary.toLowerCase().includes('hourly') ||
+                       (salary.includes('$') && salary.includes('/'));
+    
+    // A reasonable maximum salary cap to prevent outliers (set to $500K)
+    const MAX_REASONABLE_SALARY = 500000;
+    
+    // Handle various salary formats
+    if (salary.includes('-')) {
+      // Range format: $70,000 - $90,000
+      const parts = salary.split('-').map((part: string) => {
+        // Extract only the numeric portion
+        const numericValue = part.replace(/[^0-9.]/g, '');
+        return numericValue ? parseInt(numericValue, 10) : 0;
+      });
+      
+      if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+        // For hourly rates, typical values are between $10-$100/hour
+        if (isHourlyRate && parts[0] > 500) {
+          // This is likely already a yearly salary being mistakenly marked as hourly
+          isHourlyRate = false;
+        }
+        
+        // Set reasonable limits for parsed values
+        parts[0] = Math.min(parts[0], MAX_REASONABLE_SALARY);
+        parts[1] = Math.min(parts[1], MAX_REASONABLE_SALARY);
+        
+        // Only accept reasonable salary ranges
+        if (parts[0] >= 1000 && parts[0] < MAX_REASONABLE_SALARY && 
+            parts[1] >= 1000 && parts[1] < MAX_REASONABLE_SALARY) {
+          parsedSalary.min = parts[0];
+          parsedSalary.max = parts[1];
+          parsedSalary.avg = Math.floor((parts[0] + parts[1]) / 2);
+          parsedSalary.isHourly = isHourlyRate;
+        }
+      }
+    } else {
+      // Single value format: $80,000
+      const numericValue = salary.replace(/[^0-9.]/g, '');
+      let value = numericValue ? parseInt(numericValue, 10) : 0;
+      
+      // For hourly rates, typical values are between $10-$100/hour
+      if (isHourlyRate && value > 500) {
+        // This is likely already a yearly salary being mistakenly marked as hourly
+        isHourlyRate = false;
+      }
+      
+      // Cap at reasonable maximum
+      value = Math.min(value, MAX_REASONABLE_SALARY);
+      
+      if (!isNaN(value) && value >= 1000 && value < MAX_REASONABLE_SALARY) {
+        parsedSalary.min = value;
+        parsedSalary.max = value;
+        parsedSalary.avg = value;
+        parsedSalary.isHourly = isHourlyRate;
+      }
+    }
+    
+    // Convert hourly to yearly for standardization (assuming 2080 hours per year - 40hrs/week * 52 weeks)
+    if (parsedSalary.isHourly && parsedSalary.min > 0) {
+      // Sanity check: hourly rates are typically $10-$100/hour
+      if (parsedSalary.min > 10 && parsedSalary.min < 500) {
+        parsedSalary.min *= 2080;
+        parsedSalary.max *= 2080;
+        parsedSalary.avg *= 2080;
+      } else {
+        // If outside reasonable hourly rate range, treat as yearly instead
+        parsedSalary.isHourly = false;
+      }
+    }
+    
+    // Final validation - ensure no salary exceeds our maximum cap
+    parsedSalary.min = Math.min(parsedSalary.min, MAX_REASONABLE_SALARY);
+    parsedSalary.max = Math.min(parsedSalary.max, MAX_REASONABLE_SALARY);
+    parsedSalary.avg = Math.min(parsedSalary.avg, MAX_REASONABLE_SALARY);
+    
+    // Only add if we have valid salary data that's within reasonable range
+    if (parsedSalary.avg > 0 && parsedSalary.avg <= MAX_REASONABLE_SALARY) {
+      acc.push(parsedSalary);
+    }
+    
+    return acc;
+  }, []);
+  
+  // Group salary data by ranges for distribution chart
+  const salaryRanges = [
+    { name: 'Under $50k', min: 0, max: 50000, count: 0 },
+    { name: '$50k-$75k', min: 50000, max: 75000, count: 0 },
+    { name: '$75k-$100k', min: 75000, max: 100000, count: 0 },
+    { name: '$100k-$125k', min: 100000, max: 125000, count: 0 },
+    { name: '$125k-$150k', min: 125000, max: 150000, count: 0 },
+    { name: '$150k+', min: 150000, max: Infinity, count: 0 }
+  ];
+  
+  salaryData.forEach(job => {
+    const range = salaryRanges.find(range => 
+      job.avg >= range.min && job.avg < range.max
+    );
+    if (range) {
+      range.count++;
+    }
+  });
+  
+  // Calculate overall salary statistics
+  const salaryStats = salaryData.reduce((stats, job) => {
+    stats.count++;
+    stats.total += job.avg;
+    stats.min = Math.min(stats.min === 0 ? Infinity : stats.min, job.min);
+    stats.max = Math.max(stats.max, job.max);
+    return stats;
+  }, { count: 0, total: 0, min: 0, max: 0 });
+  
+  const avgSalary = salaryStats.count > 0 ? 
+    Math.floor(salaryStats.total / salaryStats.count) : 0;
+  
+  // Improved approach for skills salary analysis
+  // Track unique job-skill combinations to avoid skills from the same job skewing averages
+  type SkillJobSalary = {
+    skill: string;
+    jobId: string;  // Unique identifier for the job
+    salary: number;
+  };
+  
+  const skillSalaryEntries: SkillJobSalary[] = [];
+  
+  salaryData.forEach(job => {
+    if (!job.skills) return;
+    
+    // Create a unique ID for this job
+    const jobId = `${job.title}-${job.company}`.replace(/\s+/g, '-').toLowerCase();
+    
+    // Create a helper function for cleaning skills
+    const cleanSkill = (skill: string): string => {
+      return skill
+        .replace(/[\[\]"'{}\s]+/g, '') // Remove all brackets, quotes, braces, and whitespace
+        .replace(/\\"/g, '') // Remove escaped quotes
+        .replace(/^'|'$/g, '') // Remove single quotes
+        .trim();
+    };
+    
+    // Parse skills from job using the same approach as in processData
+    let skillsList: string[] = [];
+    
+    try {
+      const skillsData = job.skills.toString();
+      
+      // Skip empty arrays or empty strings
+      if (skillsData.trim() === '[]' || skillsData.trim() === '') {
+        return; // Skip this job
+      }
+      
+      // First try to parse as JSON if it looks like JSON
+      if (skillsData.trim().startsWith('{') || skillsData.trim().startsWith('[')) {
+        try {
+          const parsed = JSON.parse(skillsData);
+          if (Array.isArray(parsed)) {
+            skillsList = parsed.map((s: string) => cleanSkill(String(s)))
+              .filter((s: string) => s && s.length > 0); // Filter out empty skills
+          } else if (typeof parsed === 'object' && parsed !== null) {
+            skillsList = Object.keys(parsed)
+              .map((s: string) => cleanSkill(String(s)))
+              .filter((s: string) => s && s.length > 0); // Filter out empty skills
+          }
+        } catch {
+          // If JSON parsing fails, treat as comma-separated
+          skillsList = skillsData.split(',')
+            .map((s: string) => cleanSkill(s))
+            .filter((s: string) => s && s.length > 0); // Filter out empty skills
+        }
+      } else {
+        // Handle as comma-separated string
+        skillsList = skillsData.split(',')
+          .map((s: string) => cleanSkill(s))
+          .filter((s: string) => s && s.length > 0); // Filter out empty skills
+      }
+    } catch (e) {
+      console.error('Error processing skills in salary analysis:', e);
+      return; // Skip this job on error
+    }
+    
+    // Normalize skills
+    skillsList = skillsList
+      .filter(skill => skill.length > 0)
+      .map(skill => skill.charAt(0).toUpperCase() + skill.slice(1).toLowerCase());
+    
+    // Create a Set to ensure each skill is only counted once per job
+    const uniqueSkills = new Set(skillsList);
+    
+    // Add each skill from this job to the analysis
+    uniqueSkills.forEach(skill => {
+      if (!skill || skill === '[]') return;
+      
+      // Add this job-skill-salary combination to our data
+      skillSalaryEntries.push({
+        skill,
+        jobId,
+        salary: job.avg
+      });
+    });
+  });
+  
+  // Group skill-salary data by skill to calculate accurate averages
+  const skillAverageSalaries: Record<string, {totalSalary: number, jobCount: number, jobIds: Set<string>}> = {};
+  
+  skillSalaryEntries.forEach(entry => {
+    if (!skillAverageSalaries[entry.skill]) {
+      skillAverageSalaries[entry.skill] = {
+        totalSalary: 0,
+        jobCount: 0,
+        jobIds: new Set<string>()
+      };
+    }
+    
+    // Only count each job once per skill
+    if (!skillAverageSalaries[entry.skill].jobIds.has(entry.jobId)) {
+      skillAverageSalaries[entry.skill].jobIds.add(entry.jobId);
+      skillAverageSalaries[entry.skill].totalSalary += entry.salary;
+      skillAverageSalaries[entry.skill].jobCount++;
+    }
+  });
+  
+  // Calculate average salary by skill, filter for skills with enough data points
+  const skillSalaryData = Object.entries(skillAverageSalaries)
+    .filter(([_, data]) => data.jobCount >= 3) // Require at least 3 data points
+    .map(([skill, data]) => ({
+      skill,
+      avgSalary: Math.floor(data.totalSalary / data.jobCount),
+      count: data.jobCount
+    }))
+    .sort((a, b) => b.avgSalary - a.avgSalary)
+    .slice(0, 10); // Top 10 paying skills
+  
+  // Identify top paying locations
+  const locationSalaryMap: Record<string, {count: number, total: number}> = {};
+  
+  salaryData.forEach(job => {
+    if (!job.location) return;
+    
+    // Simple location parsing - just use the first part (city/state)
+    const location = job.location.toString().split(',')[0].trim();
+    
+    if (!location) return;
+    if (!locationSalaryMap[location]) {
+      locationSalaryMap[location] = { count: 0, total: 0 };
+    }
+    locationSalaryMap[location].count++;
+    locationSalaryMap[location].total += job.avg;
+  });
+  
+  // Calculate average salary by location, filter for locations with enough data
+  const locationSalaryData = Object.entries(locationSalaryMap)
+    .filter(([_, data]) => data.count >= 2) // Require at least 2 data points
+    .map(([location, data]) => ({
+      location,
+      avgSalary: Math.floor(data.total / data.count),
+      count: data.count
+    }))
+    .sort((a, b) => b.avgSalary - a.avgSalary)
+    .slice(0, 5); // Top 5 paying locations
+  
+  return (
+    <div className="space-y-6">
+      {/* Salary distribution chart */}
+      <div>
+        <h4 className="text-sm font-medium text-gray-300 mb-3">Salary Distribution</h4>
+        <ResponsiveContainer width="100%" height={230}>
+          <BarChart data={salaryRanges} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+            <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#fff' }} />
+            <YAxis tick={{ fontSize: 10, fill: '#999' }} />
+            <Tooltip 
+              contentStyle={{ backgroundColor: '#333', border: 'none', borderRadius: '4px', padding: '8px' }}
+              itemStyle={{ color: '#fff' }}
+              formatter={(value: any) => [`${value} jobs`, 'Count']}
+            />
+            <Bar dataKey="count" name="Jobs" fill="#8884d8">
+              {salaryRanges.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={`hsl(${260 - index * 30}, 70%, 60%)`} />
+              ))}
+              <LabelList dataKey="count" position="top" fill="#fff" fontSize={10} />
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+      
+      {/* Salary statistics summary */}
+      <div className="grid grid-cols-3 gap-4">
+        <div className="bg-purple-900/30 p-3 rounded-lg">
+          <p className="text-xs text-purple-300">Average Salary</p>
+          <p className="text-lg font-bold text-purple-200">
+            ${avgSalary.toLocaleString()}
+          </p>
+        </div>
+        <div className="bg-blue-900/30 p-3 rounded-lg">
+          <p className="text-xs text-blue-300">Min Salary</p>
+          <p className="text-lg font-bold text-blue-200">
+            ${salaryStats.min.toLocaleString()}
+          </p>
+        </div>
+        <div className="bg-green-900/30 p-3 rounded-lg">
+          <p className="text-xs text-green-300">Max Salary</p>
+          <p className="text-lg font-bold text-green-200">
+            ${salaryStats.max.toLocaleString()}
+          </p>
+        </div>
+      </div>
+      
+      {/* Top paying skills */}
+      {skillSalaryData.length > 0 && (
+        <div>
+          <h4 className="text-sm font-medium text-gray-300 mb-2">Top Paying Skills</h4>
+          <div className="space-y-2">
+            {skillSalaryData.map((item, index) => (
+              <div key={index} className="flex justify-between items-center rounded-lg bg-[#252525] p-2">
+                <span className="text-sm font-medium">{item.skill}</span>
+                <div className="flex items-center">
+                  <span className="text-sm text-green-300">${item.avgSalary.toLocaleString()}</span>
+                  <span className="text-xs text-gray-400 ml-2">({item.count} jobs)</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      
+      {/* Top paying locations */}
+      {locationSalaryData.length > 0 && (
+        <div>
+          <h4 className="text-sm font-medium text-gray-300 mb-2">Top Paying Locations</h4>
+          <div className="space-y-2">
+            {locationSalaryData.map((item, index) => (
+              <div key={index} className="flex justify-between items-center rounded-lg bg-[#252525] p-2">
+                <span className="text-sm font-medium">{item.location}</span>
+                <div className="flex items-center">
+                  <span className="text-sm text-green-300">${item.avgSalary.toLocaleString()}</span>
+                  <span className="text-xs text-gray-400 ml-2">({item.count} jobs)</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Define proper types for the data structures
+// Add this near the top with the other type definitions
+type MonthDataPoint = [string, number]; // [monthKey, count]
+
+// New component for skill insights
+const SkillInsights = ({ skillsData, data }: { skillsData: any[], data: any[] }) => {
+  // Extract job titles and their skill requirements for correlation
+  const titleSkillMap: Record<string, string[]> = {};
+  
+  data.forEach(job => {
+    if (!job.title || !job.skills) return;
+    
+    const title = job.title.toString();
+    const skills = job.skills.toString().split(',')
+      .map((s: string) => s.trim())
+      .filter((s: string) => s);
+    
+    if (!titleSkillMap[title]) {
+      titleSkillMap[title] = [];
+    }
+    
+    skills.forEach((skill: string) => {
+      if (!titleSkillMap[title].includes(skill)) {
+        titleSkillMap[title].push(skill);
+      }
+    });
+  });
+  
+  // Find commonly paired skills (skills that appear together often)
+  const skillPairs: Record<string, number> = {};
+  
+  Object.values(titleSkillMap).forEach(skillList => {
+    for (let i = 0; i < skillList.length; i++) {
+      for (let j = i + 1; j < skillList.length; j++) {
+        // Create a consistent key for the skill pair
+        const pair = [skillList[i], skillList[j]].sort().join('||');
+        skillPairs[pair] = (skillPairs[pair] || 0) + 1;
+      }
+    }
+  });
+  
+  // Get top skill pairs
+  const topPairs = Object.entries(skillPairs)
+    .map(([pair, count]) => {
+      const [skill1, skill2] = pair.split('||');
+      return { skill1, skill2, count };
+    })
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8);
+  
+  // Calculate skill demand growth (approximation based on job posting dates)
+  const skillGrowth: Record<string, MonthDataPoint[]> = {};
+  
+  // Only process if we have date information
+  const hasDateData = data.some(job => job.date_posted || job.currentdate || job.currentDate);
+  
+  if (hasDateData) {
+    // Group skills by month
+    data.forEach(job => {
+      const dateStr = job.date_posted || job.currentdate || job.currentDate;
+      if (!dateStr || !job.skills) return;
+      
+      try {
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime())) return;
+        
+        // Use month as the time unit
+        const monthKey = `${date.getFullYear()}-${date.getMonth() + 1}`;
+        
+        const skills = job.skills.toString().split(',')
+          .map((s: string) => s.trim())
+          .filter((s: string) => s);
+        
+        skills.forEach((skill: string) => {
+          if (!skillGrowth[skill]) {
+            skillGrowth[skill] = [];
+          }
+          
+          // Record occurrence in this month
+          const monthIndex = skillGrowth[skill].findIndex(
+            (m: MonthDataPoint) => m[0] === monthKey
+          );
+          
+          if (monthIndex >= 0) {
+            skillGrowth[skill][monthIndex][1]++;
+          } else {
+            skillGrowth[skill].push([monthKey, 1]);
+          }
+        });
+      } catch (e) {
+        console.error('Error processing date:', e);
+      }
+    });
+  }
+  
+  // Calculate growth rates for top skills
+  const growthData = skillsData.slice(0, 10).map(({ name }) => {
+    const monthCounts: MonthDataPoint[] = skillGrowth[name] || [];
+    
+    // Sort by month
+    const sortedMonthCounts = [...monthCounts].sort((a, b) => 
+      a[0].localeCompare(b[0])
+    );
+    
+    // Calculate growth rate if we have enough data points
+    let growthRate = 0;
+    if (sortedMonthCounts.length >= 2) {
+      // Simple growth calculation: (latest - earliest) / earliest
+      const earliest = sortedMonthCounts[0][1];
+      const latest = sortedMonthCounts[sortedMonthCounts.length - 1][1];
+      
+      if (earliest > 0) {
+        growthRate = (latest - earliest) / earliest;
+      }
+    }
+    
+    return {
+      skill: name,
+      growthRate,
+      trend: growthRate > 0.1 ? 'rising' : growthRate < -0.1 ? 'falling' : 'stable'
+    };
+  });
+  
+  return (
+    <div className="space-y-6">
+      {/* Top skills visualization - already provided by existing SkillsAnalytics */}
+      <div className="mt-6">
+        <h4 className="text-sm font-medium text-gray-300 mb-3">Skill Demand Insights</h4>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Skill trends */}
+          <div className="bg-[#252525] p-4 rounded-lg">
+            <h5 className="text-sm font-medium text-gray-300 mb-2">Skill Demand Trends</h5>
+            <div className="space-y-2">
+              {growthData.map((item, index) => (
+                <div key={index} className="flex justify-between items-center">
+                  <span className="text-sm">{item.skill}</span>
+                  <span className={`text-xs font-medium px-2 py-1 rounded ${
+                    item.trend === 'rising' ? 'bg-green-900/40 text-green-300' :
+                    item.trend === 'falling' ? 'bg-red-900/40 text-red-300' :
+                    'bg-gray-800 text-gray-300'
+                  }`}>
+                    {item.trend === 'rising' ? '↑ Rising' :
+                     item.trend === 'falling' ? '↓ Falling' : '→ Stable'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+          
+          {/* Complementary skills */}
+          <div className="bg-[#252525] p-4 rounded-lg">
+            <h5 className="text-sm font-medium text-gray-300 mb-2">Complementary Skills</h5>
+            <div className="space-y-2">
+              {topPairs.map((pair, index) => (
+                <div key={index} className="text-sm">
+                  <span className="bg-blue-900/30 text-blue-300 px-2 py-1 rounded">{pair.skill1}</span>
+                  <span className="mx-2 text-gray-400">+</span>
+                  <span className="bg-purple-900/30 text-purple-300 px-2 py-1 rounded">{pair.skill2}</span>
+                  <span className="text-xs text-gray-400 ml-2">({pair.count} jobs)</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      {/* Skill market advice */}
+      <div className="bg-[#252525] p-4 rounded-lg">
+        <h5 className="text-sm font-medium text-gray-300 mb-2">Market Recommendations</h5>
+        <ul className="space-y-2 text-sm text-gray-300">
+          <li className="flex">
+            <span className="text-green-400 mr-2">•</span>
+            <span>Focus on complementary skill pairs to maximize job opportunities</span>
+          </li>
+          <li className="flex">
+            <span className="text-green-400 mr-2">•</span>
+            <span>Rising skills are excellent investment for learning/development</span>
+          </li>
+          <li className="flex">
+            <span className="text-green-400 mr-2">•</span>
+            <span>Most in-demand skills appear across multiple job titles, showing their versatility</span>
+          </li>
+        </ul>
+      </div>
+    </div>
+  );
+};
+
+// Job Market Insights component
+const JobMarketInsights = ({ data }: { data: any[] }) => {
+  // Calculate job posting trends by date
+  const jobsByDate: Record<string, number> = {};
+  
+  data.forEach(job => {
+    const dateStr = job.date_posted || job.currentdate || job.currentDate;
+    if (!dateStr) return;
+    
+    try {
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) return;
+      
+      // Group by month for trend analysis
+      const monthKey = `${date.getFullYear()}-${date.getMonth() + 1}`;
+      jobsByDate[monthKey] = (jobsByDate[monthKey] || 0) + 1;
+    } catch (e) {
+      console.error('Error processing date:', e);
+    }
+  });
+  
+  // Convert to array and sort by date
+  const jobTrends = Object.entries(jobsByDate)
+    .map(([date, count]) => ({ date, count }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  
+  // Calculate month-over-month growth for the last few months
+  let growthRate = 0;
+  if (jobTrends.length >= 2) {
+    const lastMonth = jobTrends[jobTrends.length - 1].count;
+    const previousMonth = jobTrends[jobTrends.length - 2].count;
+    
+    if (previousMonth > 0) {
+      growthRate = ((lastMonth - previousMonth) / previousMonth) * 100;
+    }
+  }
+  
+  // Identify if the job market is growing, stable, or declining
+  const marketStatus = 
+    growthRate > 5 ? 'growing' :
+    growthRate < -5 ? 'declining' :
+    'stable';
+  
+  // Market competitiveness - more data points per title suggests competition
+  const jobTitlesMap: Record<string, number> = {};
+  
+  data.forEach(job => {
+    if (!job.title) return;
+    
+    const title = job.title.toString().trim();
+    if (title) {
+      jobTitlesMap[title] = (jobTitlesMap[title] || 0) + 1;
+    }
+  });
+  
+  // Calculate competitiveness metrics
+  const titleCounts = Object.values(jobTitlesMap);
+  const avgJobsPerTitle = titleCounts.length > 0 ? 
+    titleCounts.reduce((sum, count) => sum + count, 0) / titleCounts.length : 0;
+  
+  // Market competitiveness level
+  const competitiveness = 
+    avgJobsPerTitle > 5 ? 'high' :
+    avgJobsPerTitle > 2 ? 'medium' :
+    'low';
+  
+  return (
+    <div className="space-y-6">
+      {/* Market status overview */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className={`p-4 rounded-lg ${
+          marketStatus === 'growing' ? 'bg-green-900/30' :
+          marketStatus === 'declining' ? 'bg-red-900/30' :
+          'bg-blue-900/30'
+        }`}>
+          <h4 className="text-sm font-medium mb-1">Market Trend</h4>
+          <div className="flex items-center">
+            <span className={`text-lg font-bold ${
+              marketStatus === 'growing' ? 'text-green-300' :
+              marketStatus === 'declining' ? 'text-red-300' :
+              'text-blue-300'
+            }`}>
+              {marketStatus === 'growing' ? '↑' :
+               marketStatus === 'declining' ? '↓' : '→'}
+              {' '}
+              {marketStatus.charAt(0).toUpperCase() + marketStatus.slice(1)}
+            </span>
+            {growthRate !== 0 && (
+              <span className="ml-2 text-sm">
+                ({growthRate.toFixed(1)}%)
+              </span>
+            )}
+          </div>
+        </div>
+        
+        <div className="p-4 rounded-lg bg-purple-900/30">
+          <h4 className="text-sm font-medium mb-1">Competition Level</h4>
+          <div className="flex items-center">
+            <span className="text-lg font-bold text-purple-300">
+              {competitiveness.charAt(0).toUpperCase() + competitiveness.slice(1)}
+            </span>
+            <span className="ml-2 text-sm">
+              ({avgJobsPerTitle.toFixed(1)} jobs/title)
+            </span>
+          </div>
+        </div>
+        
+        <div className="p-4 rounded-lg bg-amber-900/30">
+          <h4 className="text-sm font-medium mb-1">Total Data Points</h4>
+          <div className="flex items-center">
+            <span className="text-lg font-bold text-amber-300">
+              {data.length} jobs
+            </span>
+          </div>
+        </div>
+      </div>
+      
+      {/* Market insights */}
+      <div className="bg-[#252525] p-4 rounded-lg">
+        <h4 className="text-sm font-medium text-gray-300 mb-2">Job Seeker Action Items</h4>
+        <ul className="space-y-2 text-sm text-gray-300">
+          {marketStatus === 'growing' ? (
+            <>
+              <li className="flex">
+                <span className="text-green-400 mr-2">•</span>
+                <span>Market is expanding - good time to negotiate higher salaries</span>
+              </li>
+              <li className="flex">
+                <span className="text-green-400 mr-2">•</span>
+                <span>Apply quickly as job openings are increasing</span>
+              </li>
+            </>
+          ) : marketStatus === 'declining' ? (
+            <>
+              <li className="flex">
+                <span className="text-yellow-400 mr-2">•</span>
+                <span>Market is contracting - focus on differentiation and networking</span>
+              </li>
+              <li className="flex">
+                <span className="text-yellow-400 mr-2">•</span>
+                <span>Consider roles with stable companies and industries</span>
+              </li>
+            </>
+          ) : (
+            <li className="flex">
+              <span className="text-blue-400 mr-2">•</span>
+              <span>Market is stable - focus on quality applications over quantity</span>
+            </li>
+          )}
+          
+          {competitiveness === 'high' ? (
+            <li className="flex">
+              <span className="text-yellow-400 mr-2">•</span>
+              <span>High competition - highlight unique aspects of your experience</span>
+            </li>
+          ) : competitiveness === 'low' ? (
+            <li className="flex">
+              <span className="text-green-400 mr-2">•</span>
+              <span>Low competition - good opportunity to apply for stretch roles</span>
+            </li>
+          ) : (
+            <li className="flex">
+              <span className="text-blue-400 mr-2">•</span>
+              <span>Moderate competition - balanced approach to job search recommended</span>
+            </li>
+          )}
+        </ul>
+      </div>
+      
+      {/* Job posting trend chart */}
+      {jobTrends.length > 1 && (
+        <div>
+          <h4 className="text-sm font-medium text-gray-300 mb-2">Job Posting Trend</h4>
+          <ResponsiveContainer width="100%" height={230}>
+            <AreaChart 
+              data={jobTrends}
+              margin={{ top: 10, right: 10, left: 5, bottom: 5 }}
+            >
+              <defs>
+                <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#8884d8" stopOpacity={0.8}/>
+                  <stop offset="95%" stopColor="#8884d8" stopOpacity={0.2}/>
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+              <XAxis 
+                dataKey="date" 
+                tick={{ fontSize: 10, fill: '#fff' }}
+                tickFormatter={(value) => {
+                  const [year, month] = value.split('-');
+                  return `${month}/${year.slice(2)}`;
+                }}
+              />
+              <YAxis 
+                tick={{ fontSize: 10, fill: '#999' }} 
+                allowDecimals={false}
+              />
+              <Tooltip 
+                contentStyle={{ backgroundColor: '#333', border: 'none', borderRadius: '4px', padding: '8px' }}
+                itemStyle={{ color: '#fff' }}
+                labelFormatter={(value) => {
+                  const [year, month] = value.split('-');
+                  const date = new Date(parseInt(year), parseInt(month) - 1);
+                  return date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+                }}
+                formatter={(value: any) => [`${value} jobs`, 'Job Count']}
+              />
+              <Area 
+                type="monotone" 
+                dataKey="count" 
+                name="Job Count" 
+                stroke="#8884d8" 
+                fill="url(#colorCount)" 
+                activeDot={{ r: 6 }}
+              />
+              
+              {/* Add reference line for average */}
+              {jobTrends.length > 0 && (
+                <ReferenceLine 
+                  y={jobTrends.reduce((sum, item) => sum + item.count, 0) / jobTrends.length} 
+                  stroke="#ff7300" 
+                  strokeDasharray="3 3"
+                  label={{ 
+                    value: 'Average', 
+                    position: 'right', 
+                    fill: '#ff7300', 
+                    fontSize: 10 
+                  }}
+                />
+              )}
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Add Tab component for organizing content
+const Tab = ({ 
+  active, 
+  onClick, 
+  children, 
+  icon 
+}: { 
+  active: boolean, 
+  onClick: () => void, 
+  children: React.ReactNode, 
+  icon?: React.ReactNode 
+}) => (
+  <button
+    onClick={onClick}
+    className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-t-lg transition-colors
+    ${active 
+      ? 'bg-[#1E1E1E] text-white border-t border-l border-r border-[#333]' 
+      : 'bg-[#111] text-gray-400 hover:bg-[#1A1A1A] hover:text-gray-300'}`}
+  >
+    {icon}
+    {children}
+  </button>
+);
+
+// Add KeyInsight component for summary section
+const KeyInsight = ({ 
+  title, 
+  value, 
+  trend, 
+  icon 
+}: { 
+  title: string, 
+  value: string | number, 
+  trend?: 'up' | 'down' | 'neutral', 
+  icon: React.ReactNode 
+}) => (
+  <div className="bg-[#1A1A1A] rounded-lg p-3 border border-[#333] flex items-center">
+    <div className="mr-3 p-2 rounded-full bg-[#2A2A2A]">
+      {icon}
+    </div>
+    <div>
+      <h3 className="text-xs text-gray-400">{title}</h3>
+      <div className="flex items-center">
+        <p className="text-lg font-bold">{value}</p>
+        {trend && (
+          <span className={`ml-2 text-xs ${
+            trend === 'up' ? 'text-green-400' : 
+            trend === 'down' ? 'text-red-400' : 
+            'text-gray-400'
+          }`}>
+            {trend === 'up' ? '↑' : trend === 'down' ? '↓' : '→'}
+          </span>
+        )}
+      </div>
+    </div>
+  </div>
+);
 
 export default function AnalyticsPage() {
   const [loading, setLoading] = useState(false)
@@ -332,6 +1268,9 @@ export default function AnalyticsPage() {
   const [jobTitlesData, setJobTitlesData] = useState<any[]>([])
   const [sheetLoaded, setSheetLoaded] = useState(false)
   const router = useRouter()
+  
+  // Add active tab state
+  const [activeTab, setActiveTab] = useState('overview')
   
   const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042', '#0088FE', '#00C49F']
 
@@ -409,7 +1348,10 @@ export default function AnalyticsPage() {
     const companies: Record<string, number> = {}
     rows.forEach(row => {
       const company = companyIndex !== -1 && row[companyIndex] ? row[companyIndex] : 'Unknown'
-      companies[company] = (companies[company] || 0) + 1
+      // Skip 'Unknown' companies
+      if (company !== 'Unknown') {
+        companies[company] = (companies[company] || 0) + 1
+      }
     })
     
     const companyData = Object.entries(companies)
@@ -566,73 +1508,90 @@ export default function AnalyticsPage() {
       setExperienceData(expData)
     }
     
-    // Process skills if available
+    // Process skills
     if (skillsIndex !== -1) {
-      const skillsMap: Record<string, number> = {}
+      const skillsMap: Record<string, number> = {};
       
       rows.forEach(row => {
-        if (!row[skillsIndex]) return
-        
-        let skills: string[] = []
-        const skillsData = row[skillsIndex]
-        
-        // Clean and parse skills data
-        const cleanSkill = (skill: string): string => {
-          // Remove common JSON artifacts and clean the string
-          return skill
-            .replace(/["\[\]{}]/g, '') // Remove JSON syntax characters
-            .replace(/\\"/g, '') // Remove escaped quotes
-            .replace(/^'|'$/g, '') // Remove single quotes
-            .trim()
-            .replace(/\s+/g, ' ') // Normalize whitespace
-        }
+        if (skillsIndex !== -1 && row[skillsIndex]) {
+          const skillsData = row[skillsIndex];
+          let skills: string[] = [];
+          
+          const cleanSkill = (skill: string): string => {
+            // Remove common JSON artifacts and clean the string
+            return skill
+              .replace(/[\[\]"'{}\s]+/g, '') // Remove all brackets, quotes, braces, and whitespace
+              .replace(/\\"/g, '') // Remove escaped quotes
+              .replace(/^'|'$/g, '') // Remove single quotes
+              .trim();
+          };
 
-        try {
-          if (typeof skillsData === 'string') {
-            // First try to parse as JSON if it looks like JSON
-            if (skillsData.trim().startsWith('{') || skillsData.trim().startsWith('[')) {
-              try {
-                const parsed = JSON.parse(skillsData)
-                if (Array.isArray(parsed)) {
-                  skills = parsed.map(s => cleanSkill(String(s)))
-                } else if (typeof parsed === 'object' && parsed !== null) {
-                  skills = Object.keys(parsed).map(cleanSkill)
-                }
-              } catch {
-                // If JSON parsing fails, treat as comma-separated
-                skills = skillsData.split(',').map(cleanSkill)
+          try {
+            if (typeof skillsData === 'string') {
+              // Skip empty arrays or empty strings
+              if (skillsData.trim() === '[]' || skillsData.trim() === '') {
+                return; // Skip this row
               }
-            } else {
-              // Handle as comma-separated string
-              skills = skillsData.split(',').map(cleanSkill)
+              
+              // First try to parse as JSON if it looks like JSON
+              if (skillsData.trim().startsWith('{') || skillsData.trim().startsWith('[')) {
+                try {
+                  const parsed = JSON.parse(skillsData);
+                  if (Array.isArray(parsed)) {
+                    skills = parsed.map((s: string) => cleanSkill(String(s)))
+                      .filter((s: string) => s && s.length > 0); // Filter out empty skills
+                  } else if (typeof parsed === 'object' && parsed !== null) {
+                    skills = Object.keys(parsed)
+                      .map((s: string) => cleanSkill(String(s)))
+                      .filter((s: string) => s && s.length > 0); // Filter out empty skills
+                  }
+                } catch {
+                  // If JSON parsing fails, treat as comma-separated
+                  skills = skillsData.split(',')
+                    .map((s: string) => cleanSkill(s))
+                    .filter((s: string) => s && s.length > 0); // Filter out empty skills
+                }
+              } else {
+                // Handle as comma-separated string
+                skills = skillsData.split(',')
+                  .map((s: string) => cleanSkill(s))
+                  .filter((s: string) => s && s.length > 0); // Filter out empty skills
+              }
+            } else if (Array.isArray(skillsData)) {
+              skills = skillsData
+                .map((s: string) => cleanSkill(String(s)))
+                .filter((s: string) => s && s.length > 0); // Filter out empty skills
+            } else if (typeof skillsData === 'object' && skillsData !== null) {
+              skills = Object.keys(skillsData)
+                .map((s: string) => cleanSkill(String(s)))
+                .filter((s: string) => s && s.length > 0); // Filter out empty skills
             }
-          } else if (Array.isArray(skillsData)) {
-            skills = skillsData.map(s => cleanSkill(String(s)))
-          } else if (typeof skillsData === 'object' && skillsData !== null) {
-            skills = Object.keys(skillsData).map(cleanSkill)
-          }
 
-          // Filter out empty skills and normalize
-          skills = skills
-            .filter(skill => skill.length > 0)
-            .map(skill => skill.charAt(0).toUpperCase() + skill.slice(1).toLowerCase())
-        } catch (e) {
-          console.error('Error processing skills:', e)
-        }
-        
-        // Count each skill
-        skills.forEach((skill: string) => {
-          if (skill) {
-            skillsMap[skill] = (skillsMap[skill] || 0) + 1
+            // Filter out empty skills and normalize
+            skills = skills
+              .filter(skill => skill.length > 0)
+              .map(skill => {
+                // Normalize case (first letter uppercase, rest lowercase)
+                return skill.charAt(0).toUpperCase() + skill.slice(1).toLowerCase();
+              });
+              
+            // Count each skill
+            skills.forEach((skill: string) => {
+              if (skill) {
+                skillsMap[skill] = (skillsMap[skill] || 0) + 1
+              }
+            })
+          } catch (e) {
+            console.error('Error processing skills:', e)
           }
-        })
+        }
       })
       
       // Save skills data for dedicated skills chart
       const skillsChartData = Object.entries(skillsMap)
         .map(([name, count]) => ({ name, count }))
         .sort((a, b) => b.count - a.count)
-        .filter(({ name }) => name.length > 1) // Filter out single-character skills
+        .filter(({ name }) => name.length > 1 && name !== '[]') // Filter out single-character skills and empty arrays
         .slice(0, 50) // Top 50 skills
       
       setSkillsData(skillsChartData)
@@ -691,205 +1650,238 @@ export default function AnalyticsPage() {
     )
   }
 
+  // Calculate key metrics for the insights section
+  const totalJobs = data.length;
+  
+  // Recent jobs (last 30 days)
+  const recentJobs = data.filter(job => {
+    const dateField = job.date_posted || job.currentdate || job.date_added || null;
+    if (!dateField) return false;
+    
+    try {
+      const jobDate = new Date(dateField);
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      return jobDate >= thirtyDaysAgo;
+    } catch (e) {
+      return false;
+    }
+  }).length;
+  
+  // Average salary calculation
+  const validSalaries = data.reduce((acc: number[], job: any) => {
+    if (job.salary) {
+      const salary = job.salary.toString();
+      const numericValue = parseInt(salary.replace(/[^0-9]/g, ''));
+      
+      if (!isNaN(numericValue) && numericValue > 10000 && numericValue < 500000) {
+        acc.push(numericValue);
+      }
+    }
+    return acc;
+  }, []);
+  
+  const avgSalary = validSalaries.length > 0 
+    ? Math.floor(validSalaries.reduce((sum, salary) => sum + salary, 0) / validSalaries.length)
+    : 0;
+  
+  // Top skill
+  const topSkill = skillsData.length > 0 ? skillsData[0].name : 'N/A';
+  
   return (
     <div className="min-h-screen flex flex-col text-white">
-
-      
       <main className="container mx-auto px-4 py-6 mb-10">
-
+        <h2 className="text-xl font-bold mb-6">Job Market Analytics</h2>
         
-        {/* Mobile Viewing Instructions */}
-        <div className="mb-4 bg-blue-900/20 rounded-lg shadow-md p-3 border border-blue-800 md:hidden">
-          <div className="flex items-center gap-2 mb-1">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-blue-400" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-            </svg>
-            <h3 className="text-xs font-medium text-blue-300">Mobile Viewing Tips</h3>
+        {/* Key Insights Section */}
+        <div className="bg-[#1E1E1E] border border-[#333] rounded-lg p-4 mb-6">
+          <h3 className="text-sm text-gray-400 mb-3">Key Insights</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <KeyInsight 
+              title="Total Jobs" 
+              value={totalJobs} 
+              icon={<Briefcase className="h-4 w-4 text-blue-400" />} 
+            />
+            <KeyInsight 
+              title="Last 30 Days" 
+              value={recentJobs} 
+              trend={recentJobs > totalJobs / 12 ? 'up' : 'down'}
+              icon={<TrendingUp className="h-4 w-4 text-green-400" />} 
+            />
+            <KeyInsight 
+              title="Avg Salary" 
+              value={`$${avgSalary.toLocaleString()}`} 
+              icon={<DollarSign className="h-4 w-4 text-amber-400" />} 
+            />
+            <KeyInsight 
+              title="Top Skill" 
+              value={topSkill} 
+              icon={<Award className="h-4 w-4 text-purple-400" />} 
+            />
           </div>
-          <p className="text-xs text-blue-400">
-            Rotate your device to landscape mode for a better view of charts. Tap on chart elements to see detailed information.
-          </p>
         </div>
         
-        {/* Mobile-friendly layout adjustments */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-6 mb-4 sm:mb-8">
-          {/* Summary Stats */}
-          <Card 
-            title="Summary" 
-            description="Key metrics at a glance"
-            icon={<Database className="h-5 w-5 text-blue-400" />}
+        {/* Tabs Navigation */}
+        <div className="flex overflow-x-auto mb-1 border-b border-[#333]">
+          <Tab 
+            active={activeTab === 'overview'} 
+            onClick={() => setActiveTab('overview')}
+            icon={<BarChart2 className="h-4 w-4" />}
           >
-            <SummaryStats data={data} />
-          </Card>
-
-          {/* Job Sources - Replacing Application Status */}
-          <Card 
-            title="Job Sources" 
-            description="Where jobs are aggregated from"
-            icon={<Database className="h-5 w-5 text-blue-400" />}
+            Market Overview
+          </Tab>
+          <Tab 
+            active={activeTab === 'salary'} 
+            onClick={() => setActiveTab('salary')}
+            icon={<DollarSign className="h-4 w-4" />}
           >
-            <div className="h-40 sm:h-64">
-              <JobSourceBreakdown data={data} />
-            </div>
-          </Card>
+            Salary Data
+          </Tab>
+          <Tab 
+            active={activeTab === 'skills'} 
+            onClick={() => setActiveTab('skills')}
+            icon={<Code className="h-4 w-4" />}
+          >
+            Skills Analysis
+          </Tab>
+          <Tab 
+            active={activeTab === 'companies'} 
+            onClick={() => setActiveTab('companies')}
+            icon={<Building className="h-4 w-4" />}
+          >
+            Companies & Location
+          </Tab>
         </div>
-
-        {/* Application Timeline */}
-        {timelineData.length > 0 && (
-          <Card 
-            title="Job Posting Timeline" 
-            description="When jobs were posted"
-            icon={<TrendingUp className="h-5 w-5 text-green-400" />}
-            className="mb-6"
-          >
-            <div className="h-56 sm:h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart
-                  data={timelineData}
-                  margin={{ top: 10, right: 5, left: 5, bottom: 40 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                  <XAxis 
-                    dataKey="date" 
-                    angle={-45} 
-                    textAnchor="end"
-                    height={60}
-                    interval={0}
-                    tick={{ fontSize: 9, fill: '#999' }}
-                  />
-                  <YAxis tick={{ fontSize: 10, fill: '#999' }} />
-                  <Tooltip contentStyle={{ backgroundColor: '#333', border: 'none' }} itemStyle={{ color: '#fff' }} />
-                  <Area type="monotone" dataKey="count" name="Job Count" stroke="#8884d8" fill="#8884d8" fillOpacity={0.3} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </Card>
-        )}
-
-        {/* Job Titles Chart */}
-        <Card 
-          title="Top Job Titles" 
-          description="Most common job titles in listings"
-          icon={<Briefcase className="h-5 w-5 text-purple-400" />}
-          className="mb-6"
-        >
-          <JobTitlesChart titlesData={jobTitlesData} />
-        </Card>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-6 mb-3 sm:mb-6">
-          {/* Job Types Chart - Top 6 */}
-          <Card 
-            title="Job Types" 
-            description="Distribution of job types"
-            icon={<Briefcase className="h-5 w-5 text-purple-400" />}
-          >
-            <div className="h-auto">
-              <ResponsiveContainer width="100%" height={200}>
-                <PieChart>
-                  <Pie
-                    data={jobTypeStats}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="count"
-                    nameKey="name"
-                  >
-                    {jobTypeStats.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip contentStyle={{ backgroundColor: '#333', border: 'none' }} itemStyle={{ color: '#fff' }} />
-                  <Legend layout="horizontal" verticalAlign="bottom" align="center" />
-                </PieChart>
-              </ResponsiveContainer>
+        
+        {/* Tab Content */}
+        <div className="bg-[#1E1E1E] border-x border-b border-[#333] rounded-b-lg p-6">
+          {/* Overview Tab */}
+          {activeTab === 'overview' && (
+            <div className="space-y-6">
+              <Card 
+                title="Market Overview" 
+                description="Key metrics at a glance"
+                icon={<Database className="h-5 w-5 text-blue-400" />}
+              >
+                <SummaryStats data={data} />
+              </Card>
               
-              {/* Custom legend for better visibility */}
-              <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-                {jobTypeStats.map((entry, index) => (
-                  <div key={`legend-${index}`} className="flex items-center">
-                    <div 
-                      className="w-3 h-3 mr-2" 
-                      style={{ backgroundColor: COLORS[index % COLORS.length] }}
-                    ></div>
-                    <span>{entry.name}</span>
-                    <span className="ml-1 text-gray-400">({entry.count})</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </Card>
-
-          {/* Experience Levels Chart with Average */}
-          <Card 
-            title="Experience Requirements" 
-            description="Distribution and average of experience levels"
-            icon={<TrendingUp className="h-5 w-5 text-green-400" />}
-          >
-            <ExperienceLevelsChart experienceData={experienceData} />
-          </Card>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 mb-4 sm:mb-6">
-          {/* Top Locations - Horizontal Bar Chart */}
-          <Card 
-            title="Top Locations" 
-            description="Most common job locations"
-            icon={<MapPin className="h-5 w-5 text-red-400" />}
-          >
-            <div className="h-56 sm:h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart
-                  data={locationStats.slice(0, 5)}
-                  margin={{ top: 5, right: 5, left: 5, bottom: 5 }}
+              <Card 
+                title="Job Market Insights" 
+                description="Actionable market trends and recommendations"
+                icon={<TrendingUp className="h-5 w-5 text-green-400" />}
+              >
+                <JobMarketInsights data={data} />
+              </Card>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <Card 
+                  title="Experience Requirements" 
+                  description="Distribution of experience levels"
+                  icon={<Users className="h-5 w-5 text-green-400" />}
                 >
-                  <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                  <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#999' }} />
-                  <YAxis tick={{ fontSize: 10, fill: '#999' }} />
-                  <Tooltip contentStyle={{ backgroundColor: '#333', border: 'none' }} itemStyle={{ color: '#fff' }} />
-                  <Bar dataKey="count" name="Job Count" fill="#00C49F" radius={[4, 4, 0, 0]}>
-                    {locationStats.slice(0, 5).map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={`hsl(${160 - index * 8}, 70%, 50%)`} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </Card>
-        </div>
-        
-        {/* Skills Chart with Top 50 Skills List */}
-        {skillsData.length > 0 && (
-          <Card 
-            title="Top Skills in Demand" 
-            description="Most in-demand skills from job listings"
-            icon={<Code className="h-5 w-5 text-yellow-400" />}
-            className="mb-6"
-          >
-            <SkillsAnalytics skillsData={skillsData} />
-          </Card>
-        )}
-        
-        {/* Top Companies as Cards */}
-        <div className="p-6 bg-[#1E1E1E] rounded-2xl border border-[#333]">
-          <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
-            <Building className="h-5 w-5 text-blue-400" />
-            Top Companies
-          </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            {companyStats.slice(0, 6).map((company, index) => (
-              <div key={company.name} className="flex items-center gap-3 p-3 bg-[#252525] rounded-xl">
-                <div className="h-10 w-10 rounded-full bg-[#333] flex items-center justify-center text-lg font-bold">
-                  {company.name.charAt(0)}
-                </div>
-                <div>
-                  <p className="font-medium">{company.name}</p>
-                  <p className="text-sm text-gray-400">{company.count} job{company.count !== 1 ? 's' : ''}</p>
-                </div>
+                  <ExperienceLevelsChart experienceData={experienceData} />
+                </Card>
+                
+                <Card 
+                  title="Job Sources" 
+                  description="Where jobs are aggregated from"
+                  icon={<Database className="h-5 w-5 text-blue-400" />}
+                >
+                  <JobSourceBreakdown data={data} />
+                </Card>
               </div>
-            ))}
-          </div>
+            </div>
+          )}
+          
+          {/* Salary Tab */}
+          {activeTab === 'salary' && (
+            <div className="space-y-6">
+              <Card 
+                title="Salary Analysis" 
+                description="Compensation trends and insights"
+                icon={<DollarSign className="h-5 w-5 text-green-400" />}
+              >
+                <SalaryAnalysis data={data} />
+              </Card>
+            </div>
+          )}
+          
+          {/* Skills Tab */}
+          {activeTab === 'skills' && (
+            <div className="space-y-6">
+              <Card 
+                title="Skills Insights" 
+                description="In-demand skills and market value"
+                icon={<Code className="h-5 w-5 text-yellow-400" />}
+              >
+                <div className="flex flex-col space-y-6">
+                  <SkillsAnalytics skillsData={skillsData} />
+                  <SkillInsights skillsData={skillsData} data={data} />
+                </div>
+              </Card>
+            </div>
+          )}
+          
+          {/* Companies & Location Tab */}
+          {activeTab === 'companies' && (
+            <div className="space-y-6">
+              <Card 
+                title="Top Job Titles" 
+                description="Most common job titles in listings"
+                icon={<Briefcase className="h-5 w-5 text-purple-400" />}
+              >
+                <JobTitlesChart titlesData={jobTitlesData} />
+              </Card>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <Card 
+                  title="Top Companies" 
+                  description="Companies with the most job listings"
+                  icon={<Building className="h-5 w-5 text-blue-400" />}
+                >
+                  <div className="grid grid-cols-1 gap-2">
+                    {companyStats.slice(0, 6).map((company, index) => (
+                      <div key={company.name} className="flex items-center gap-3 p-3 bg-[#252525] rounded-xl">
+                        <div className="h-10 w-10 rounded-full bg-[#333] flex items-center justify-center text-lg font-bold">
+                          {company.name.charAt(0)}
+                        </div>
+                        <div>
+                          <p className="font-medium">{company.name}</p>
+                          <p className="text-sm text-gray-400">{company.count} job{company.count !== 1 ? 's' : ''}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </Card>
+                
+                <Card 
+                  title="Top Locations" 
+                  description="Most common job locations"
+                  icon={<MapPin className="h-5 w-5 text-red-400" />}
+                >
+                  <div className="h-80">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={locationStats.slice(0, 5)}
+                        margin={{ top: 5, right: 5, left: 5, bottom: 5 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                        <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#999' }} />
+                        <YAxis tick={{ fontSize: 10, fill: '#999' }} />
+                        <Tooltip contentStyle={{ backgroundColor: '#333', border: 'none' }} itemStyle={{ color: '#fff' }} />
+                        <Bar dataKey="count" name="Job Count" fill="#00C49F" radius={[4, 4, 0, 0]}>
+                          {locationStats.slice(0, 5).map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={`hsl(${160 - index * 8}, 70%, 50%)`} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </Card>
+              </div>
+            </div>
+          )}
         </div>
       </main>
     </div>

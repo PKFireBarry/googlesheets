@@ -239,4 +239,47 @@ export const parseSalary = (salary: string, type: SalaryType): number => {
   const match = salary.match(/\d+/);
   const value = match ? parseInt(match[0], 10) : 0;
   return type === 'hourly' ? value * 2080 : value;
+};
+
+/**
+ * Deduplicates job listings based on title and company name
+ * Keeps only the newest instance of each job (based on date_posted)
+ */
+export const dedupJobs = (rows: RowData[], headers: string[]): RowData[] => {
+  // Create a Map to store unique jobs by title+company combo
+  const uniqueJobs = new Map<string, {job: RowData, date: Date}>();
+  
+  // Find indices for relevant fields
+  const datePostedIdx = headers.findIndex(h => 
+    h.toLowerCase() === 'date_posted' || 
+    h.toLowerCase() === 'currentdate' || 
+    h.toLowerCase() === 'currentdate'
+  );
+  
+  // Process each job row
+  rows.forEach(job => {
+    const title = getFieldValue(job, "title", headers);
+    const company = getFieldValue(job, "company_name", headers);
+    
+    if (!title || !company) return; // Skip jobs without title or company
+    
+    // Create a unique key for this job
+    const jobKey = `${title.trim()}_${company.trim()}`.toLowerCase().replace(/\s+/g, '_');
+    
+    // Get the job's date
+    const dateStr = getFieldValue(job, "date_posted", headers) || 
+                   getFieldValue(job, "currentdate", headers) || 
+                   getFieldValue(job, "currentDate", headers);
+    const jobDate = dateStr ? new Date(dateStr) : new Date(0);
+    
+    // Only add the job if it's newer than an existing one with the same key
+    // or if this is the first time we've seen this job
+    if (!uniqueJobs.has(jobKey) || 
+        (jobDate > uniqueJobs.get(jobKey)!.date && !isNaN(jobDate.getTime()))) {
+      uniqueJobs.set(jobKey, {job, date: jobDate});
+    }
+  });
+  
+  // Convert the Map values back to an array
+  return Array.from(uniqueJobs.values()).map(item => item.job);
 }; 

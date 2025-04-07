@@ -14,7 +14,8 @@ import {
   getFieldValue, 
   extractSourceFromUrl,
   isJobApplied,
-  parseSalary
+  parseSalary,
+  dedupJobs
 } from "./utils/dataHelpers";
 import {
   JobData,
@@ -63,17 +64,22 @@ export default function Home() {
     selectedLocation: "",
     skillFilter: "",
     showFilters: false,
-    showLastDayOnly: false,
+    timeRangeFilter: 168, // Default to 168 hours (7 days)
     minSalary: 0,
     salaryType: "any" as SalaryType,
     excludedWords: [],
-    sourceFilter: ""
+    sourceFilter: "",
+    titleFilter: ""
   });
   
   const [uniqueLocations, setUniqueLocations] = useState<string[]>([]);
   const [uniqueSkills, setUniqueSkills] = useState<string[]>([]);
+  const [uniqueSources, setUniqueSources] = useState<string[]>([]);
+  const [uniqueTitles, setUniqueTitles] = useState<string[]>([]);
   const [newExcludeWord, setNewExcludeWord] = useState<string>("");
   const [newSkill, setNewSkill] = useState<string>("");
+  const [newSource, setNewSource] = useState<string>("");
+  const [newTitle, setNewTitle] = useState<string>("");
   const [viewMode, setViewMode] = useState<'card' | 'list'>(() => {
     const savedViewMode = Cookies.get("viewMode");
     return savedViewMode === 'list' ? 'list' : 'card';
@@ -92,11 +98,12 @@ export default function Home() {
           selectedLocation: parsedFilters.selectedLocation || "",
           skillFilter: parsedFilters.skillFilter || "",
           showFilters: parsedFilters.showFilters || false,
-          showLastDayOnly: parsedFilters.showLastDayOnly || false,
+          timeRangeFilter: parsedFilters.timeRangeFilter || 168,
           minSalary: parsedFilters.minSalary || 0,
           salaryType: parsedFilters.salaryType || "any",
           excludedWords: parsedFilters.excludedWords || [],
-          sourceFilter: parsedFilters.sourceFilter || ""
+          sourceFilter: parsedFilters.sourceFilter || "",
+          titleFilter: parsedFilters.titleFilter || ""
         });
       }
     } catch (e) {
@@ -156,6 +163,87 @@ export default function Home() {
     
   }, [data]);
 
+  // Extract unique sources from the data
+  useEffect(() => {
+    if (data.length <= 1) return; // No data or just headers
+    
+    const headers = data[0];
+    const rows = data.slice(1);
+    
+    // Find relevant column indices
+    const sourceIndex = headers.findIndex(header => header.toLowerCase() === "source");
+    const urlIndex = headers.findIndex(header => header.toLowerCase() === "url");
+    const companyWebsiteIndex = headers.findIndex(header => header.toLowerCase() === "company_website");
+    
+    // Extract unique sources
+    const sources = new Set<string>();
+    
+    rows.forEach((row) => {
+      const rowData = getRowData(row);
+      if (rowData) {
+        let source = '';
+        
+        // Try to get source from source column
+        if (sourceIndex !== -1 && rowData[sourceIndex]) {
+          source = rowData[sourceIndex].trim();
+        }
+        
+        // If no source found, try to extract from URL
+        if (!source && urlIndex !== -1 && rowData[urlIndex]) {
+          source = extractSourceFromUrl(rowData[urlIndex]);
+        }
+        
+        // If still no source, try company website
+        if (!source && companyWebsiteIndex !== -1 && rowData[companyWebsiteIndex]) {
+          source = extractSourceFromUrl(rowData[companyWebsiteIndex]);
+        }
+        
+        if (source && source !== 'Unknown') {
+          sources.add(source);
+        }
+      }
+    });
+    
+    // Convert to array and sort
+    const sortedSources = Array.from(sources).sort();
+    setUniqueSources(sortedSources);
+  }, [data]);
+
+  // Extract unique titles from the data
+  useEffect(() => {
+    if (data.length <= 1) return; // No data or just headers
+    
+    const headers = data[0];
+    const rows = data.slice(1);
+    
+    // Find title column index
+    const titleIndex = headers.findIndex(header => header.toLowerCase() === "title");
+    
+    if (titleIndex === -1) return;
+    
+    // Extract unique titles - use a Map to store lowercase version as key and original as value
+    // This prevents duplicate titles with different casing
+    const titlesMap = new Map<string, string>();
+    
+    rows.forEach((row) => {
+      const rowData = getRowData(row);
+      if (rowData && rowData[titleIndex]) {
+        const title = rowData[titleIndex].trim();
+        if (title) {
+          // Store with lowercase as key to prevent duplicates with different casing
+          titlesMap.set(title.toLowerCase(), title);
+        }
+      }
+    });
+    
+    // Convert to array and sort (case insensitive)
+    const sortedTitles = Array.from(titlesMap.values()).sort((a, b) => 
+      a.toLowerCase().localeCompare(b.toLowerCase())
+    );
+    
+    setUniqueTitles(sortedTitles);
+  }, [data]);
+
   // Apply filters whenever the filter criteria or data changes
   useEffect(() => {
     if (data.length <= 1) return;
@@ -187,6 +275,16 @@ export default function Home() {
       });
     }
 
+    // Apply title filter
+    if (filters.titleFilter) {
+      const requiredTitles = filters.titleFilter.toLowerCase().split(',').map(t => t.trim()).filter(Boolean);
+      filtered = filtered.filter((row) => {
+        const title = getFieldValue(row, "title", headers).toLowerCase();
+        // Match if any of the required titles is in the job title (case insensitive)
+        return requiredTitles.some(t => title.includes(t));
+      });
+    }
+
     // Apply location filter
     if (filters.selectedLocation) {
       filtered = filtered.filter((row) => {
@@ -206,6 +304,7 @@ export default function Home() {
 
     // Apply source filter
     if (filters.sourceFilter) {
+      const requiredSources = filters.sourceFilter.toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
       filtered = filtered.filter((row) => {
         const source = getFieldValue(row, "source", headers) || '';
         const url = getFieldValue(row, "url", headers) || '';
@@ -213,7 +312,9 @@ export default function Home() {
         
         // Check both explicit source field and extract from URL if needed
         const jobSource = source || extractSourceFromUrl(url || companyWebsite).toLowerCase();
-        return jobSource.toLowerCase().includes(filters.sourceFilter.toLowerCase());
+        
+        // With multi-select, any of the selected sources should match
+        return requiredSources.some(s => jobSource.toLowerCase().includes(s));
       });
     }
 
@@ -237,8 +338,8 @@ export default function Home() {
       });
     }
 
-    // Apply last day filter
-    if (filters.showLastDayOnly) {
+    // Apply time range filter (replacing the last day filter)
+    if (filters.timeRangeFilter > 0) {
       filtered = filtered.filter((row) => {
         const datePosted = getFieldValue(row, "date_posted", headers) || 
                          getFieldValue(row, "currentdate", headers) || 
@@ -251,7 +352,7 @@ export default function Home() {
           if (isNaN(jobDate.getTime())) return false;
           
           const hoursDiff = (Date.now() - jobDate.getTime()) / (1000 * 60 * 60);
-          return hoursDiff <= 24;
+          return hoursDiff <= filters.timeRangeFilter; // Use the timeRangeFilter value in hours
         } catch {
           return false;
         }
@@ -265,7 +366,7 @@ export default function Home() {
     }));
 
     setFilteredRows(filteredWithIndices);
-  }, [data, filters.filterText, filters.selectedLocation, filters.skillFilter, filters.showLastDayOnly, filters.minSalary, filters.salaryType, filters.excludedWords, appliedJobs, filters.sourceFilter]);
+  }, [data, filters.filterText, filters.selectedLocation, filters.skillFilter, filters.timeRangeFilter, filters.minSalary, filters.salaryType, filters.excludedWords, appliedJobs, filters.sourceFilter, filters.titleFilter]);
 
   const handleUrlSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -342,10 +443,15 @@ export default function Home() {
         throw new Error("No valid job listings found");
       }
 
-      // Keep the original structure with originalIndex for JobCardGrid
-      setData([headers, ...validRows]);
+      // Deduplicate jobs - keep only the newest instance of each job
+      const uniqueRows = dedupJobs(validRows, headers);
+      console.log("Unique rows after deduplication:", uniqueRows.length);
+      console.log("Removed duplicate jobs:", validRows.length - uniqueRows.length);
 
-      const indices = validRows.map((row: RowData) => Array.isArray(row) ? -1 : (row.originalIndex || -1));
+      // Keep the original structure with originalIndex for JobCardGrid
+      setData([headers, ...uniqueRows]);
+
+      const indices = uniqueRows.map((row: RowData) => Array.isArray(row) ? -1 : (row.originalIndex || -1));
       setRowIndices(indices);
 
       // Find column indices for skills and locations processing
@@ -580,11 +686,12 @@ export default function Home() {
           filterText: filters.filterText,
           selectedLocation: filters.selectedLocation,
           skillFilter: filters.skillFilter,
-          showLastDayOnly: filters.showLastDayOnly,
+          timeRangeFilter: filters.timeRangeFilter,
           minSalary: filters.minSalary,
           salaryType: filters.salaryType,
           excludedWords: updatedWords,
-          sourceFilter: filters.sourceFilter
+          sourceFilter: filters.sourceFilter,
+          titleFilter: filters.titleFilter
         };
         Cookies.set("savedFilters", JSON.stringify(filtersToSave), { expires: 30 });
       }
@@ -601,11 +708,12 @@ export default function Home() {
       filterText: filters.filterText,
       selectedLocation: filters.selectedLocation,
       skillFilter: filters.skillFilter,
-      showLastDayOnly: filters.showLastDayOnly,
+      timeRangeFilter: filters.timeRangeFilter,
       minSalary: filters.minSalary,
       salaryType: filters.salaryType,
       excludedWords: updatedWords,
-      sourceFilter: filters.sourceFilter
+      sourceFilter: filters.sourceFilter,
+      titleFilter: filters.titleFilter
     };
     Cookies.set("savedFilters", JSON.stringify(filtersToSave), { expires: 30 });
   };
@@ -616,13 +724,15 @@ export default function Home() {
       filterText: filters.filterText,
       selectedLocation: filters.selectedLocation,
       skillFilter: filters.skillFilter,
-      showLastDayOnly: filters.showLastDayOnly,
+      showFilters: filters.showFilters,
+      timeRangeFilter: filters.timeRangeFilter,
       minSalary: filters.minSalary,
       salaryType: filters.salaryType,
       excludedWords: filters.excludedWords,
-      sourceFilter: filters.sourceFilter
+      sourceFilter: filters.sourceFilter,
+      titleFilter: filters.titleFilter
     };
-    Cookies.set("savedFilters", JSON.stringify(filtersToSave), { expires: 30 }); // Save for 30 days
+    Cookies.set("savedFilters", JSON.stringify(filtersToSave), { expires: 30 });
   };
 
   // Clear all filters
@@ -631,14 +741,18 @@ export default function Home() {
       filterText: "",
       selectedLocation: "",
       skillFilter: "",
-      showFilters: false,
-      showLastDayOnly: false,
+      showFilters: true,
+      timeRangeFilter: 168, // Reset to 168 hours (7 days)
       minSalary: 0,
-      salaryType: "any" as SalaryType,
+      salaryType: "any",
       excludedWords: [],
-      sourceFilter: ""
+      sourceFilter: "",
+      titleFilter: ""
     });
-    // Also clear saved filters from cookies
+    setNewSkill("");
+    setNewExcludeWord("");
+    setNewSource("");
+    setNewTitle("");
     Cookies.remove("savedFilters");
   };
 
@@ -702,11 +816,12 @@ export default function Home() {
           selectedLocation: filters.selectedLocation,
           skillFilter: updatedSkills.join(','),
           showFilters: filters.showFilters,
-          showLastDayOnly: filters.showLastDayOnly,
+          timeRangeFilter: filters.timeRangeFilter,
           minSalary: filters.minSalary,
           salaryType: filters.salaryType,
           excludedWords: filters.excludedWords,
-          sourceFilter: filters.sourceFilter
+          sourceFilter: filters.sourceFilter,
+          titleFilter: filters.titleFilter
         };
         Cookies.set("savedFilters", JSON.stringify(filtersToSave), { expires: 30 });
       }
@@ -729,11 +844,118 @@ export default function Home() {
       selectedLocation: filters.selectedLocation,
       skillFilter: updatedSkills.join(','),
       showFilters: filters.showFilters,
-      showLastDayOnly: filters.showLastDayOnly,
+      timeRangeFilter: filters.timeRangeFilter,
       minSalary: filters.minSalary,
       salaryType: filters.salaryType,
       excludedWords: filters.excludedWords,
-      sourceFilter: filters.sourceFilter
+      sourceFilter: filters.sourceFilter,
+      titleFilter: filters.titleFilter
+    };
+    Cookies.set("savedFilters", JSON.stringify(filtersToSave), { expires: 30 });
+  };
+
+  // Add new title
+  const handleAddTitle = () => {
+    if (newTitle.trim() !== "") {
+      const title = newTitle.trim();
+      // Convert to array of titles if it's a string
+      const currentTitles = filters.titleFilter.length 
+        ? filters.titleFilter.split(',').map(t => t.trim()) 
+        : [];
+        
+      // Check if title already exists (case insensitive)
+      const titleExists = currentTitles.some(
+        existingTitle => existingTitle.toLowerCase() === title.toLowerCase()
+      );
+      
+      if (!titleExists) {
+        const updatedTitles = [...currentTitles, title];
+        setFilters(prev => ({ 
+          ...prev, 
+          titleFilter: updatedTitles.join(',') 
+        }));
+        setNewTitle("");
+        
+        // Save to cookies immediately
+        const filtersToSave = {
+          ...filters,
+          titleFilter: updatedTitles.join(',')
+        };
+        Cookies.set("savedFilters", JSON.stringify(filtersToSave), { expires: 30 });
+      } else {
+        // Title already exists (case insensitive match)
+        setNewTitle("");
+      }
+    }
+  };
+
+  // Remove title
+  const handleRemoveTitle = (title: string) => {
+    const currentTitles = filters.titleFilter.split(',').map(t => t.trim());
+    // Remove the title using case-insensitive comparison
+    const updatedTitles = currentTitles.filter(t => 
+      t.toLowerCase() !== title.toLowerCase()
+    );
+    
+    setFilters(prev => ({ 
+      ...prev, 
+      titleFilter: updatedTitles.join(',') 
+    }));
+    
+    // Save to cookies immediately
+    const filtersToSave = {
+      ...filters,
+      titleFilter: updatedTitles.join(',')
+    };
+    Cookies.set("savedFilters", JSON.stringify(filtersToSave), { expires: 30 });
+  };
+
+  // Add new source
+  const handleAddSource = () => {
+    if (!newSource.trim()) return;
+    
+    const currentSources = filters.sourceFilter.split(',')
+      .map(s => s.trim())
+      .filter(Boolean);
+    
+    if (currentSources.includes(newSource.trim())) {
+      setNewSource("");
+      return;
+    }
+    
+    const updatedSources = [...currentSources, newSource.trim()].join(',');
+    
+    setFilters(prev => ({
+      ...prev,
+      sourceFilter: updatedSources
+    }));
+    
+    // Save to cookies immediately
+    const filtersToSave = {
+      ...filters,
+      sourceFilter: updatedSources,
+      timeRangeFilter: filters.timeRangeFilter
+    };
+    Cookies.set("savedFilters", JSON.stringify(filtersToSave), { expires: 30 });
+    
+    setNewSource("");
+  };
+
+  // Remove source
+  const handleRemoveSource = (source: string) => {
+    const currentSources = filters.sourceFilter.split(',').map(s => s.trim());
+    const updatedSources = currentSources.filter(s => s !== source);
+    
+    setFilters(prev => ({
+      ...prev,
+      sourceFilter: updatedSources.join(',')
+    }));
+    
+    // Save to cookies immediately
+    const filtersToSave = {
+      ...filters,
+      sourceFilter: updatedSources.join(','),
+      timeRangeFilter: filters.timeRangeFilter
     };
     Cookies.set("savedFilters", JSON.stringify(filtersToSave), { expires: 30 });
   };
@@ -774,11 +996,12 @@ export default function Home() {
             filterText: filters.filterText,
             selectedLocation: filters.selectedLocation,
             skillFilter: filters.skillFilter,
-            showLastDayOnly: filters.showLastDayOnly,
+            timeRangeFilter: filters.timeRangeFilter,
             minSalary: filters.minSalary,
             salaryType: filters.salaryType,
             excludedWords: filters.excludedWords,
-            sourceFilter: filters.sourceFilter
+            sourceFilter: filters.sourceFilter,
+            titleFilter: filters.titleFilter
           }}
           onClearFilters={clearFilters}
         />
@@ -800,6 +1023,8 @@ export default function Home() {
             setFilters={setFilters}
             uniqueLocations={uniqueLocations}
             uniqueSkills={uniqueSkills}
+            uniqueSources={uniqueSources}
+            uniqueTitles={uniqueTitles}
             newExcludeWord={newExcludeWord}
             setNewExcludeWord={setNewExcludeWord}
             handleAddExcludedWord={handleAddExcludedWord}
@@ -808,6 +1033,14 @@ export default function Home() {
             setNewSkill={setNewSkill}
             handleAddSkill={handleAddSkill}
             handleRemoveSkill={handleRemoveSkill}
+            newSource={newSource}
+            setNewSource={setNewSource}
+            handleAddSource={handleAddSource}
+            handleRemoveSource={handleRemoveSource}
+            newTitle={newTitle}
+            setNewTitle={setNewTitle}
+            handleAddTitle={handleAddTitle}
+            handleRemoveTitle={handleRemoveTitle}
             saveFilters={saveFilters}
             clearFilters={clearFilters}
             viewMode={viewMode}
