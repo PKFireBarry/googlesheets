@@ -253,6 +253,15 @@ export default function JobCardGrid({
     const companyWebsite = getFieldValue(job, "company_website", headers)
     const companyImage = getFieldValue(job, "company_image", headers)
     const experience = getFieldValue(job, "experience", headers)
+    console.log("Job experience details:", { 
+      title: title, 
+      experience: experience,
+      headers: headers,
+      experienceIndex: headers.findIndex(h => h.toLowerCase() === 'experience'),
+      rawData: Array.isArray(job) ? job : job.data,
+    });
+    
+    // Ensure experience is set, even with a placeholder
     const skills = getFieldValue(job, "skills", headers)
     const notes = getFieldValue(job, "notes", headers)
     

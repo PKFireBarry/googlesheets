@@ -41,6 +41,9 @@ const SheetForm: React.FC<SheetFormProps> = ({
               className="w-full px-3 py-2 sm:py-2.5 rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
               disabled={isLoading || isLoadingJobs}
             />
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Note: Make sure your sheet has a tab named "Sheet1" for legacy compatibility.
+            </p>
           </div>
           <div className="flex gap-2">
             <button

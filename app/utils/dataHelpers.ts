@@ -50,21 +50,37 @@ export const getFieldValue = (
   
   // If headers are provided, use them to find the column index
   if (headers) {
-    const index = headers.findIndex(
+    // Try to find exact match first (case insensitive)
+    let index = headers.findIndex(
       (header) => header.toLowerCase() === fieldName.toLowerCase()
     );
+    
+    // Log which field we're looking for if it's experience
+    if (fieldName === 'experience') {
+      console.log(`Looking for 'experience' in headers:`, {
+        headers,
+        matchIndex: index,
+        headerWithSpaces: headers.map(h => `"${h}"`)
+      });
+    }
+    
+    // If not found, try to match partial headers (for experience)
+    if (index === -1 && fieldName === 'experience') {
+      index = headers.findIndex(
+        (header) => header.toLowerCase().includes('experience') || 
+                   header.toLowerCase().includes('exp')
+      );
+      console.log(`Tried fuzzy match for experience:`, { index });
+    }
     
     if (index !== -1) {
       const rowData = Array.isArray(row) ? row : row.data;
       value = rowData && rowData[index] ? rowData[index] : "";
     }
   }
-  // If row is an array but no headers provided
-  else if (Array.isArray(row)) {
-    console.warn("getFieldValue called with array but no headers");
-  }
-  // For objects with direct property access
-  else if (typeof row === 'object') {
+  
+  // If value not found through headers, try direct property access 
+  if (!value && typeof row === 'object' && !Array.isArray(row)) {
     // Try both camelCase and snake_case versions of the field name
     const camelCase = fieldName.replace(/_([a-z])/g, g => g[1].toUpperCase());
     const snakeCase = fieldName.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);

@@ -20,7 +20,9 @@ import {
   EyeOff,
   FileText,
   File,
-  Bookmark
+  Bookmark,
+  Award,
+  Clock
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { extractSourceFromUrl, formatDateSafely } from '../utils/dataHelpers'
@@ -95,6 +97,45 @@ export default function JobCard({
     if (!text || text.length <= maxLength) return text
     return text.substring(0, maxLength) + '...'
   }
+  
+  const formatExperience = (experience: string | undefined): string => {
+    if (!experience) return '';
+    
+    // Convert to lowercase for easier comparison
+    const expLower = experience.toLowerCase().trim();
+    
+    // Check if experience already has "years" in it
+    if (expLower.includes('year')) {
+      // Cap at 10+ years if it's over 10
+      const yearsMatch = expLower.match(/(\d+)(?:\+)?/);
+      if (yearsMatch) {
+        const years = parseInt(yearsMatch[1]);
+        if (years > 10) {
+          return '10+ years';
+        }
+      }
+      return experience;
+    }
+    
+    // Check for patterns like "3+" or just "3"
+    if (/^\d+\+?$/.test(expLower)) {
+      const years = parseInt(expLower);
+      if (years > 10) {
+        return '10+ years';
+      }
+      return `${experience} years`;
+    }
+    
+    // Handle special values like "Entry Level", "Mid Level", "Senior Level"
+    if (expLower === 'entry' || expLower === 'entry level' || expLower === 'junior') 
+      return 'Entry Level';
+    if (expLower === 'mid' || expLower === 'mid level' || expLower === 'intermediate') 
+      return 'Mid Level';
+    if (expLower === 'senior' || expLower === 'senior level' || expLower === 'advanced') 
+      return 'Senior Level';
+    
+    return experience;
+  };
   
   const handleLinkedInLookup = () => {
     const companyName = job.company_name
@@ -178,7 +219,13 @@ export default function JobCard({
         {/* Tags */}
         <div className="flex flex-wrap gap-2">
           <Tag text={job.job_type || job.type} icon={Briefcase} />
-          <Tag text={job.experience} />
+          
+          {/* Always render experience tag with debugging info */}
+          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-700/50">
+            <Clock className="w-3.5 h-3.5 mr-1" />
+            {job.experience ? formatExperience(job.experience) : "No experience data"}
+          </span>
+          
           <Tag text={getJobSource()} icon={Link2} />
         </div>
       </div>

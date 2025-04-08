@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, Sliders, List, Grid, Calendar, MapPin, DollarSign, Ban, X, CheckCircle, Link2, Code, Filter } from 'lucide-react';
+import { Search, Sliders, List, Grid, Calendar, MapPin, DollarSign, Ban, X, CheckCircle, Link2, Code, Filter, Briefcase } from 'lucide-react';
 
 interface FilterState {
   filterText: string;
@@ -12,6 +12,7 @@ interface FilterState {
   excludedWords: string[];
   sourceFilter: string;
   titleFilter: string;
+  maxExperience: number;
 }
 
 interface FilterSectionProps {
@@ -402,6 +403,35 @@ const FilterSection: React.FC<FilterSectionProps> = ({
                     <option value="yearly">Yearly</option>
                     <option value="hourly">Hourly</option>
                   </select>
+                </div>
+              </div>
+              
+              {/* Experience filter */}
+              <div className="p-4 rounded-xl bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-800/80 shadow-sm hover:shadow-md transition-shadow border border-gray-100/60 dark:border-gray-700/40">
+                <label className="flex items-center text-sm font-medium text-gray-700 dark:text-gray-300 mb-2.5">
+                  <Briefcase className="h-4 w-4 text-indigo-500 dark:text-indigo-400 mr-2 flex-shrink-0" />
+                  <span>Maximum Experience</span>
+                </label>
+                <div className="space-y-3">
+                  <div className="relative">
+                    <input
+                      type="range"
+                      min="0"
+                      max="10"
+                      step="1"
+                      value={filters.maxExperience}
+                      onChange={(e) => setFilters(prev => ({ 
+                        ...prev, 
+                        maxExperience: parseInt(e.target.value) 
+                      }))}
+                      className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-indigo-500 dark:accent-indigo-400"
+                    />
+                  </div>
+                  <div className="flex justify-between items-center text-xs text-gray-500 dark:text-gray-400">
+                    <span>No limit</span>
+                    <span>{filters.maxExperience} {filters.maxExperience === 1 ? 'year' : 'years'}</span>
+                    <span>10 years</span>
+                  </div>
                 </div>
               </div>
               
