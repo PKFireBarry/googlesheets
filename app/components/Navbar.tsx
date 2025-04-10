@@ -40,10 +40,12 @@ export default function Navbar() {
               Applied Jobs
             </NavLink>
             
-            <NavLink href="/analytics" active={pathname === '/analytics'}>
+            {/* DELETE START */}
+            {/* <NavLink href="/analytics" active={pathname === '/analytics'}>
               <BarChart2 className="w-4 h-4 mr-2" />
               Analytics
-            </NavLink>
+            </NavLink> */}
+            {/* DELETE END */}
             
             <NavLink href="/linkedin-lookup" active={pathname === '/linkedin-lookup'}>
               <Linkedin className="w-4 h-4 mr-2" />
@@ -95,10 +97,12 @@ export default function Navbar() {
               Applied Jobs
             </MobileNavLink>
             
-            <MobileNavLink href="/analytics" active={pathname === '/analytics'}>
+            {/* DELETE START */}
+            {/* <MobileNavLink href="/analytics" active={pathname === '/analytics'}>
               <BarChart2 className="w-4 h-4 mr-2" />
               Analytics
-            </MobileNavLink>
+            </MobileNavLink> */}
+            {/* DELETE END */}
             
             <MobileNavLink href="/linkedin-lookup" active={pathname === '/linkedin-lookup'}>
               <Linkedin className="w-4 h-4 mr-2" />
