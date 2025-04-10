@@ -20,7 +20,9 @@ import {
   EyeOff,
   FileText,
   File,
-  Bookmark
+  Bookmark,
+  Award,
+  Clock
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { extractSourceFromUrl, formatDateSafely } from '../utils/dataHelpers'
@@ -51,6 +53,9 @@ interface JobCardProps {
   onApply: () => void;
   onDelete: () => void;
   onHide?: () => void;
+  onUpdateNote?: (note: string) => void;
+  onAddSkillFilter?: (skill: string) => void;
+  onAddSourceFilter?: (source: string) => void;
 }
 
 // Helper to create tag elements
@@ -70,26 +75,23 @@ export default function JobCard({
   onApply, 
   onDelete, 
   onHide,
+  onUpdateNote,
+  onAddSkillFilter,
+  onAddSourceFilter
 }: JobCardProps) {
   const [showDetails, setShowDetails] = useState(false)
   const [showFullDescription, setShowFullDescription] = useState(false)
-  const [showSkills, setShowSkills] = useState(false)
-  const [imageError, setImageError] = useState(false)
-  const [imageSrc, setImageSrc] = useState(job.company_image || '')
+  const [imageLoadError, setImageLoadError] = useState(false)
   const router = useRouter()
   
-  // Log image URL on component mount for debugging
   useEffect(() => {
-    if (job.company_image) {
-      console.log(`Loading company image for ${job.company_name}:`, job.company_image);
-    }
-  }, [job.company_name, job.company_image]);
+    setImageLoadError(false)
+  }, [job.company_image])
 
-  // Simple image error handler - just show the fallback if image fails to load
   const handleImageError = () => {
-    console.log(`Image loading error for ${job.company_name}`);
-    setImageError(true);
-  };
+    console.log(`Image loading error for ${job.company_name} - URL: ${job.company_image}`)
+    setImageLoadError(true)
+  }
   
   const truncateDescription = (text: string, maxLength = 150) => {
     if (!text || text.length <= maxLength) return text
@@ -155,14 +157,14 @@ export default function JobCard({
             <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white line-clamp-2">{job.title}</h2>
           </div>
           <div className="flex-shrink-0">
-            {!imageError ? (
+            {job.company_image && !imageLoadError ? ( 
               <div className="w-24 h-24 sm:w-24 sm:h-24 rounded-full overflow-hidden border border-gray-200 dark:border-gray-700 bg-white flex items-center justify-center">
                 <Image
-                  src={imageSrc}
+                  src={job.company_image} 
                   alt={`${job.company_name} logo`}
                   width={56}
                   height={56}
-                  className="object-contain w-full h-full"
+                  className="object-contain"
                   unoptimized={true}
                   onError={handleImageError}
                 />
@@ -178,8 +180,28 @@ export default function JobCard({
         {/* Tags */}
         <div className="flex flex-wrap gap-2">
           <Tag text={job.job_type || job.type} icon={Briefcase} />
-          <Tag text={job.experience} />
-          <Tag text={getJobSource()} icon={Link2} />
+          
+          {/* Always render experience tag with debugging info */}
+          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-700/50">
+            <Clock className="w-3.5 h-3.5 mr-1" />
+            {job.experience ? job.experience : "No experience data"}
+          </span>
+          
+          {/* Clickable Source Tag */}
+          <button
+            onClick={(e) => { 
+              e.stopPropagation(); // Prevent card click if needed
+              onAddSourceFilter?.(getJobSource()); 
+            }}
+            className="source-tag group relative cursor-pointer inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-white/70 dark:bg-gray-700/50 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:bg-blue-100 dark:hover:bg-blue-900 transition-colors"
+            title={`Click to add "${getJobSource()}" to source filters`}
+          >
+            <Link2 className="w-3.5 h-3.5 mr-1" />
+            {getJobSource()}
+            <span className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 opacity-0 group-hover:opacity-100 bg-black text-white text-[10px] px-1 py-0.5 rounded scale-90 group-hover:scale-100 transition-all duration-150 whitespace-nowrap z-10">
+              Add Filter
+            </span>
+          </button>
         </div>
       </div>
 
@@ -215,34 +237,33 @@ export default function JobCard({
           </div>
         </div>
         
-        {/* Skills - Now always visible */}
-        <div className="mb-5">
-          <div className="flex justify-between items-center mb-2">
-            <h3 className="font-medium text-gray-900 dark:text-white">Skills</h3>
+        {/* Skills Section - Always Visible */}
+        {job.skills && (
+          <div className="mt-5 border-t border-gray-200 dark:border-gray-700 pt-5">
+            <h3 className="font-medium text-gray-900 dark:text-white mb-3">Skills</h3>
+            <div className="flex flex-wrap gap-2">
+              {job.skills.split(',')
+                .map(s => s.replace(/[\[\]"'{}]/g, '').trim())
+                .filter(Boolean)
+                .map((skill, index) => (
+                <button
+                  key={index}
+                  onClick={(e) => { 
+                    e.stopPropagation(); 
+                    onAddSkillFilter?.(skill); 
+                  }}
+                  className="skill-badge group relative cursor-pointer text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full px-2.5 py-1 hover:bg-blue-100 dark:hover:bg-blue-900 transition-colors"
+                  title={`Click to add "${skill}" to skill filters`}
+                >
+                  {skill}
+                  <span className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 opacity-0 group-hover:opacity-100 bg-black text-white text-[10px] px-1 py-0.5 rounded scale-90 group-hover:scale-100 transition-all duration-150 whitespace-nowrap z-10">
+                    Add Filter
+                  </span>
+                </button>
+              ))}
+            </div>
           </div>
-          
-          <div className="flex flex-wrap gap-2 mt-2">
-            {job.skills ? 
-              job.skills.split(',')
-                .filter((skill): skill is string => Boolean(skill))
-                .map((skill, index) => {
-                  const cleanedSkill = skill.replace(/[\[\]"'{}]/g, '').trim();
-                  if (!cleanedSkill) return null;
-                  return (
-                    <span 
-                      key={index}
-                      className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
-                    >
-                      {cleanedSkill}
-                    </span>
-                  );
-                })
-              : (
-                <span className="text-sm text-gray-500 dark:text-gray-400">No skills listed for this position</span>
-              )
-            }
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Bottom Section with salary, location and details button */}

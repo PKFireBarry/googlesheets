@@ -31,14 +31,16 @@ export interface JobData {
 
 export type SalaryType = "any" | "yearly" | "hourly";
 
-export type FilterState = {
+export interface FilterState {
   filterText: string;
   selectedLocation: string;
   skillFilter: string;
   showFilters: boolean;
-  showLastDayOnly: boolean;
+  timeRangeFilter: number;
   minSalary: number;
   salaryType: SalaryType;
   excludedWords: string[];
   sourceFilter: string;
-}; 
+  titleFilter: string;
+  maxExperience: number;
+} 

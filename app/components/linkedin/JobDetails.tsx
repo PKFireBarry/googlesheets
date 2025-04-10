@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   Briefcase, Building, MapPin, DollarSign, 
   Clock, Sparkles, MessageSquare, ArrowRight,
-  ExternalLink, Loader2, Linkedin
+  ExternalLink, Loader2, Linkedin, ChevronDown, ChevronUp, Edit3, Save
 } from 'lucide-react';
 
 interface JobDetailsProps {
@@ -12,6 +12,9 @@ interface JobDetailsProps {
   isSearching: boolean;
   onSearch: () => void;
 }
+
+// Define a threshold for description length to trigger truncation
+const DESCRIPTION_THRESHOLD = 300; // Example: 300 characters
 
 /**
  * Job Details Component
@@ -24,6 +27,12 @@ const JobDetails: React.FC<JobDetailsProps> = ({
   isSearching,
   onSearch
 }) => {
+  // State for description expansion
+  const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
+
+  const fullDescription = getJobValue(job, ['description']);
+  const shouldTruncate = fullDescription.length > DESCRIPTION_THRESHOLD;
+
   return (
     <div className="mb-8 pb-6 border-b border-gray-200 dark:border-gray-700">
       <div className="flex items-center mb-4">
@@ -147,7 +156,7 @@ const JobDetails: React.FC<JobDetailsProps> = ({
                 {getSkillsArray(job).map((skill, index) => (
                   <span 
                     key={index}
-                    className="px-3 py-1.5 text-xs rounded-md bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors duration-200 font-medium"
+                    className="px-3 py-1.5 text-xs rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors duration-200 font-medium"
                   >
                     {skill}
                   </span>
@@ -162,16 +171,31 @@ const JobDetails: React.FC<JobDetailsProps> = ({
                 <MessageSquare className="w-4 h-4 mr-2 text-gray-500 dark:text-gray-400" />
                 Description
               </h4>
-              <div className="text-sm text-gray-600 dark:text-gray-400 line-clamp-3 whitespace-pre-line bg-white dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
-                {getJobValue(job, ['description'])}
-              </div>
-              <button
-                className="text-blue-600 dark:text-blue-400 text-xs mt-2 hover:underline flex items-center"
-                onClick={() => alert(getJobValue(job, ['description']))}
+              {/* Description container with conditional max-height */}
+              <div 
+                className={`text-sm text-gray-600 dark:text-gray-400 whitespace-pre-line bg-white dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden transition-all duration-300 ease-in-out ${!isDescriptionExpanded && shouldTruncate ? 'max-h-24' : 'max-h-none'}`}
               >
-                <ArrowRight className="w-3 h-3 mr-1" />
-                View Full Description
-              </button>
+                {fullDescription}
+              </div>
+              {/* Toggle Button */}  
+              {shouldTruncate && (
+                <button
+                  className="text-blue-600 dark:text-blue-400 text-xs mt-2 hover:underline flex items-center"
+                  onClick={() => setIsDescriptionExpanded(!isDescriptionExpanded)}
+                >
+                  {isDescriptionExpanded ? (
+                    <>
+                      <ChevronUp className="w-3 h-3 mr-1" />
+                      Show Less
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown className="w-3 h-3 mr-1" />
+                      Show More
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           )}
         </div>

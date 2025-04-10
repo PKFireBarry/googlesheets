@@ -24,6 +24,46 @@ import GenerateButton from '../components/coverletter/GenerateButton';
 import LoadingState from '../components/coverletter/LoadingState';
 import ErrorDisplay from '../components/resume/ErrorDisplay';
 
+// Helper function to parse skills string
+function parseSkillsString(skillsString: string): string {
+  if (!skillsString || typeof skillsString !== 'string') {
+    return '';
+  }
+  
+  // Handle simple cases like just "skill" - no brackets/quotes
+  if (!skillsString.includes('[') && !skillsString.includes('"')) {
+     return skillsString.trim();
+  }
+
+  try {
+    // Attempt to parse as JSON array first, replacing 'or' with ','
+    // Handle cases like ["Skill1", "Skill2"] or ["Skill1" or "Skill2"]
+    const potentialJson = skillsString.replace(/" or "/g, '", "');
+    const skillsArray = JSON.parse(potentialJson);
+    if (Array.isArray(skillsArray)) {
+       return skillsArray.map(skill => String(skill).trim()).filter(Boolean).join(', ');
+    }
+  } catch (e) {
+    // If JSON parsing fails, fall back to regex/string manipulation
+    console.warn("Skills string could not be parsed as JSON, attempting regex fallback:", skillsString, e);
+  }
+  
+  // Fallback Regex/String manipulation for potentially malformed strings
+  const cleanedString = skillsString
+    .replace(/^\[|\]$/g, '') // Remove leading/trailing brackets
+    .replace(/" or "/g, '", "') // Normalize 'or' separator
+    .trim();
+
+  if (!cleanedString) return '';
+
+  const skills = cleanedString
+    .split(/",\s*"|"\s*,\s*"/g) // Split by variations of '", "' accounting for spaces
+    .map(skill => skill.replace(/"/g, '').trim()) // Remove quotes and trim
+    .filter(Boolean); // Remove empty strings
+
+  return skills.join(', ');
+}
+
 // Create a client component that uses useSearchParams
 function CoverLetterForm() {
   const router = useRouter();
@@ -53,6 +93,7 @@ function CoverLetterForm() {
   const [error, setError] = useState<string | null>(null);
   const [showApiKeyInfo, setShowApiKeyInfo] = useState(false);
   const [jobDetailsEditable, setJobDetailsEditable] = useState(false);
+  const [showResumeManager, setShowResumeManager] = useState(false);
   
   // Handle saving resume data
   const handleSaveResumeData = () => {
@@ -73,41 +114,50 @@ function CoverLetterForm() {
   // Load data from URL parameters and local storage
   useEffect(() => {
     // Get job details from URL parameters
-    const title = searchParams?.get("title") || "";
-    const company = searchParams?.get("company") || "";
-    const desc = searchParams?.get("description") || "";
-    const jobSkills = searchParams?.get("skills") || "";
-    const jobLocation = searchParams?.get("location") || "";
+    let loadedTitle = searchParams?.get("title") || "";
+    let loadedCompany = searchParams?.get("company") || "";
+    let loadedDesc = searchParams?.get("description") || "";
+    const loadedSkills = searchParams?.get("skills") || "";
+    const loadedLocation = searchParams?.get("location") || "";
     const jobId = searchParams?.get("jobId") || "";
     
-    // Set job details from URL parameters
-    setJobTitle(title);
-    setCompanyName(company);
-    setJobDescription(desc);
-    setSkills(jobSkills);
-    setLocation(jobLocation);
-    
     // If we don't have URL parameters, check if there's a jobId to load from localStorage
-    if (jobId && (!title || !company)) {
+    if (jobId && (!loadedTitle || !loadedCompany)) {
       try {
         const savedJobs = JSON.parse(localStorage.getItem('savedJobs') || '{}');
         const job = savedJobs[jobId];
         
         if (job) {
-          setJobTitle(job.title || "");
-          setCompanyName(job.company_name || "");
-          setJobDescription(job.description || "");
-          setSkills(job.skills || "");
-          setLocation(job.location || "");
+          loadedTitle = job.title || loadedTitle;
+          loadedCompany = job.company_name || loadedCompany;
+          loadedDesc = job.description || loadedDesc;
+          // Parse skills loaded from localStorage
+          setSkills(parseSkillsString(job.skills || loadedSkills));
+          setLocation(job.location || loadedLocation);
         }
       } catch (error) {
         console.error("Error loading job data from localStorage:", error);
       }
     }
     
-    // Set job details editable if we don't have enough information
-    if (!title || !company || !desc) {
+    // Set job details state
+    setJobTitle(loadedTitle);
+    setCompanyName(loadedCompany);
+    setJobDescription(loadedDesc);
+    // Set skills and location if they weren't loaded from localStorage already
+    if (!jobId || !(JSON.parse(localStorage.getItem('savedJobs') || '{}')[jobId]?.skills)) {
+      setSkills(parseSkillsString(loadedSkills)); // Apply parsing here
+    }
+     if (!jobId || !(JSON.parse(localStorage.getItem('savedJobs') || '{}')[jobId]?.location)) {
+      setLocation(loadedLocation);
+    }
+
+    // Set job details editable ONLY if essential info is missing AFTER loading attempts
+    if (!loadedTitle || !loadedCompany || !loadedDesc) {
       setJobDetailsEditable(true);
+      toast.error("Missing job details. Please fill them in.", { duration: 4000 });
+    } else {
+      setJobDetailsEditable(false); // Default to non-editable if details are present
     }
     
     // Load API key from cookies
@@ -156,7 +206,10 @@ function CoverLetterForm() {
         // If we have existing resume data, automatically generate the text version
         if (parsedData.fullName || parsedData.experience || parsedData.skills) {
           const formattedContent = generateResumeText(parsedData);
-          setResumeContent(formattedContent);
+          // Only set if resumeContent isn't already set by shared storage or PDF
+          if (!resumeContent && !resumePdfData) {
+             setResumeContent(formattedContent);
+          }
         }
       }
     } catch (error) {
@@ -278,11 +331,17 @@ function CoverLetterForm() {
       return;
     }
     
+    // Validate resume
+    if (!resumeContent && !resumePdfData) {
+       setError("Please upload or enter your resume details.");
+       return;
+    }
+    
     setLoading(true);
     
     // If we have resume data but no resume content, generate it from the form
     let finalResumeContent = resumeContent;
-    if (!resumeContent && (resumeData.fullName || resumeData.experience || resumeData.skills)) {
+    if (!resumeContent && !resumePdfData && (resumeData.fullName || resumeData.experience || resumeData.skills)) {
       finalResumeContent = generateResumeText(resumeData);
       toast.success("Using resume data from your saved profile");
     }
@@ -439,54 +498,75 @@ function CoverLetterForm() {
             onToggleApiKeyInfo={() => setShowApiKeyInfo(!showApiKeyInfo)}
           />
           
-          {/* Resume Section */}
-          <ResumeUpload 
-            resumeContent={resumeContent}
-            resumePdfData={resumePdfData}
-            savedResumes={savedResumes}
-            showResumeForm={showResumeForm}
-            onResumeContentChange={(e) => {
-              setResumeContent(e.target.value);
-              // Clear PDF data if user manually edits the textarea
-              if (resumePdfData) {
-                setResumePdfData(null);
-              }
-            }}
-            onResumeUpload={handleResumeUpload}
-            onLoadSavedResume={loadSavedResume}
-            onToggleResumeForm={() => setShowResumeForm(!showResumeForm)}
-          />
+          {/* Conditional Resume Section */}
+          {!resumeContent && !resumePdfData ? (
+            <>
+              {/* Resume Section */}
+              <ResumeUpload 
+                resumeContent={resumeContent}
+                resumePdfData={resumePdfData}
+                savedResumes={savedResumes}
+                showResumeForm={showResumeForm}
+                onResumeContentChange={(e) => {
+                  setResumeContent(e.target.value);
+                  // Clear PDF data if user manually edits the textarea
+                  if (resumePdfData) {
+                    setResumePdfData(null);
+                  }
+                }}
+                onResumeUpload={handleResumeUpload}
+                onLoadSavedResume={loadSavedResume}
+                onToggleResumeForm={() => setShowResumeForm(!showResumeForm)}
+              />
+              
+              {showResumeForm && (
+                <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+                  <ResumeForm 
+                    resumeData={resumeData} 
+                    onChangeResumeData={setResumeData} 
+                    onSave={handleSaveResumeData} 
+                  />
+                </div>
+              )}
+             </>
+          ) : (
+             <div className="p-6 border-b border-gray-200 dark:border-gray-700 bg-green-50 dark:bg-green-900/20">
+               <p className="text-sm text-green-700 dark:text-green-300">
+                 ✓ Resume data loaded. Ready to generate.
+               </p>
+               <button 
+                 onClick={() => setShowResumeManager(true)} 
+                 className="mt-2 text-sm text-blue-600 dark:text-blue-400 hover:underline focus:outline-none"
+               >
+                 Manage Saved Resume
+               </button>
+             </div>
+          )}
           
-          {showResumeForm && (
-            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-              <ResumeForm 
-                resumeData={resumeData} 
-                onChangeResumeData={setResumeData} 
-                onSave={handleSaveResumeData} 
+          {/* Storage UI - Conditionally rendered */}
+          {((!resumeContent && !resumePdfData) || showResumeManager) && (
+            <div id="resume-storage" className="p-6 border-b border-gray-200 dark:border-gray-700">
+              <ResumeStorageUI 
+                onResumeLoaded={(text, isPdf) => {
+                  setResumeContent(text);
+                  setResumePdfData(isPdf ? text : null); // Assuming text is base64 if isPdf is true
+                  setShowResumeManager(false); // Hide manager after loading
+                }}
+                onResumeDeleted={() => {
+                  setResumeContent('');
+                  setResumePdfData(null);
+                  setShowResumeManager(false); // Keep manager hidden after deleting (back to upload state)
+                }}
+                onApiKeyLoad={(apiKey) => setApiKey(apiKey)}
               />
             </div>
           )}
-          
-          {/* Storage UI - Use as a component */}
-          <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-            <ResumeStorageUI 
-              onResumeLoaded={(text, isPdf) => {
-                setResumeContent(text);
-                setResumePdfData(isPdf ? text : null);
-              }}
-              onResumeDeleted={() => {
-                setResumeContent('');
-                setResumePdfData(null);
-              }}
-              onApiKeyLoad={(apiKey) => setApiKey(apiKey)}
-            />
-          </div>
           
           {/* Generate Button */}
           <GenerateButton 
             loading={loading}
             error={error}
-            disabled={!jobTitle || !companyName || !jobDescription}
+            disabled={!jobTitle || !companyName || !jobDescription || (!resumeContent && !resumePdfData)}
             onGenerate={generateCoverLetter}
           />
         </div>

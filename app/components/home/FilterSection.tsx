@@ -1,16 +1,18 @@
-import React from 'react';
-import { Search, Sliders, List, Grid, Calendar, MapPin, DollarSign, Ban, X, CheckCircle, Link2, Code, Filter } from 'lucide-react';
+import React, { useState } from 'react';
+import { Search, Sliders, List, Grid, Calendar, MapPin, DollarSign, Ban, X, CheckCircle, Link2, Code, Filter, Briefcase } from 'lucide-react';
 
 interface FilterState {
   filterText: string;
   selectedLocation: string;
   skillFilter: string;
   showFilters: boolean;
-  showLastDayOnly: boolean;
+  timeRangeFilter: number;
   minSalary: number;
   salaryType: "any" | "yearly" | "hourly";
   excludedWords: string[];
   sourceFilter: string;
+  titleFilter: string;
+  maxExperience: number;
 }
 
 interface FilterSectionProps {
@@ -18,6 +20,8 @@ interface FilterSectionProps {
   setFilters: React.Dispatch<React.SetStateAction<FilterState>>;
   uniqueLocations: string[];
   uniqueSkills: string[];
+  uniqueSources: string[];
+  uniqueTitles: string[];
   newExcludeWord: string;
   setNewExcludeWord: React.Dispatch<React.SetStateAction<string>>;
   handleAddExcludedWord: () => void;
@@ -26,6 +30,16 @@ interface FilterSectionProps {
   setNewSkill: React.Dispatch<React.SetStateAction<string>>;
   handleAddSkill: () => void;
   handleRemoveSkill: (skill: string) => void;
+  newSource: string;
+  setNewSource: React.Dispatch<React.SetStateAction<string>>;
+  handleAddSource: () => void;
+  handleRemoveSource: (source: string) => void;
+  newTitle: string;
+  setNewTitle: React.Dispatch<React.SetStateAction<string>>;
+  handleAddTitle: () => void;
+  handleRemoveTitle: (title: string) => void;
+  handleAddLocation: (location: string) => void;
+  handleRemoveLocation: (location: string) => void;
   saveFilters: () => void;
   clearFilters: () => void;
   viewMode: 'card' | 'list';
@@ -41,6 +55,8 @@ const FilterSection: React.FC<FilterSectionProps> = ({
   setFilters,
   uniqueLocations,
   uniqueSkills,
+  uniqueSources,
+  uniqueTitles,
   newExcludeWord,
   setNewExcludeWord,
   handleAddExcludedWord,
@@ -49,11 +65,23 @@ const FilterSection: React.FC<FilterSectionProps> = ({
   setNewSkill,
   handleAddSkill,
   handleRemoveSkill,
+  newSource,
+  setNewSource,
+  handleAddSource,
+  handleRemoveSource,
+  newTitle,
+  setNewTitle,
+  handleAddTitle,
+  handleRemoveTitle,
+  handleAddLocation,
+  handleRemoveLocation,
   saveFilters,
   clearFilters,
   viewMode,
   toggleViewMode
 }) => {
+  const [newLocation, setNewLocation] = useState<string>("");
+
   return (
     <div className="mb-6">
       {/* Header section with search and buttons */}
@@ -119,31 +147,69 @@ const FilterSection: React.FC<FilterSectionProps> = ({
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md overflow-hidden border border-gray-200 dark:border-gray-700 mb-4 animate-fade-in">
           <div className="p-5 sm:p-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-              {/* Location filter */}
+              {/* Location filter - Updated for Multi-select */}
               <div className="p-4 rounded-xl bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-800/80 shadow-sm hover:shadow-md transition-shadow border border-gray-100/60 dark:border-gray-700/40">
                 <label htmlFor="location-filter" className="flex items-center text-sm font-medium text-gray-700 dark:text-gray-300 mb-2.5">
                   <MapPin className="h-4 w-4 text-blue-500 dark:text-blue-400 mr-2 flex-shrink-0" />
                   <span>Location</span>
                 </label>
-                <div className="relative">
-                  <input
-                    id="location-filter"
-                    type="text"
-                    list="location-options"
-                    value={filters.selectedLocation}
-                    onChange={(e) => setFilters(prev => ({ ...prev, selectedLocation: e.target.value }))}
-                    placeholder="Enter location..."
-                    className="pl-3 block w-full rounded-lg border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900/50 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm dark:text-white"
-                  />
-                  <datalist id="location-options">
-                    <option value="Remote">Remote Only</option>
-                    {uniqueLocations.map((location) => (
-                      location.toLowerCase() !== "remote" && (
-                        <option key={location} value={location}>{location}</option>
-                      )
-                    ))}
-                  </datalist>
+                <div className="flex">
+                  <div className="relative flex-grow">
+                    <input
+                      id="location-filter"
+                      type="text"
+                      list="location-options"
+                      value={newLocation}
+                      onChange={(e) => setNewLocation(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddLocation(newLocation);
+                          setNewLocation("");
+                        }
+                      }}
+                      placeholder="Add location filter..."
+                      className="pl-3 block w-full rounded-lg border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900/50 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm dark:text-white"
+                    />
+                    <datalist id="location-options">
+                      <option value="Remote">Remote Only</option>
+                      {uniqueLocations.map((location) => (
+                        location.toLowerCase() !== "remote" && (
+                          <option key={location} value={location}>{location}</option>
+                        )
+                      ))}
+                    </datalist>
+                  </div>
+                  <button
+                    onClick={() => {
+                      handleAddLocation(newLocation);
+                      setNewLocation("");
+                    }}
+                    className="ml-2 inline-flex items-center px-3 py-2 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+                  >
+                    Add
+                  </button>
                 </div>
+                {/* Selected locations tags */}
+                {filters.selectedLocation && (
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    {filters.selectedLocation.split(',').filter(Boolean).map((location) => {
+                      const trimmedLocation = location.trim();
+                      if (!trimmedLocation) return null;
+                      return (
+                        <div key={trimmedLocation} className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100/80 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-200/50 dark:border-blue-700/30 shadow-sm">
+                          {trimmedLocation}
+                          <button
+                            onClick={() => handleRemoveLocation(trimmedLocation)}
+                            className="ml-1.5 text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
               
               {/* Skills filter */}
@@ -205,47 +271,154 @@ const FilterSection: React.FC<FilterSectionProps> = ({
                 )}
               </div>
               
+              {/* Job titles filter */}
+              <div className="p-4 rounded-xl bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-800/80 shadow-sm hover:shadow-md transition-shadow border border-gray-100/60 dark:border-gray-700/40">
+                <label htmlFor="title-filter" className="flex items-center text-sm font-medium text-gray-700 dark:text-gray-300 mb-2.5">
+                  <CheckCircle className="h-4 w-4 text-emerald-500 dark:text-emerald-400 mr-2 flex-shrink-0" />
+                  <span>Job Titles</span>
+                </label>
+                <div className="flex">
+                  <div className="relative flex-grow">
+                    <input
+                      id="title-filter"
+                      type="text"
+                      list="title-options"
+                      value={newTitle}
+                      onChange={(e) => setNewTitle(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddTitle();
+                        }
+                      }}
+                      placeholder="Filter by job titles..."
+                      className="pl-3 block w-full rounded-lg border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900/50 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm dark:text-white"
+                    />
+                    <datalist id="title-options">
+                      {uniqueTitles.map((title) => (
+                        <option key={title} value={title}>{title}</option>
+                      ))}
+                    </datalist>
+                  </div>
+                  <button
+                    onClick={handleAddTitle}
+                    className="ml-2 inline-flex items-center px-3 py-2 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 transition-colors"
+                  >
+                    Add
+                  </button>
+                </div>
+                
+                {/* Selected job titles tags */}
+                {filters.titleFilter && (
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    {filters.titleFilter.split(',').filter(Boolean).map((title) => {
+                      const trimmedTitle = title.trim();
+                      return trimmedTitle ? (
+                        <span
+                          key={trimmedTitle}
+                          className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300"
+                        >
+                          {trimmedTitle}
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveTitle(trimmedTitle)}
+                            className="flex-shrink-0 ml-1.5 h-4 w-4 rounded-full inline-flex items-center justify-center text-emerald-600 dark:text-emerald-400 hover:bg-emerald-200 dark:hover:bg-emerald-800 hover:text-emerald-900 dark:hover:text-emerald-300 focus:outline-none focus:bg-emerald-500 focus:text-white"
+                          >
+                            <span className="sr-only">Remove {trimmedTitle}</span>
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      ) : null;
+                    })}
+                  </div>
+                )}
+              </div>
+              
               {/* Source filter */}
               <div className="p-4 rounded-xl bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-800/80 shadow-sm hover:shadow-md transition-shadow border border-gray-100/60 dark:border-gray-700/40">
                 <label htmlFor="source-filter" className="flex items-center text-sm font-medium text-gray-700 dark:text-gray-300 mb-2.5">
                   <Link2 className="h-4 w-4 text-green-500 dark:text-green-400 mr-2 flex-shrink-0" />
                   <span>Source</span>
                 </label>
-                <div className="relative">
-                  <input
-                    id="source-filter"
-                    type="text"
-                    value={filters.sourceFilter}
-                    onChange={(e) => setFilters(prev => ({ ...prev, sourceFilter: e.target.value }))}
-                    placeholder="Enter source (LinkedIn, Indeed, etc.)..."
-                    className="pl-3 block w-full rounded-lg border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900/50 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm dark:text-white"
-                  />
+                <div className="flex">
+                  <div className="relative flex-grow">
+                    <input
+                      id="source-filter"
+                      type="text"
+                      list="sources-options"
+                      value={newSource}
+                      onChange={(e) => setNewSource(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddSource();
+                        }
+                      }}
+                      placeholder="Enter source (LinkedIn, Indeed, etc.)..."
+                      className="pl-3 block w-full rounded-lg border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900/50 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm dark:text-white"
+                    />
+                    <datalist id="sources-options">
+                      {uniqueSources.map((source) => (
+                        <option key={source} value={source}>{source}</option>
+                      ))}
+                    </datalist>
+                  </div>
+                  <button
+                    onClick={handleAddSource}
+                    className="ml-2 inline-flex items-center px-3 py-2 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors"
+                  >
+                    Add
+                  </button>
                 </div>
+                
+                {/* Selected sources tags */}
+                {filters.sourceFilter && (
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    {filters.sourceFilter.split(',').filter(Boolean).map((source) => {
+                      const trimmedSource = source.trim();
+                      if (!trimmedSource) return null;
+                      return (
+                        <div key={trimmedSource} className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-green-100/80 text-green-800 dark:bg-green-900/30 dark:text-green-300 border border-green-200/50 dark:border-green-700/30 shadow-sm">
+                          {trimmedSource}
+                          <button
+                            onClick={() => handleRemoveSource(trimmedSource)}
+                            className="ml-1.5 text-green-500 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300 transition-colors"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
               
-              {/* Last day filter */}
+              {/* Time Range filter - replaces Last day filter */}
               <div className="p-4 rounded-xl bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-800/80 shadow-sm hover:shadow-md transition-shadow border border-gray-100/60 dark:border-gray-700/40">
                 <label className="flex items-center text-sm font-medium text-gray-700 dark:text-gray-300 mb-2.5">
                   <Calendar className="h-4 w-4 text-amber-500 dark:text-amber-400 mr-2 flex-shrink-0" />
-                  <span>Posting Date</span>
+                  <span>Time Range</span>
                 </label>
-                <div className="flex items-center">
-                  <div className="relative inline-block w-10 mr-2 align-middle select-none">
-                    <input 
-                      id="last-day-filter" 
-                      type="checkbox"
-                      checked={filters.showLastDayOnly}
-                      onChange={(e) => setFilters(prev => ({ ...prev, showLastDayOnly: e.target.checked }))}
-                      className="absolute w-5 h-5 opacity-0 z-10 cursor-pointer"
+                <div className="space-y-3">
+                  <div className="relative">
+                    <input
+                      type="range"
+                      min="24"
+                      max="336" 
+                      step="24"
+                      value={filters.timeRangeFilter}
+                      onChange={(e) => setFilters(prev => ({ 
+                        ...prev, 
+                        timeRangeFilter: parseInt(e.target.value) 
+                      }))}
+                      className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-amber-500 dark:accent-amber-400"
                     />
-                    <div className="block h-5 rounded-full bg-gray-300 dark:bg-gray-600"></div>
-                    <div className={`dot absolute left-0.5 top-0.5 w-4 h-4 rounded-full transition ${
-                      filters.showLastDayOnly ? 'transform translate-x-5 bg-amber-500 dark:bg-amber-400' : 'bg-white'
-                    }`}></div>
                   </div>
-                  <label htmlFor="last-day-filter" className="text-sm text-gray-700 dark:text-gray-300 flex items-center cursor-pointer">
-                    Last 24 Hours Only
-                  </label>
+                  <div className="flex justify-between items-center text-xs text-gray-500 dark:text-gray-400">
+                    <span>1 day</span>
+                    <span>{Math.floor(filters.timeRangeFilter / 24)} {Math.floor(filters.timeRangeFilter / 24) === 1 ? 'day' : 'days'}</span>
+                    <span>14 days</span>
+                  </div>
                 </div>
               </div>
               
@@ -274,6 +447,35 @@ const FilterSection: React.FC<FilterSectionProps> = ({
                     <option value="yearly">Yearly</option>
                     <option value="hourly">Hourly</option>
                   </select>
+                </div>
+              </div>
+              
+              {/* Experience filter */}
+              <div className="p-4 rounded-xl bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-800/80 shadow-sm hover:shadow-md transition-shadow border border-gray-100/60 dark:border-gray-700/40">
+                <label className="flex items-center text-sm font-medium text-gray-700 dark:text-gray-300 mb-2.5">
+                  <Briefcase className="h-4 w-4 text-indigo-500 dark:text-indigo-400 mr-2 flex-shrink-0" />
+                  <span>Maximum Experience</span>
+                </label>
+                <div className="space-y-3">
+                  <div className="relative">
+                    <input
+                      type="range"
+                      min="0"
+                      max="10"
+                      step="1"
+                      value={filters.maxExperience}
+                      onChange={(e) => setFilters(prev => ({ 
+                        ...prev, 
+                        maxExperience: parseInt(e.target.value) 
+                      }))}
+                      className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-indigo-500 dark:accent-indigo-400"
+                    />
+                  </div>
+                  <div className="flex justify-between items-center text-xs text-gray-500 dark:text-gray-400">
+                    <span>No limit</span>
+                    <span>{filters.maxExperience} {filters.maxExperience === 1 ? 'year' : 'years'}</span>
+                    <span>10 years</span>
+                  </div>
                 </div>
               </div>
               

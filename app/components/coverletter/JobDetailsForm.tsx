@@ -1,5 +1,5 @@
 import React from 'react';
-import { Building, Briefcase, MapPin } from 'lucide-react';
+import { Building, Briefcase, MapPin, Edit3, Save } from 'lucide-react';
 
 interface JobDetailsFormProps {
   jobTitle: string;
@@ -39,14 +39,17 @@ const JobDetailsForm: React.FC<JobDetailsFormProps> = ({
   return (
     <div className="p-6 border-b border-gray-200 dark:border-gray-700">
       <div className="flex justify-between items-center mb-4">
-        <h2 className="text-lg font-medium text-gray-900 dark:text-white">Job Details</h2>
+        <h3 className="text-lg font-medium text-gray-900 dark:text-white flex items-center">
+          <Briefcase className="w-5 h-5 mr-2 text-blue-500 dark:text-blue-400" />
+          Job Details
+        </h3>
         
         {!jobDetailsEditable && (
           <button
             onClick={onToggleEdit}
-            className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
+            className="text-sm text-blue-600 dark:text-blue-400 hover:underline flex items-center"
           >
-            Edit
+            <Edit3 className="w-3 h-3 mr-1" /> Edit Job Details
           </button>
         )}
       </div>
@@ -130,7 +133,7 @@ const JobDetailsForm: React.FC<JobDetailsFormProps> = ({
                 className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                 disabled={!jobTitle || !companyName || !jobDescription}
               >
-                Save Job Details
+                <Save className="w-4 h-4 mr-1" /> Save Job Details
               </button>
             </div>
           )}

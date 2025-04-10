@@ -6,11 +6,12 @@ interface NoResultsMessageProps {
     filterText: string;
     selectedLocation: string;
     skillFilter: string;
-    showLastDayOnly: boolean;
+    timeRangeFilter: number;
     minSalary: number;
     salaryType: string;
     excludedWords: string[];
     sourceFilter: string;
+    titleFilter: string;
   };
   onClearFilters: () => void;
 }
@@ -35,8 +36,11 @@ const NoResultsMessage: React.FC<NoResultsMessageProps> = ({
               {filters.filterText && <li>Search text: "{filters.filterText}"</li>}
               {filters.selectedLocation && <li>Location: {filters.selectedLocation}</li>}
               {filters.skillFilter && <li>Skills: {filters.skillFilter}</li>}
+              {filters.titleFilter && <li>Job Titles: {filters.titleFilter}</li>}
               {filters.sourceFilter && <li>Source: {filters.sourceFilter}</li>}
-              {filters.showLastDayOnly && <li>Last 24 hours only</li>}
+              {filters.timeRangeFilter > 0 && (
+                <li>Time range: Last {Math.floor(filters.timeRangeFilter / 24)} {Math.floor(filters.timeRangeFilter / 24) === 1 ? 'day' : 'days'}</li>
+              )}
               {filters.minSalary > 0 && <li>Minimum salary: {filters.minSalary} ({filters.salaryType})</li>}
               {filters.excludedWords.length > 0 && (
                 <li>Excluded words: {filters.excludedWords.join(', ')}</li>

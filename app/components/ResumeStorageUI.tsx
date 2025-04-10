@@ -21,7 +21,7 @@ interface ResumeStorageUIProps {
 export default function ResumeStorageUI({
   onResumeLoaded,
   onResumeDeleted,
-  showInfoText = true,
+
   className = '',
   onApiKeyLoad,
 }: ResumeStorageUIProps) {
@@ -276,15 +276,7 @@ export default function ResumeStorageUI({
         )}
       </div>
       
-      {showInfoText && (
-        <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-md text-blue-800 dark:text-blue-300 text-sm flex items-start mb-4">
-          <Info className="w-5 h-5 mr-2 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="font-medium">About Resume Storage</p>
-            <p>Your resume is shared across all tools in this application (Cover Letter Generator, Resume Builder, Mock Interview). Upload once, use everywhere!</p>
-          </div>
-        </div>
-      )}
+
       
       {resumePdfData && (
         <div className="flex items-center text-sm text-green-600 dark:text-green-400 mt-1 mb-2">

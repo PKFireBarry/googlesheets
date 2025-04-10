@@ -4,7 +4,7 @@ import { RowData, FilteredRow } from './types/data';
 import { getRowData, getRowIndex } from './utils/dataHelpers';
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import Cookies from "js-cookie";
-import { FileSpreadsheet, CheckCircle, AlertCircle, Search, X, Sliders, Calendar, MapPin, DollarSign, Ban, List, Grid, XCircle, HelpCircle, ChevronDown } from "lucide-react";
+import { FileSpreadsheet, CheckCircle, AlertCircle, Search, X, Sliders, Calendar, MapPin, DollarSign, Ban, List, Grid, XCircle, HelpCircle, ChevronDown, Briefcase } from "lucide-react";
 import ClientSkillsFilter from "./components/ClientSkillsFilter";
 import { useRouter } from "next/navigation";
 import { 
@@ -14,7 +14,8 @@ import {
   getFieldValue, 
   extractSourceFromUrl,
   isJobApplied,
-  parseSalary
+  parseSalary,
+  dedupJobs
 } from "./utils/dataHelpers";
 import {
   JobData,
@@ -33,9 +34,45 @@ import NoResultsMessage from "./components/home/NoResultsMessage";
 import StatsDisplay from "./components/home/StatsDisplay";
 import FilterSection from "./components/home/FilterSection";
 import JobResultsGrid from "./components/home/JobResultsGrid";
+import IndustrySelector from "./components/home/IndustrySelector";
+import WelcomeModal from "./components/home/WelcomeModal";
 
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY;
 const RANGE = process.env.NEXT_PUBLIC_RANGE;
+
+// Sheet name constants
+const SHEET_NAME_TECH = process.env.NEXT_PUBLIC_SHEET_NAME_TECH || "Tech Jobs";
+const SHEET_NAME_BUSINESS = process.env.NEXT_PUBLIC_SHEET_NAME_BUSINESS || "Business Operations Jobs";
+const SHEET_NAME_HEALTHCARE = process.env.NEXT_PUBLIC_SHEET_NAME_HEALTHCARE || "Healthcare Jobs";
+const SHEET_NAME_CUSTOMER = process.env.NEXT_PUBLIC_SHEET_NAME_CUSTOMER || "Customer and Social Services and Transportation and Logistics";
+const SHEET_NAME_DEFAULT = process.env.NEXT_PUBLIC_SHEET_NAME_DEFAULT || "Sheet1";
+
+// Industry options for the selector
+const INDUSTRY_OPTIONS = [
+  { 
+    name: "Technology", 
+    value: SHEET_NAME_TECH,
+    description: "Software, IT, data science, and other tech-related positions"
+  },
+  { 
+    name: "Business Operations", 
+    value: SHEET_NAME_BUSINESS,
+    description: "Management, finance, marketing, and administrative positions"
+  },
+  { 
+    name: "Healthcare", 
+    value: SHEET_NAME_HEALTHCARE,
+    description: "Medical, nursing, therapy, and other healthcare professions"
+  },
+  { 
+    name: "Customer & Social Services", 
+    value: SHEET_NAME_CUSTOMER,
+    description: "Customer service, social work, transportation, and logistics"
+  }
+];
+
+// Hard-coded Google Sheet URL for the main spreadsheet
+const GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1dLV3n1XnbyxMaI71JqcWV-4OYnxa9sAl4kBRcST8rjE";
 
 export default function Home() {
   const [data, setData] = useState<string[][]>([]);
@@ -63,21 +100,36 @@ export default function Home() {
     selectedLocation: "",
     skillFilter: "",
     showFilters: false,
-    showLastDayOnly: false,
+    timeRangeFilter: 168, // Default to 168 hours (7 days)
     minSalary: 0,
     salaryType: "any" as SalaryType,
     excludedWords: [],
-    sourceFilter: ""
+    sourceFilter: "",
+    titleFilter: "",
+    maxExperience: 5 // Default to 5 years
   });
   
   const [uniqueLocations, setUniqueLocations] = useState<string[]>([]);
   const [uniqueSkills, setUniqueSkills] = useState<string[]>([]);
+  const [uniqueSources, setUniqueSources] = useState<string[]>([]);
+  const [uniqueTitles, setUniqueTitles] = useState<string[]>([]);
   const [newExcludeWord, setNewExcludeWord] = useState<string>("");
   const [newSkill, setNewSkill] = useState<string>("");
+  const [newSource, setNewSource] = useState<string>("");
+  const [newTitle, setNewTitle] = useState<string>("");
   const [viewMode, setViewMode] = useState<'card' | 'list'>(() => {
     const savedViewMode = Cookies.get("viewMode");
     return savedViewMode === 'list' ? 'list' : 'card';
   });
+
+  // New state variables for industry selection
+  const [selectedIndustry, setSelectedIndustry] = useState("");
+  const [showIndustrySelector, setShowIndustrySelector] = useState(false);
+  const [currentSheetName, setCurrentSheetName] = useState("");
+
+  // State for Welcome Modal
+  const [isWelcomeModalOpen, setIsWelcomeModalOpen] = useState(false);
+  const [isFirstVisit, setIsFirstVisit] = useState(false);
 
   const router = useRouter();
 
@@ -92,11 +144,13 @@ export default function Home() {
           selectedLocation: parsedFilters.selectedLocation || "",
           skillFilter: parsedFilters.skillFilter || "",
           showFilters: parsedFilters.showFilters || false,
-          showLastDayOnly: parsedFilters.showLastDayOnly || false,
+          timeRangeFilter: parsedFilters.timeRangeFilter || 168,
           minSalary: parsedFilters.minSalary || 0,
           salaryType: parsedFilters.salaryType || "any",
           excludedWords: parsedFilters.excludedWords || [],
-          sourceFilter: parsedFilters.sourceFilter || ""
+          sourceFilter: parsedFilters.sourceFilter || "",
+          titleFilter: parsedFilters.titleFilter || "",
+          maxExperience: parsedFilters.maxExperience || 5
         });
       }
     } catch (e) {
@@ -105,17 +159,51 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    const savedSheetUrl = Cookies.get("lastSheetUrl");
-    if (savedSheetUrl) {
-      setSheetUrl(savedSheetUrl);
-      const id = extractSpreadsheetId(savedSheetUrl);
-      if (id) {
-        setSpreadsheetId(id);
-        setIsSheetLoaded(true);
-        fetchData(id);
-      }
+    // Check for last selected industry in cookie
+    const lastIndustry = Cookies.get("lastIndustry");
+    
+    // Check for legacy URL format in cookie
+    const lastSheetUrl = Cookies.get("lastSheetUrl");
+    
+    // Check if the user has visited before
+    const hasVisited = Cookies.get("hasVisited");
+
+    if (!hasVisited) {
+      setIsFirstVisit(true);
     }
-  }, []);  
+
+    // Prioritize lastSheetUrl for legacy users
+    if (lastSheetUrl) {
+      // Support legacy users
+      setSheetUrl(lastSheetUrl);
+      
+      const spreadsheetId = extractSpreadsheetId(lastSheetUrl);
+      if (spreadsheetId) {
+        setSpreadsheetId(spreadsheetId);
+        // For legacy users, use Sheet1 as the default sheet but display as Legacy
+        setCurrentSheetName("Legacy"); // Set a friendly name for the UI
+        fetchData(spreadsheetId, "Sheet1");
+      }
+    } else if (lastIndustry) {
+      setSelectedIndustry(lastIndustry);
+      // Check if it's a valid industry option
+      if (INDUSTRY_OPTIONS.some(option => option.value === lastIndustry)) {
+        // If valid, automatically load jobs for this industry
+        setSheetUrl(GOOGLE_SHEET_URL);
+        loadJobsForIndustry(lastIndustry);
+      }
+    } else {
+      // First time user - show industry selector
+      setShowIndustrySelector(true);
+    }
+  }, []);
+
+  // Effect to show welcome modal for first-time visitors when industry selector appears
+  useEffect(() => {
+    if (isFirstVisit && showIndustrySelector) {
+      setIsWelcomeModalOpen(true);
+    }
+  }, [isFirstVisit, showIndustrySelector]);
 
   // Extract unique locations from job data
   useEffect(() => {
@@ -156,6 +244,87 @@ export default function Home() {
     
   }, [data]);
 
+  // Extract unique sources from the data
+  useEffect(() => {
+    if (data.length <= 1) return; // No data or just headers
+    
+    const headers = data[0];
+    const rows = data.slice(1);
+    
+    // Find relevant column indices
+    const sourceIndex = headers.findIndex(header => header.toLowerCase() === "source");
+    const urlIndex = headers.findIndex(header => header.toLowerCase() === "url");
+    const companyWebsiteIndex = headers.findIndex(header => header.toLowerCase() === "company_website");
+    
+    // Extract unique sources
+    const sources = new Set<string>();
+    
+    rows.forEach((row) => {
+      const rowData = getRowData(row);
+      if (rowData) {
+        let source = '';
+        
+        // Try to get source from source column
+        if (sourceIndex !== -1 && rowData[sourceIndex]) {
+          source = rowData[sourceIndex].trim();
+        }
+        
+        // If no source found, try to extract from URL
+        if (!source && urlIndex !== -1 && rowData[urlIndex]) {
+          source = extractSourceFromUrl(rowData[urlIndex]);
+        }
+        
+        // If still no source, try company website
+        if (!source && companyWebsiteIndex !== -1 && rowData[companyWebsiteIndex]) {
+          source = extractSourceFromUrl(rowData[companyWebsiteIndex]);
+        }
+        
+        if (source && source !== 'Unknown') {
+          sources.add(source);
+        }
+      }
+    });
+    
+    // Convert to array and sort
+    const sortedSources = Array.from(sources).sort();
+    setUniqueSources(sortedSources);
+  }, [data]);
+
+  // Extract unique titles from the data
+  useEffect(() => {
+    if (data.length <= 1) return; // No data or just headers
+    
+    const headers = data[0];
+    const rows = data.slice(1);
+    
+    // Find title column index
+    const titleIndex = headers.findIndex(header => header.toLowerCase() === "title");
+    
+    if (titleIndex === -1) return;
+    
+    // Extract unique titles - use a Map to store lowercase version as key and original as value
+    // This prevents duplicate titles with different casing
+    const titlesMap = new Map<string, string>();
+    
+    rows.forEach((row) => {
+      const rowData = getRowData(row);
+      if (rowData && rowData[titleIndex]) {
+        const title = rowData[titleIndex].trim();
+        if (title) {
+          // Store with lowercase as key to prevent duplicates with different casing
+          titlesMap.set(title.toLowerCase(), title);
+        }
+      }
+    });
+    
+    // Convert to array and sort (case insensitive)
+    const sortedTitles = Array.from(titlesMap.values()).sort((a, b) => 
+      a.toLowerCase().localeCompare(b.toLowerCase())
+    );
+    
+    setUniqueTitles(sortedTitles);
+  }, [data]);
+
   // Apply filters whenever the filter criteria or data changes
   useEffect(() => {
     if (data.length <= 1) return;
@@ -176,6 +345,33 @@ export default function Home() {
       return !isJobApplied(consistentJobId, title, company, appliedJobs);
     });
 
+    // Apply experience filter
+    if (filters.maxExperience > 0) {
+      filtered = filtered.filter((row) => {
+        const experience = getFieldValue(row, "experience", headers);
+        
+        // Log more detailed information about experience filtering
+        console.log("Filtering experience:", { 
+          experience, 
+          maxExperience: filters.maxExperience,
+          originalRow: Array.isArray(row) ? row : row.data,
+          experienceIndex: headers.findIndex(h => h.toLowerCase() === 'experience')
+        });
+        
+        // If no experience listed, include the job
+        if (!experience) return true;
+        
+        // Enhanced extraction: works with formats like "3+", "3+ years", etc.
+        const yearsMatch = experience.match(/(\d+)(?:\+)?/);
+        if (!yearsMatch) return true; // Keep if we can't parse it
+        
+        const years = parseInt(yearsMatch[1]);
+        // Cap experience at 10 years for filtering purposes
+        const cappedYears = !isNaN(years) ? Math.min(years, 10) : 0;
+        return !isNaN(years) && cappedYears <= filters.maxExperience;
+      });
+    }
+
     // Apply text filter
     if (filters.filterText) {
       const searchTerms = filters.filterText.toLowerCase().split(' ');
@@ -187,34 +383,59 @@ export default function Home() {
       });
     }
 
-    // Apply location filter
+    // Apply title filter (OR logic)
+    if (filters.titleFilter) {
+      const requiredTitles = filters.titleFilter.toLowerCase().split(',').map(t => t.trim()).filter(Boolean);
+      // Only apply the filter if there are required titles
+      if (requiredTitles.length > 0) {
+        filtered = filtered.filter((row) => {
+          const title = getFieldValue(row, "title", headers).toLowerCase();
+          // Match if job title includes ANY of the required titles
+          return requiredTitles.some(t => title.includes(t));
+        });
+      }
+    }
+
+    // Apply location filter (multi-select - already OR logic)
     if (filters.selectedLocation) {
-      filtered = filtered.filter((row) => {
-        const location = getFieldValue(row, "location", headers).toLowerCase();
-        return location.includes(filters.selectedLocation.toLowerCase());
-      });
+      const requiredLocations = filters.selectedLocation.toLowerCase().split(',').map(loc => loc.trim()).filter(Boolean);
+      if (requiredLocations.length > 0) {
+        filtered = filtered.filter((row) => {
+          const location = getFieldValue(row, "location", headers).toLowerCase();
+          // Check if the job location string contains any of the required locations
+          return requiredLocations.some(reqLoc => location.includes(reqLoc));
+        });
+      }
     }
 
-    // Apply skill filter
+    // Apply skill filter (OR logic)
     if (filters.skillFilter) {
-      const requiredSkills = filters.skillFilter.toLowerCase().split(',').map(s => s.trim());
-      filtered = filtered.filter((row) => {
-        const skills = getFieldValue(row, "skills", headers).toLowerCase();
-        return requiredSkills.every(skill => skills.includes(skill));
-      });
+      const requiredSkills = filters.skillFilter.toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
+      if (requiredSkills.length > 0) {
+        filtered = filtered.filter((row) => {
+          const skills = getFieldValue(row, "skills", headers).toLowerCase();
+          // Match if job skills include ANY of the required skills
+          return requiredSkills.some(skill => skills.includes(skill));
+        });
+      }
     }
 
-    // Apply source filter
+    // Apply source filter (OR logic)
     if (filters.sourceFilter) {
-      filtered = filtered.filter((row) => {
-        const source = getFieldValue(row, "source", headers) || '';
-        const url = getFieldValue(row, "url", headers) || '';
-        const companyWebsite = getFieldValue(row, "company_website", headers) || '';
-        
-        // Check both explicit source field and extract from URL if needed
-        const jobSource = source || extractSourceFromUrl(url || companyWebsite).toLowerCase();
-        return jobSource.toLowerCase().includes(filters.sourceFilter.toLowerCase());
-      });
+      const requiredSources = filters.sourceFilter.toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
+      if (requiredSources.length > 0) {
+        filtered = filtered.filter((row) => {
+          const source = getFieldValue(row, "source", headers) || '';
+          const url = getFieldValue(row, "url", headers) || '';
+          const companyWebsite = getFieldValue(row, "company_website", headers) || '';
+          
+          // Check both explicit source field and extract from URL if needed
+          const jobSource = (source || extractSourceFromUrl(url || companyWebsite)).toLowerCase();
+          
+          // Match if job source includes ANY of the required sources
+          return requiredSources.some(s => jobSource.includes(s));
+        });
+      }
     }
 
     // Apply salary filter
@@ -237,8 +458,8 @@ export default function Home() {
       });
     }
 
-    // Apply last day filter
-    if (filters.showLastDayOnly) {
+    // Apply time range filter (replacing the last day filter)
+    if (filters.timeRangeFilter > 0) {
       filtered = filtered.filter((row) => {
         const datePosted = getFieldValue(row, "date_posted", headers) || 
                          getFieldValue(row, "currentdate", headers) || 
@@ -251,7 +472,7 @@ export default function Home() {
           if (isNaN(jobDate.getTime())) return false;
           
           const hoursDiff = (Date.now() - jobDate.getTime()) / (1000 * 60 * 60);
-          return hoursDiff <= 24;
+          return hoursDiff <= filters.timeRangeFilter; // Use the timeRangeFilter value in hours
         } catch {
           return false;
         }
@@ -265,31 +486,70 @@ export default function Home() {
     }));
 
     setFilteredRows(filteredWithIndices);
-  }, [data, filters.filterText, filters.selectedLocation, filters.skillFilter, filters.showLastDayOnly, filters.minSalary, filters.salaryType, filters.excludedWords, appliedJobs, filters.sourceFilter]);
+  }, [data, filters.filterText, filters.selectedLocation, filters.skillFilter, filters.timeRangeFilter, filters.minSalary, filters.salaryType, filters.excludedWords, appliedJobs, filters.sourceFilter, filters.titleFilter, filters.maxExperience]);
 
   const handleUrlSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const id = extractSpreadsheetId(sheetUrl);
-    if (id) {
-      setSpreadsheetId(id);
-      setLoadingJobs(true);
-      Cookies.set("lastSheetUrl", sheetUrl, { expires: 30 }); // Save URL in cookie for 30 days
-      fetchData(id);
+    if (sheetUrl) {
+      const id = extractSpreadsheetId(sheetUrl);
+      if (id) {
+        setSpreadsheetId(id);
+        setLoadingJobs(true);
+        Cookies.set("lastSheetUrl", sheetUrl, { expires: 30 }); // Save URL in cookie for 30 days
+        
+        // Remove any lastIndustry cookie to prevent it from overriding this URL on reload
+        Cookies.remove("lastIndustry");
+        
+        // For manually added sheets, set a custom label right away
+        setCurrentSheetName("Legacy");
+        
+        // Try Sheet1 first for compatibility
+        fetchData(id, "Sheet1")
+          .catch(error => {
+            console.error("Error fetching Sheet1:", error);
+            // If Sheet1 fails, try to find available sheets as fallback
+            return tryFetchAvailableSheets(id);
+          })
+          .then(success => {
+            if (success) {
+              setIsSheetLoaded(true);
+            }
+          })
+          .catch(err => {
+            console.error("Error fetching sheets:", err);
+          });
+      } else {
+        setError("Invalid Google Sheets URL");
+      }
     } else {
       setError("Invalid Google Sheets URL");
     }
   };
 
-  const fetchData = async (id: string) => {
+  const fetchData = async (id: string, sheetName: string = SHEET_NAME_DEFAULT) => {
     setLoading(true);
     setError(null);
     try {
-      const url = `https://sheets.googleapis.com/v4/spreadsheets/${id}/values/${RANGE}?key=${API_KEY}`;
+      // Update current sheet name only if this isn't a legacy or custom sheet
+      // This preserves our special display names set earlier
+      if (sheetName !== "Sheet1" && currentSheetName !== "Custom" && currentSheetName !== "Legacy") {
+        setCurrentSheetName(sheetName);
+      }
+      
+      // Replace {sheetName} placeholder in the RANGE with actual sheet name
+      const range = process.env.NEXT_PUBLIC_RANGE?.replace('{sheetName}', sheetName) || `${sheetName}!A:Z`;
+      
+      const url = `https://sheets.googleapis.com/v4/spreadsheets/${id}/values/${range}?key=${API_KEY}`;
       console.log("Fetching URL:", url);
       const response = await fetch(url);
 
       if (!response.ok) {
         const errorData = await response.json();
+        // Provide a more detailed error message if it's a sheet not found error
+        if (errorData.error?.message?.includes("Unable to parse range")) {
+          console.log("Sheet not found, trying to fetch spreadsheet info to find available sheets...");
+          return await tryFetchAvailableSheets(id);
+        }
         throw new Error(errorData.error?.message || "Failed to fetch data");
       }
 
@@ -342,10 +602,15 @@ export default function Home() {
         throw new Error("No valid job listings found");
       }
 
-      // Keep the original structure with originalIndex for JobCardGrid
-      setData([headers, ...validRows]);
+      // Deduplicate jobs - keep only the newest instance of each job
+      const uniqueRows = dedupJobs(validRows, headers);
+      console.log("Unique rows after deduplication:", uniqueRows.length);
+      console.log("Removed duplicate jobs:", validRows.length - uniqueRows.length);
 
-      const indices = validRows.map((row: RowData) => Array.isArray(row) ? -1 : (row.originalIndex || -1));
+      // Keep the original structure with originalIndex for JobCardGrid
+      setData([headers, ...uniqueRows]);
+
+      const indices = uniqueRows.map((row: RowData) => Array.isArray(row) ? -1 : (row.originalIndex || -1));
       setRowIndices(indices);
 
       // Find column indices for skills and locations processing
@@ -420,12 +685,121 @@ export default function Home() {
       setUniqueSkills(Array.from(skillsSet).sort());
       setLoadingJobs(false);
 
+      // At the end of success handling
+      setIsSheetLoaded(true);
+
     } catch (error: any) {
       console.error("Error processing data:", error);
       setError(error.message || "Failed to process data");
       setLoadingJobs(false);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Helper function to try to discover the available sheets in a spreadsheet
+  const tryFetchAvailableSheets = async (id: string) => {
+    try {
+      // Fetch the spreadsheet metadata to get sheet names
+      const metadataUrl = `https://sheets.googleapis.com/v4/spreadsheets/${id}?key=${API_KEY}`;
+      const response = await fetch(metadataUrl);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error?.message || "Failed to fetch spreadsheet information");
+      }
+      
+      const metadata = await response.json();
+      
+      if (metadata.sheets && metadata.sheets.length > 0) {
+        // Get the first sheet's title
+        const firstSheetName = metadata.sheets[0].properties.title;
+        console.log(`Found first sheet name: ${firstSheetName}`);
+        
+        // Preserve special display names (Legacy or Custom)
+        // Only update currentSheetName if we haven't already set it to a special value
+        if (currentSheetName !== "Legacy" && currentSheetName !== "Custom") {
+          setCurrentSheetName(firstSheetName);
+        }
+        
+        const range = `${firstSheetName}!A:Z`;
+        const dataUrl = `https://sheets.googleapis.com/v4/spreadsheets/${id}/values/${range}?key=${API_KEY}`;
+        const dataResponse = await fetch(dataUrl);
+        
+        if (!dataResponse.ok) {
+          throw new Error("Could not fetch data from the first sheet");
+        }
+        
+        const result = await dataResponse.json();
+        
+        if (!result.values || result.values.length === 0) {
+          throw new Error("No data found in sheet");
+        }
+        
+        // Process the data as usual
+        const headers = result.values[0];
+        const rows = result.values.slice(1);
+        
+        console.log("Total rows from sheet:", rows.length);
+        console.log("Headers:", headers);
+        setTotalSheetRows(rows.length);
+        
+        // Continue with the rest of the data processing logic
+        
+        // Add original indices to rows before filtering
+        const rowsWithIndices = rows.map((row: string[], index: number) => ({
+          data: row,
+          originalIndex: index + 2,
+        }));
+        
+        // Filter out invalid entries
+        const validRows = rowsWithIndices.filter((row: RowData) => {
+          try {
+            const rowData = Array.isArray(row) ? row : row.data || [];
+            const splicedRow = [...rowData];
+            
+            splicedRow.forEach((cell: string | undefined, idx: number) => {
+              if (cell === undefined) splicedRow[idx] = "";
+            });
+            
+            const isValid = Array.isArray(row) || (row.data && Array.isArray(row.data))
+              ? validateJobListing(splicedRow, headers)
+              : false;
+            
+            return isValid;
+          } catch (error) {
+            console.error("Error validating row:", error);
+            return false;
+          }
+        });
+        
+        console.log("Valid rows after filtering:", validRows.length);
+        
+        if (validRows.length === 0) {
+          throw new Error("No valid job listings found");
+        }
+        
+        // Process the rest of the data similarly to fetchData
+        const uniqueRows = dedupJobs(validRows, headers);
+        setData([headers, ...uniqueRows]);
+        
+        const indices = uniqueRows.map((row: RowData) => Array.isArray(row) ? -1 : (row.originalIndex || -1));
+        setRowIndices(indices);
+        
+        // Process other data like skills, locations, etc.
+        // This code is duplicated from fetchData - consider refactoring later
+        
+        setLoadingJobs(false);
+        setIsSheetLoaded(true);
+        return true;
+      } else {
+        throw new Error("No sheets found in this spreadsheet");
+      }
+    } catch (error: any) {
+      console.error("Error finding available sheets:", error);
+      setError(`We couldn't find any valid sheets in this spreadsheet. Please make sure your Google Sheet has data and is accessible.`);
+      setLoadingJobs(false);
+      return false;
     }
   };
 
@@ -580,11 +954,13 @@ export default function Home() {
           filterText: filters.filterText,
           selectedLocation: filters.selectedLocation,
           skillFilter: filters.skillFilter,
-          showLastDayOnly: filters.showLastDayOnly,
+          timeRangeFilter: filters.timeRangeFilter,
           minSalary: filters.minSalary,
           salaryType: filters.salaryType,
           excludedWords: updatedWords,
-          sourceFilter: filters.sourceFilter
+          sourceFilter: filters.sourceFilter,
+          titleFilter: filters.titleFilter,
+          maxExperience: filters.maxExperience
         };
         Cookies.set("savedFilters", JSON.stringify(filtersToSave), { expires: 30 });
       }
@@ -601,11 +977,13 @@ export default function Home() {
       filterText: filters.filterText,
       selectedLocation: filters.selectedLocation,
       skillFilter: filters.skillFilter,
-      showLastDayOnly: filters.showLastDayOnly,
+      timeRangeFilter: filters.timeRangeFilter,
       minSalary: filters.minSalary,
       salaryType: filters.salaryType,
       excludedWords: updatedWords,
-      sourceFilter: filters.sourceFilter
+      sourceFilter: filters.sourceFilter,
+      titleFilter: filters.titleFilter,
+      maxExperience: filters.maxExperience
     };
     Cookies.set("savedFilters", JSON.stringify(filtersToSave), { expires: 30 });
   };
@@ -616,13 +994,16 @@ export default function Home() {
       filterText: filters.filterText,
       selectedLocation: filters.selectedLocation,
       skillFilter: filters.skillFilter,
-      showLastDayOnly: filters.showLastDayOnly,
+      showFilters: filters.showFilters,
+      timeRangeFilter: filters.timeRangeFilter,
       minSalary: filters.minSalary,
       salaryType: filters.salaryType,
       excludedWords: filters.excludedWords,
-      sourceFilter: filters.sourceFilter
+      sourceFilter: filters.sourceFilter,
+      titleFilter: filters.titleFilter,
+      maxExperience: filters.maxExperience
     };
-    Cookies.set("savedFilters", JSON.stringify(filtersToSave), { expires: 30 }); // Save for 30 days
+    Cookies.set("savedFilters", JSON.stringify(filtersToSave), { expires: 30 });
   };
 
   // Clear all filters
@@ -632,13 +1013,18 @@ export default function Home() {
       selectedLocation: "",
       skillFilter: "",
       showFilters: false,
-      showLastDayOnly: false,
+      timeRangeFilter: 168, // Reset to 168 hours (7 days)
       minSalary: 0,
-      salaryType: "any" as SalaryType,
+      salaryType: "any",
       excludedWords: [],
-      sourceFilter: ""
+      sourceFilter: "",
+      titleFilter: "",
+      maxExperience: 5 // Reset to 5 years
     });
-    // Also clear saved filters from cookies
+    setNewSkill("");
+    setNewExcludeWord("");
+    setNewSource("");
+    setNewTitle("");
     Cookies.remove("savedFilters");
   };
 
@@ -668,11 +1054,18 @@ export default function Home() {
 
   const handleResetJobs = () => {
     setData([]);
-    setFilteredRows([]);
-    setError(null);
     setSpreadsheetId("");
-    setIsSheetLoaded(false);
+    setSheetUrl("");
+    setLoadingJobs(false);
     Cookies.remove("lastSheetUrl");
+    Cookies.remove("lastIndustry");
+    setIsSheetLoaded(false);
+    setShowIndustrySelector(true);
+    setSelectedIndustry("");
+    setAppliedJobs([]);
+    Cookies.remove("appliedJobs");
+    // Reset other filters as well
+    clearFilters();
   };
 
   // Extract headers and rows from data
@@ -702,11 +1095,13 @@ export default function Home() {
           selectedLocation: filters.selectedLocation,
           skillFilter: updatedSkills.join(','),
           showFilters: filters.showFilters,
-          showLastDayOnly: filters.showLastDayOnly,
+          timeRangeFilter: filters.timeRangeFilter,
           minSalary: filters.minSalary,
           salaryType: filters.salaryType,
           excludedWords: filters.excludedWords,
-          sourceFilter: filters.sourceFilter
+          sourceFilter: filters.sourceFilter,
+          titleFilter: filters.titleFilter,
+          maxExperience: filters.maxExperience
         };
         Cookies.set("savedFilters", JSON.stringify(filtersToSave), { expires: 30 });
       }
@@ -729,13 +1124,238 @@ export default function Home() {
       selectedLocation: filters.selectedLocation,
       skillFilter: updatedSkills.join(','),
       showFilters: filters.showFilters,
-      showLastDayOnly: filters.showLastDayOnly,
+      timeRangeFilter: filters.timeRangeFilter,
       minSalary: filters.minSalary,
       salaryType: filters.salaryType,
       excludedWords: filters.excludedWords,
-      sourceFilter: filters.sourceFilter
+      sourceFilter: filters.sourceFilter,
+      titleFilter: filters.titleFilter,
+      maxExperience: filters.maxExperience
     };
     Cookies.set("savedFilters", JSON.stringify(filtersToSave), { expires: 30 });
+  };
+
+  // Add new title
+  const handleAddTitle = () => {
+    if (newTitle.trim() !== "") {
+      const title = newTitle.trim();
+      // Convert to array of titles if it's a string
+      const currentTitles = filters.titleFilter.length 
+        ? filters.titleFilter.split(',').map(t => t.trim()) 
+        : [];
+        
+      // Check if title already exists (case insensitive)
+      const titleExists = currentTitles.some(
+        existingTitle => existingTitle.toLowerCase() === title.toLowerCase()
+      );
+      
+      if (!titleExists) {
+        const updatedTitles = [...currentTitles, title];
+        setFilters(prev => ({ 
+          ...prev, 
+          titleFilter: updatedTitles.join(',') 
+        }));
+        setNewTitle("");
+        
+        // Save to cookies immediately
+        const filtersToSave = {
+          ...filters,
+          titleFilter: updatedTitles.join(',')
+        };
+        Cookies.set("savedFilters", JSON.stringify(filtersToSave), { expires: 30 });
+      } else {
+        // Title already exists (case insensitive match)
+        setNewTitle("");
+      }
+    }
+  };
+
+  // Remove title
+  const handleRemoveTitle = (title: string) => {
+    const currentTitles = filters.titleFilter.split(',').map(t => t.trim());
+    // Remove the title using case-insensitive comparison
+    const updatedTitles = currentTitles.filter(t => 
+      t.toLowerCase() !== title.toLowerCase()
+    );
+    
+    setFilters(prev => ({ 
+      ...prev, 
+      titleFilter: updatedTitles.join(',') 
+    }));
+    
+    // Save to cookies immediately
+    const filtersToSave = {
+      ...filters,
+      titleFilter: updatedTitles.join(',')
+    };
+    Cookies.set("savedFilters", JSON.stringify(filtersToSave), { expires: 30 });
+  };
+
+  // Add new source
+  const handleAddSource = () => {
+    if (!newSource.trim()) return;
+    
+    const currentSources = filters.sourceFilter.split(',')
+      .map(s => s.trim())
+      .filter(Boolean);
+    
+    if (currentSources.includes(newSource.trim())) {
+      setNewSource("");
+      return;
+    }
+    
+    const updatedSources = [...currentSources, newSource.trim()].join(',');
+    
+    setFilters(prev => ({
+      ...prev,
+      sourceFilter: updatedSources
+    }));
+    
+    // Save to cookies immediately
+    const filtersToSave = {
+      ...filters,
+      sourceFilter: updatedSources,
+      timeRangeFilter: filters.timeRangeFilter
+    };
+    Cookies.set("savedFilters", JSON.stringify(filtersToSave), { expires: 30 });
+    
+    setNewSource("");
+  };
+
+  // Remove source
+  const handleRemoveSource = (source: string) => {
+    const currentSources = filters.sourceFilter.split(',').map(s => s.trim());
+    const updatedSources = currentSources.filter(s => s !== source);
+    
+    setFilters(prev => ({
+      ...prev,
+      sourceFilter: updatedSources.join(',')
+    }));
+    
+    // Save to cookies immediately
+    const filtersToSave = {
+      ...filters,
+      sourceFilter: updatedSources.join(','),
+      timeRangeFilter: filters.timeRangeFilter
+    };
+    Cookies.set("savedFilters", JSON.stringify(filtersToSave), { expires: 30 });
+  };
+
+  // Function to handle industry selection
+  const handleIndustrySelect = () => {
+    if (selectedIndustry) {
+      // Save selected industry in cookie
+      Cookies.set("lastIndustry", selectedIndustry, { expires: 30 });
+      
+      loadJobsForIndustry(selectedIndustry);
+      setShowIndustrySelector(false);
+    }
+  };
+
+  // Function to load jobs for a specific industry
+  const loadJobsForIndustry = (industry: string) => {
+    const id = extractSpreadsheetId(GOOGLE_SHEET_URL);
+    if (id) {
+      setSpreadsheetId(id);
+      setCurrentSheetName(industry);
+      fetchData(id, industry);
+    }
+  };
+
+  // Reset state and show industry selector
+  const handleChangeIndustry = () => {
+    setShowIndustrySelector(true);
+  };
+
+  // New function to handle showing the custom URL input
+  const handleShowCustomUrlInput = () => {
+    setShowIndustrySelector(false);
+    setIsSheetLoaded(false);
+  };
+
+  // Add new skill filter from card/list item
+  const handleAddSkillFilter = (skillToAdd: string) => {
+    if (!skillToAdd) return;
+    const skill = skillToAdd.trim();
+    const currentSkills = filters.skillFilter.length
+      ? filters.skillFilter.split(',').map(s => s.trim())
+      : [];
+
+    // Case-insensitive check
+    if (!currentSkills.some(s => s.toLowerCase() === skill.toLowerCase())) {
+      const updatedSkills = [...currentSkills, skill];
+      const newFilters = { ...filters, skillFilter: updatedSkills.join(',') };
+      setFilters(newFilters);
+      toast.success(`Added skill filter: "${skill}"`);
+      // Explicitly save filters
+      Cookies.set("savedFilters", JSON.stringify(newFilters), { expires: 30 });
+    } else {
+      // Use generic toast if info isn't available
+      toast(`Skill filter "${skill}" already exists.`);
+    }
+  };
+
+  // Add new source filter from card/list item
+  const handleAddSourceFilter = (sourceToAdd: string) => {
+    if (!sourceToAdd) return;
+    const source = sourceToAdd.trim();
+    const currentSources = filters.sourceFilter.length
+      ? filters.sourceFilter.split(',').map(s => s.trim())
+      : [];
+
+    // Case-insensitive check
+    if (!currentSources.some(s => s.toLowerCase() === source.toLowerCase())) {
+      const updatedSources = [...currentSources, source];
+      const newFilters = { ...filters, sourceFilter: updatedSources.join(',') };
+      setFilters(newFilters);
+      toast.success(`Added source filter: "${source}"`);
+      // Explicitly save filters
+      Cookies.set("savedFilters", JSON.stringify(newFilters), { expires: 30 });
+    } else {
+      // Use generic toast if info isn't available
+      toast(`Source filter "${source}" already exists.`);
+    }
+  };
+
+  // Add new location
+  const handleAddLocation = (locationToAdd: string) => {
+    if (!locationToAdd.trim()) return;
+    const location = locationToAdd.trim();
+    const currentLocations = filters.selectedLocation.length
+      ? filters.selectedLocation.split(',').map(loc => loc.trim())
+      : [];
+
+    // Case-insensitive check
+    if (!currentLocations.some(loc => loc.toLowerCase() === location.toLowerCase())) {
+      const updatedLocations = [...currentLocations, location];
+      const newFilters = { ...filters, selectedLocation: updatedLocations.join(',') };
+      setFilters(newFilters);
+      toast.success(`Added location filter: "${location}"`);
+      Cookies.set("savedFilters", JSON.stringify(newFilters), { expires: 30 });
+    } else {
+      toast(`Location filter "${location}" already exists.`);
+    }
+  };
+
+  // Remove location
+  const handleRemoveLocation = (locationToRemove: string) => {
+    const currentLocations = filters.selectedLocation.split(',').map(loc => loc.trim());
+    // Case-insensitive removal
+    const updatedLocations = currentLocations.filter(loc => 
+      loc.toLowerCase() !== locationToRemove.toLowerCase()
+    );
+    
+    const newFilters = { ...filters, selectedLocation: updatedLocations.join(',') };
+    setFilters(newFilters);
+    toast.error(`Removed location filter: "${locationToRemove}"`);
+    Cookies.set("savedFilters", JSON.stringify(newFilters), { expires: 30 });
+  };
+
+  // Function to handle closing the welcome modal
+  const handleCloseWelcomeModal = () => {
+    setIsWelcomeModalOpen(false);
+    setIsFirstVisit(false); // Mark as no longer first visit for this session
+    Cookies.set("hasVisited", "true", { expires: 365 }); // Set cookie for 1 year
   };
 
   return (
@@ -743,8 +1363,26 @@ export default function Home() {
       {/* Page Header */}
       <PageHeader />
 
-      {/* Sheet URL Form */}
-      {!isSheetLoaded && (
+      {/* Welcome Modal */} 
+      <WelcomeModal 
+        isOpen={isWelcomeModalOpen} 
+        onClose={handleCloseWelcomeModal} 
+      />
+
+      {/* Industry Selector */}
+      {showIndustrySelector && !isWelcomeModalOpen && (
+        <IndustrySelector
+          selectedIndustry={selectedIndustry}
+          setSelectedIndustry={setSelectedIndustry}
+          industries={INDUSTRY_OPTIONS}
+          onSelectIndustry={handleIndustrySelect}
+          isLoading={loading}
+          onShowCustomUrlInput={handleShowCustomUrlInput}
+        />
+      )}
+
+      {/* Sheet URL Form - only show if not loading jobs and no industry selected */}
+      {!isSheetLoaded && !showIndustrySelector && !isWelcomeModalOpen && (
         <SheetForm
           sheetUrl={sheetUrl}
           setSheetUrl={setSheetUrl}
@@ -774,19 +1412,36 @@ export default function Home() {
             filterText: filters.filterText,
             selectedLocation: filters.selectedLocation,
             skillFilter: filters.skillFilter,
-            showLastDayOnly: filters.showLastDayOnly,
+            timeRangeFilter: filters.timeRangeFilter,
             minSalary: filters.minSalary,
             salaryType: filters.salaryType,
             excludedWords: filters.excludedWords,
-            sourceFilter: filters.sourceFilter
+            sourceFilter: filters.sourceFilter,
+            titleFilter: filters.titleFilter
           }}
           onClearFilters={clearFilters}
         />
       )}
 
       {/* Job Stats and Content */}
-      {jobsLoaded && !loadingJobs && (
+      {!loading && data.length > 0 && (
         <>
+          {/* Industry change button */}
+          {isSheetLoaded && !showIndustrySelector && (
+            <div className="flex justify-between items-center mb-4">
+              <div className="text-sm text-gray-600 dark:text-gray-400">
+                Viewing: <span className="font-medium">{currentSheetName}</span>
+              </div>
+              <button
+                onClick={handleChangeIndustry}
+                className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 flex items-center"
+              >
+                <Briefcase className="w-4 h-4 mr-1" />
+                Change Industry
+              </button>
+            </div>
+          )}
+
           {/* Stats Display */}
           <StatsDisplay 
             totalJobs={filteredRows.length} 
@@ -800,6 +1455,8 @@ export default function Home() {
             setFilters={setFilters}
             uniqueLocations={uniqueLocations}
             uniqueSkills={uniqueSkills}
+            uniqueSources={uniqueSources}
+            uniqueTitles={uniqueTitles}
             newExcludeWord={newExcludeWord}
             setNewExcludeWord={setNewExcludeWord}
             handleAddExcludedWord={handleAddExcludedWord}
@@ -808,6 +1465,16 @@ export default function Home() {
             setNewSkill={setNewSkill}
             handleAddSkill={handleAddSkill}
             handleRemoveSkill={handleRemoveSkill}
+            newSource={newSource}
+            setNewSource={setNewSource}
+            handleAddSource={handleAddSource}
+            handleRemoveSource={handleRemoveSource}
+            newTitle={newTitle}
+            setNewTitle={setNewTitle}
+            handleAddTitle={handleAddTitle}
+            handleRemoveTitle={handleRemoveTitle}
+            handleAddLocation={handleAddLocation}
+            handleRemoveLocation={handleRemoveLocation}
             saveFilters={saveFilters}
             clearFilters={clearFilters}
             viewMode={viewMode}
@@ -826,6 +1493,8 @@ export default function Home() {
               onHide={handleHideJob}
               viewMode={viewMode}
               onToggleViewMode={toggleViewMode}
+              onAddSkillFilter={handleAddSkillFilter}
+              onAddSourceFilter={handleAddSourceFilter}
             />
           ) : (
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 sm:p-8 text-center border border-gray-100 dark:border-gray-700">

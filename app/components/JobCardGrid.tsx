@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useRef } from 'react'
 import JobCard from './JobCard'
-import { ChevronLeft, ChevronRight, Grid, List, MapPin, Calendar, Link2, CheckCircle, Filter, ArrowUpDown } from 'lucide-react'
-import { generateJobId, getFieldValue, formatDateSafely } from '../utils/dataHelpers'
+import { ChevronLeft, ChevronRight, Grid, List, MapPin, Calendar, Link2, CheckCircle, Filter, ArrowUpDown, Briefcase } from 'lucide-react'
+import { generateJobId, getFieldValue, formatDateSafely, formatExperience } from '../utils/dataHelpers'
 import { RowData } from '../types/data'
 
 interface JobData {
@@ -48,6 +48,8 @@ interface JobCardGridProps {
   viewMode?: 'card' | 'list';
   onToggleViewMode?: () => void;
   hideViewToggle?: boolean;
+  onAddSkillFilter?: (skill: string) => void;
+  onAddSourceFilter?: (source: string) => void;
 }
 
 // Define a local helper function to check if a job is applied
@@ -67,7 +69,9 @@ export default function JobCardGrid({
   onHide,
   viewMode: externalViewMode,
   onToggleViewMode,
-  hideViewToggle = false
+  hideViewToggle = false,
+  onAddSkillFilter,
+  onAddSourceFilter
 }: JobCardGridProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [sortedJobs, setSortedJobs] = useState<JobData[]>([]);
@@ -116,6 +120,34 @@ export default function JobCardGrid({
         // Default to original order
         return 0;
       });
+      
+      // Diagnostic: Check for duplicate jobs
+      const jobMap = new Map<string, JobData[]>();
+      sortedJobsCopy.forEach((job) => {
+        const title = getFieldValue(job, "title", headers);
+        const company = getFieldValue(job, "company_name", headers);
+        
+        if (title && company) {
+          const key = `${title.trim()}_${company.trim()}`.toLowerCase().replace(/\s+/g, '_');
+          if (!jobMap.has(key)) {
+            jobMap.set(key, []);
+          }
+          jobMap.get(key)!.push(job);
+        }
+      });
+      
+      // Log any duplicates found
+      let duplicatesFound = false;
+      jobMap.forEach((jobList, key) => {
+        if (jobList.length > 1) {
+          duplicatesFound = true;
+          console.warn(`Found duplicates for job: ${key} (${jobList.length} instances)`);
+        }
+      });
+      
+      if (!duplicatesFound) {
+        console.log("No duplicate jobs found in the current view");
+      }
       
       setSortedJobs(sortedJobsCopy);
     }
@@ -225,6 +257,15 @@ export default function JobCardGrid({
     const companyWebsite = getFieldValue(job, "company_website", headers)
     const companyImage = getFieldValue(job, "company_image", headers)
     const experience = getFieldValue(job, "experience", headers)
+    console.log("Job experience details:", { 
+      title: title, 
+      experience: experience,
+      headers: headers,
+      experienceIndex: headers.findIndex(h => h.toLowerCase() === 'experience'),
+      rawData: Array.isArray(job) ? job : job.data,
+    });
+    
+    // Ensure experience is set, even with a placeholder
     const skills = getFieldValue(job, "skills", headers)
     const notes = getFieldValue(job, "notes", headers)
     
@@ -435,8 +476,8 @@ export default function JobCardGrid({
   useEffect(() => {
     if (keyboardListIndex >= 0 && keyboardSelectedRef.current) {
       keyboardSelectedRef.current.scrollIntoView({
-        behavior: 'smooth',
-        block: 'nearest'
+        // behavior: 'smooth', // Temporarily remove smooth scroll for debugging
+        block: 'center' // Change from 'nearest' to 'center'
       });
     }
   }, [keyboardListIndex]);
@@ -569,6 +610,9 @@ export default function JobCardGrid({
                 onUpdateNote(selectedJobForDetail.originalIndex, note, notesIndex)
               }
             }}
+            onHide={() => handleHide(selectedJobForDetail)}
+            onAddSkillFilter={onAddSkillFilter}
+            onAddSourceFilter={onAddSourceFilter}
           />
         </div>
       )
@@ -612,6 +656,13 @@ export default function JobCardGrid({
                 
                 // Check if this job is in the applied list using the helper function
                 const isJobApplied = checkIfJobApplied(consistentJobId, title, company, appliedJobs);
+
+                // Clean skills for display (reusing logic from desktop)
+                const skills = preparedJob.skills ? 
+                  preparedJob.skills.split(',')
+                    .map((s: string) => s.replace(/[\[\]"'{}]/g, '').trim())
+                    .filter(Boolean)
+                  : [];
                 
                 return (
                   <div 
@@ -622,8 +673,9 @@ export default function JobCardGrid({
                       keyboardListIndex === index ? 'ring-2 ring-blue-500 bg-blue-50 dark:bg-blue-900/20' : ''
                     }`}
                   >
-                    <div className="flex justify-between items-start mb-2">
-                      <h3 className="font-medium text-gray-900 dark:text-white text-sm line-clamp-2 mr-2">
+                    {/* Top Row: Title and Applied Status */}
+                    <div className="flex justify-between items-start mb-1.5">
+                      <h3 className="font-semibold text-gray-900 dark:text-white text-sm line-clamp-2 mr-2">
                         {preparedJob.title}
                       </h3>
                       {isJobApplied ? (
@@ -633,18 +685,21 @@ export default function JobCardGrid({
                         </span>
                       ) : (
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 ml-2 whitespace-nowrap flex-shrink-0">
-                          Not Applied
+                           {/* Placeholder or leave empty */} 
                         </span>
                       )}
                     </div>
-                    <div className="text-gray-500 dark:text-gray-400 text-xs mb-2 font-medium">
+                    {/* Company */}
+                    <div className="text-gray-600 dark:text-gray-400 text-xs mb-2 font-medium">
                       {preparedJob.company_name}
                     </div>
-                    <div className="flex flex-wrap gap-y-1.5 gap-x-3 text-xs text-gray-500 dark:text-gray-400">
+                    
+                    {/* Details Row 1: Location & Date */}
+                    <div className="flex flex-wrap gap-y-1 gap-x-3 text-xs text-gray-500 dark:text-gray-400 mb-2">
                       {preparedJob.location && (
                         <div className="flex items-center">
                           <MapPin className="w-3 h-3 mr-1 flex-shrink-0 text-gray-400" />
-                          <span className="truncate max-w-[150px]">{preparedJob.location}</span>
+                          <span className="truncate max-w-[180px]">{preparedJob.location}</span>
                         </div>
                       )}
                       <div className="flex items-center">
@@ -653,13 +708,57 @@ export default function JobCardGrid({
                           {formatDateSafely(preparedJob.date_posted || preparedJob.currentDate || preparedJob.currentdate)}
                         </span>
                       </div>
+                    </div>
+                    
+                    {/* Details Row 2: Source & Experience */}
+                    <div className="flex flex-wrap gap-y-1 gap-x-3 text-xs text-gray-500 dark:text-gray-400 mb-3">
                       {preparedJob.source && (
-                        <div className="flex items-center">
-                          <Link2 className="w-3 h-3 mr-1 flex-shrink-0 text-gray-400" />
-                          <span>{preparedJob.source}</span>
+                         <div className="flex items-center">
+                            <Link2 className="w-3 h-3 mr-1 flex-shrink-0 text-gray-400" />
+                            <button
+                              onClick={(e) => { 
+                                e.stopPropagation(); 
+                                onAddSourceFilter?.(preparedJob.source); 
+                              }}
+                              className="source-text group relative cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 font-medium"
+                              title={`Click to add "${preparedJob.source}" to source filters`}
+                            >
+                              {preparedJob.source}
+                            </button>
+                          </div>
+                      )}
+                      {preparedJob.experience && (
+                         <div className="flex items-center">
+                          <Briefcase className="w-3 h-3 mr-1 flex-shrink-0 text-gray-400" />
+                          <span>{formatExperience(preparedJob.experience)}</span>
                         </div>
                       )}
                     </div>
+
+                    {/* Skills Section */}
+                    {skills.length > 0 && (
+                      <div className="border-t border-gray-100 dark:border-gray-700 pt-2.5">
+                         <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">Skills</h4>
+                        <div className="flex flex-wrap gap-1.5">
+                          {skills.slice(0, 4).map((skill: string, idx: number) => (
+                             <button
+                                key={idx}
+                                onClick={(e) => { 
+                                  e.stopPropagation();
+                                  onAddSkillFilter?.(skill); 
+                                }}
+                                className="skill-badge group relative cursor-pointer text-[11px] bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full px-2 py-0.5 hover:bg-blue-100 dark:hover:bg-blue-900 transition-colors whitespace-nowrap"
+                                title={`Click to add "${skill}" to skill filters`}
+                              >
+                                {skill}
+                              </button>
+                          ))}
+                          {skills.length > 4 && (
+                            <span className="text-[11px] text-gray-400 dark:text-gray-500 px-1 py-0.5">+{skills.length - 4} more</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -669,22 +768,20 @@ export default function JobCardGrid({
           {/* Desktop table view */}
           <div className="hidden md:block h-full overflow-y-auto custom-scrollbar">
             <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-              <thead className="bg-gray-50 dark:bg-gray-800/60">
+              <thead className="bg-gray-50 dark:bg-gray-800/60 sticky top-0 z-10">
                 <tr>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-1/3">
+                  {/* Re-adjusted column widths after removing Skills & Status */}
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-6/12">
                     Job Title
                   </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-1/5">
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-3/12">
                     Company
                   </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-1/5">
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-2/12">
                     Location
                   </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-1/5">
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-1/12">
                     Date
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Status
                   </th>
                 </tr>
               </thead>
@@ -695,12 +792,10 @@ export default function JobCardGrid({
                   const title = preparedJob.title;
                   const company = preparedJob.company_name;
                   
-                  // Create a consistent job ID for checking applied status
                   const consistentJobId = title && company ? 
                     `${title}-${company}`.replace(/\s+/g, '-') : 
                     title;
                   
-                  // Check if this job is in the applied list using the helper function
                   const isJobApplied = checkIfJobApplied(consistentJobId, title, company, appliedJobs);
                   
                   return (
@@ -712,21 +807,30 @@ export default function JobCardGrid({
                         keyboardListIndex === index ? 'bg-blue-50 dark:bg-blue-900/20' : ''
                       }`}
                     >
-                      <td className="px-6 py-4 text-sm">
+                      <td className="px-6 py-4 md:text-xs lg:text-sm">
                         <div className="font-medium text-gray-900 dark:text-white line-clamp-2">
                           {preparedJob.title}
                         </div>
                         {preparedJob.source && (
                           <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 flex items-center">
                             <Link2 className="w-3 h-3 mr-1" />
-                            {preparedJob.source}
+                            <button
+                              onClick={(e) => { 
+                                e.stopPropagation();
+                                onAddSourceFilter?.(preparedJob.source); 
+                              }}
+                              className="source-text group relative cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 font-medium"
+                              title={`Click to add \"${preparedJob.source}\" to source filters`}
+                            >
+                              {preparedJob.source}
+                            </button>
                           </div>
                         )}
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
+                      <td className="px-6 py-4 md:text-xs lg:text-sm text-gray-600 dark:text-gray-300">
                         {preparedJob.company_name}
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
+                      <td className="px-6 py-4 md:text-xs lg:text-sm text-gray-600 dark:text-gray-300">
                         {preparedJob.location && (
                           <div className="flex items-center">
                             <MapPin className="w-3.5 h-3.5 mr-1.5 text-gray-400 flex-shrink-0" />
@@ -734,20 +838,8 @@ export default function JobCardGrid({
                           </div>
                         )}
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
+                      <td className="px-6 py-4 md:text-xs lg:text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
                         {formatDateSafely(preparedJob.date_posted || preparedJob.currentDate || preparedJob.currentdate)}
-                      </td>
-                      <td className="px-6 py-4 text-sm whitespace-nowrap">
-                        {isJobApplied ? (
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
-                            <CheckCircle className="w-3.5 h-3.5 mr-1" />
-                            Applied
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
-                            Not Applied
-                          </span>
-                        )}
                       </td>
                     </tr>
                   );
@@ -796,6 +888,8 @@ export default function JobCardGrid({
           onDelete={handleDelete}
           onHide={() => handleHide(currentJob)}
           onUpdateNote={handleUpdateNote}
+          onAddSkillFilter={onAddSkillFilter}
+          onAddSourceFilter={onAddSourceFilter}
         />
       </div>
       
