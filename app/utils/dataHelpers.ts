@@ -5,37 +5,6 @@
 import { RowData, RowDataObject, SalaryType } from '../types/data';
 
 /**
- * Validates and formats an image URL
- */
-export const validateImageUrl = (url: string): string => {
-  if (!url) return "";
-  
-  try {
-    // Remove any whitespace
-    url = url.trim();
-    
-    // If it's a data URL, return as is
-    if (url.startsWith('data:')) return url;
-    
-    // If it's a relative URL starting with /, assume it's from the same domain
-    if (url.startsWith('/')) return url;
-    
-    // If it doesn't start with http(s), add https://
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      url = 'https://' + url;
-    }
-    
-    // Try to construct a URL to validate it
-    new URL(url);
-    
-    return url;
-  } catch (error) {
-    console.warn(`Invalid image URL: ${url}`);
-    return "";
-  }
-};
-
-/**
  * Gets a field value from job data based on field name and column headers
  * Handles both array and object data structures
  */
@@ -70,7 +39,6 @@ export const getFieldValue = (
         (header) => header.toLowerCase().includes('experience') || 
                    header.toLowerCase().includes('exp')
       );
-      console.log(`Tried fuzzy match for experience:`, { index });
     }
     
     if (index !== -1) {
@@ -89,10 +57,10 @@ export const getFieldValue = (
     value = row[fieldName] || row[camelCase] || row[snakeCase] || "";
   }
   
-  // For image URLs, validate and format them
-  if (fieldName === 'company_image' && value) {
-    return validateImageUrl(value);
-  }
+  // For image URLs, validate and format them -- Removed validation call
+  // if (fieldName === 'company_image' && value) {
+  //   return validateImageUrl(value);
+  // }
   
   return value;
 };
@@ -255,6 +223,48 @@ export const parseSalary = (salary: string, type: SalaryType): number => {
   const match = salary.match(/\d+/);
   const value = match ? parseInt(match[0], 10) : 0;
   return type === 'hourly' ? value * 2080 : value;
+};
+
+/**
+ * Formats the experience string for display
+ */
+export const formatExperience = (experience: string | undefined): string => {
+  if (!experience) return '';
+  
+  // Convert to lowercase for easier comparison
+  const expLower = experience.toLowerCase().trim();
+  
+  // Check if experience already has "years" in it
+  if (expLower.includes('year')) {
+    // Cap at 10+ years if it's over 10
+    const yearsMatch = expLower.match(/(\d+)(?:\+)?/);
+    if (yearsMatch) {
+      const years = parseInt(yearsMatch[1]);
+      if (years > 10) {
+        return '10+ years';
+      }
+    }
+    return experience;
+  }
+  
+  // Check for patterns like "3+" or just "3"
+  if (/^\d+\+?$/.test(expLower)) {
+    const years = parseInt(expLower);
+    if (years > 10) {
+      return '10+ years';
+    }
+    return `${experience} years`;
+  }
+  
+  // Handle special values like "Entry Level", "Mid Level", "Senior Level"
+  if (expLower === 'entry' || expLower === 'entry level' || expLower === 'junior') 
+    return 'Entry Level';
+  if (expLower === 'mid' || expLower === 'mid level' || expLower === 'intermediate') 
+    return 'Mid Level';
+  if (expLower === 'senior' || expLower === 'senior level' || expLower === 'advanced') 
+    return 'Senior Level';
+  
+  return experience;
 };
 
 /**

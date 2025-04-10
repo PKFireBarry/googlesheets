@@ -11,7 +11,7 @@ import LoadingState from "../components/appliedjobs/LoadingState";
 import EmptyState from "../components/appliedjobs/EmptyState";
 import JobStatusHeader from "../components/appliedjobs/JobStatusHeader";
 import ToastNotification from "../components/appliedjobs/ToastNotification";
-import { dedupJobs, getFieldValue, validateImageUrl } from "../utils/dataHelpers";
+import { dedupJobs, getFieldValue } from "../utils/dataHelpers";
 import { RowData, RowDataObject } from "../types/data";
 
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY;
@@ -116,15 +116,16 @@ export default function AppliedJobsPage() {
     // --- START DEBUG LOGGING ---
     console.log("[AppliedJobs Filter] Hook triggered.");
     console.log("[AppliedJobs Filter] Headers:", headers);
-    console.log("[AppliedJobs Filter] All Data Rows Count:", allData.length);
+    console.log("[AppliedJobs Filter] All Data Rows Count (across all sheets):", allData.length);
     if (allData.length > 0) {
-       console.log("[AppliedJobs Filter] Sample Row Data:", JSON.stringify(allData[0]));
+       // Log sample data including sheet name - REMOVED THIS LOG
+       // console.log("[AppliedJobs Filter] Sample Row Data (from sheet '" + allData[0].sheetName + "'):", JSON.stringify(allData[0]));
     }
     console.log("[AppliedJobs Filter] Applied Jobs from Cookie:", appliedJobs);
     // --- END DEBUG LOGGING ---
 
     if (headers.length === 0 || allData.length === 0 || appliedJobs.length === 0) {
-      console.log("[AppliedJobs Filter] Skipping filter due to missing data/headers/applied jobs.");
+      console.log("[AppliedJobs Filter] Skipping filter: Missing data, headers, or applied jobs list.");
       setFilteredRows([]);
       return;
     }
@@ -144,15 +145,16 @@ export default function AppliedJobsPage() {
       const sheet = row.sheetName; // Get sheet name associated with the row
 
       // --- START DEBUG LOGGING ---
-      // Log only for the first few rows or if title matches the target for clarity
-      // if (processedRowCount <= 5 || title?.includes("Backend")) {
+      // Example: Log processing details including sheet name
+      // if (processedRowCount <= 10) { // Log first 10 processing attempts
       //     console.log(`[AppliedJobs Filter] Processing Row ${processedRowCount}: Sheet='${sheet}', Title='${title}', Company='${company}'`);
       // }
       // --- END DEBUG LOGGING ---
 
       if (!title) { // Company name might be optional for some matches
-          // if (processedRowCount <= 5) console.log(`[AppliedJobs Filter] Row ${processedRowCount}: Skipping due to missing title.`);
-          return false; 
+          // Example: Log skipping details
+          // if (processedRowCount <= 10) console.log(`[AppliedJobs Filter] Row ${processedRowCount}: Skipping due to missing title.`);
+          return false;
       }
 
       // Create potential IDs to check against the appliedJobs set
@@ -169,11 +171,11 @@ export default function AppliedJobsPage() {
           doubleSheetTitleCompanyId
       ].filter(id => !!id); // Filter out empty strings
 
-      // if (processedRowCount <= 5 || title?.includes("Backend")) {
+      // Example: Log IDs being checked
+      // if (processedRowCount <= 10) {
       //    console.log(`[AppliedJobs Filter] Row ${processedRowCount}: IDs generated: [${idsToCheck.join(', ')}]`);
       // }
        // --- END DEBUG LOGGING ---
-
 
       // Check if any potential format exists in the applied jobs set
       let isApplied = false;
@@ -182,6 +184,7 @@ export default function AppliedJobsPage() {
               isApplied = true;
               matchFoundCount++;
               // --- START DEBUG LOGGING ---
+              // Log when a match is found, including sheet and matched ID
               console.log(`[AppliedJobs Filter] MATCH FOUND! Row ${processedRowCount}: Sheet='${sheet}', Title='${title}', Company='${company}'. Matched ID: '${idToCheck}'`);
               // --- END DEBUG LOGGING ---
               break; // Stop checking once a match is found
@@ -189,8 +192,9 @@ export default function AppliedJobsPage() {
       }
       
       // --- START DEBUG LOGGING ---
-      // if (!isApplied && (processedRowCount <= 5 || title?.includes("Backend"))) {
-      //     console.log(`[AppliedJobs Filter] Row ${processedRowCount}: No match found.`);
+      // Example: Log when no match is found
+      // if (!isApplied && processedRowCount <= 10) {
+      //     console.log(`[AppliedJobs Filter] Row ${processedRowCount}: No match found for sheet '${sheet}' title '${title}'.`);
       // }
       // --- END DEBUG LOGGING ---
 
@@ -207,13 +211,14 @@ export default function AppliedJobsPage() {
     filtered.forEach(job => {
         const title = getFieldValue(job, "title", headers);
         const company = getFieldValue(job, "company_name", headers);
-        // Use a key robust to missing company/sheet
-        const key = `${job.sheetName || 'unknown'}:${title || 'no_title'}:${company || 'no_company'}`; 
+        // Use a key robust to missing company/sheet, including sheetName
+        const key = `${job.sheetName || 'unknown_sheet'}:${title || 'no_title'}:${company || 'no_company'}`;
         if (!uniqueJobsMap.has(key)) {
             uniqueJobsMap.set(key, job);
         } else {
              // --- START DEBUG LOGGING ---
-             console.log(`[AppliedJobs Filter] Deduplicating job: Key='${key}', Title='${title}'`);
+             // Log deduplication events, including the key
+             console.log(`[AppliedJobs Filter] Deduplicating job: Key='${key}', Title='${title}', Sheet='${job.sheetName}'`);
              // --- END DEBUG LOGGING ---
         }
     });
@@ -496,7 +501,9 @@ export default function AppliedJobsPage() {
           // Update local state immediately for responsiveness
           setAllData(prevData => prevData.map(row => {
               if (row.originalIndex === rowIndex && row.sheetName === sheetName) {
-                  const newData = [...row.data];
+                  // Ensure row.data is treated as an array
+                  const currentData = Array.isArray(row.data) ? row.data : [];
+                  const newData = [...currentData];
                   if (columnIndex < newData.length) {
                       newData[columnIndex] = note;
                   }
@@ -539,8 +546,26 @@ export default function AppliedJobsPage() {
             jobs={filteredRows} // Pass the correctly filtered and structured rows
             appliedJobs={appliedJobs} // Pass the current list of applied job IDs
             onApply={handleToggleApplied} // Pass the updated handler
-            onDelete={(rowIndex, jobData) => handleDeleteJob(rowIndex, (jobData as CombinedRowData).sheetName)} // Adapt onDelete call
-            onUpdateNote={(rowIndex, note, columnIndex, jobData) => handleUpdateNote(rowIndex, note, columnIndex, (jobData as CombinedRowData).sheetName)} // Adapt onUpdateNote call
+            onDelete={(rowIndex: number) => {
+              // Find the job to get the sheetName based on the rowIndex provided by the component
+              const jobToDelete = filteredRows.find(job => job.originalIndex === rowIndex);
+              if (jobToDelete) {
+                 handleDeleteJob(rowIndex, jobToDelete.sheetName);
+              } else {
+                 console.error(`Could not find job with originalIndex ${rowIndex} to delete.`);
+                 setError(`Failed to initiate delete: Could not find job data for row index ${rowIndex}.`);
+              }
+            }}
+            onUpdateNote={(rowIndex: number, note: string, columnIndex: number) => {
+               // Find the job to get the sheetName based on the rowIndex provided by the component
+              const jobToUpdate = filteredRows.find(job => job.originalIndex === rowIndex);
+              if (jobToUpdate) {
+                handleUpdateNote(rowIndex, note, columnIndex, jobToUpdate.sheetName);
+              } else {
+                 console.error(`Could not find job with originalIndex ${rowIndex} to update note.`);
+                 setError(`Failed to initiate note update: Could not find job data for row index ${rowIndex}.`);
+              }
+            }}
                 viewMode={viewMode}
                 onToggleViewMode={toggleViewMode}
             hideViewToggle={false} // Keep the view toggle

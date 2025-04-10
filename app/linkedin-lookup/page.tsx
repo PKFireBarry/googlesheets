@@ -558,17 +558,82 @@ function LinkedInLookupContent() {
   
   // Helper function to safely get skills array from job object
   const getSkillsArray = (job: Record<string, unknown> | null): string[] => {
-    if (!job || !job.skills) return [];
-    
-    if (typeof job.skills === 'string') {
-      return job.skills.split(',').map(s => s.trim());
+    console.log("getSkillsArray called with job:", job);
+    if (!job || !job.skills) {
+      console.log("getSkillsArray: No job or no job.skills found.");
+      return [];
     }
-    
-    if (Array.isArray(job.skills)) {
-      return job.skills.map(s => String(s).trim());
+
+    let rawSkills: any = job.skills;
+    console.log("getSkillsArray: Raw skills input:", rawSkills, "(Type:", typeof rawSkills, ")");
+    let skillsList: string[] = [];
+
+    // Function to remove surrounding quotes (single/double) and trim whitespace
+    const cleanSkill = (s: string) => {
+      if (!s) return '';
+      return s.trim().replace(/^["']|["']$/g, '').trim();
+    };
+
+    // Function to process a string potentially containing multiple skills
+    const processSkillString = (skillStr: string): string[] => {
+      console.log("processSkillString processing:", skillStr);
+      const trimmed = skillStr.trim();
+
+      // Handle formats like "["Skill A" or "Skill B"]"
+      if (trimmed.startsWith('["') && trimmed.endsWith('"]') && trimmed.includes('" or "')) {
+        console.log("processSkillString: Using 'or' logic");
+        const content = trimmed.substring(2, trimmed.length - 2);
+        return content.split('" or "').map(cleanSkill).filter(Boolean);
+      }
+
+      // Handle formats like ['Skill A', 'Skill B'] or ["Skill A", "Skill B"]
+      if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+        try {
+          console.log("processSkillString: Trying JSON parse");
+          const parsed = JSON.parse(trimmed.replace(/'/g, '"'));
+          if (Array.isArray(parsed)) {
+            console.log("processSkillString: JSON parse successful, got array:", parsed);
+            return parsed.map(s => cleanSkill(String(s))).filter(Boolean);
+          }
+        } catch (e) {
+          console.log("processSkillString: JSON parse failed, using bracket fallback");
+          const content = trimmed.substring(1, trimmed.length - 1);
+          return content.split(',').map(cleanSkill).filter(Boolean);
+        }
+      }
+
+      // Default handler: Assume comma-separated values
+      console.log("processSkillString: Using default comma split logic");
+      const result = trimmed.split(',').map(cleanSkill).filter(Boolean);
+      console.log("processSkillString: Default split result:", result);
+      return result;
+    };
+
+    // Process rawSkills based on its type
+    if (typeof rawSkills === 'string') {
+      skillsList = processSkillString(rawSkills);
+    } else if (Array.isArray(rawSkills)) {
+      console.log("getSkillsArray: Input is an array, processing items...");
+      skillsList = rawSkills.flat().flatMap(item => {
+        if (typeof item === 'string') {
+          return processSkillString(item);
+        }
+        const cleanedItem = cleanSkill(String(item));
+        console.log(`getSkillsArray: Processed non-string array item '${item}' to '${cleanedItem}'`);
+        return [cleanedItem];
+      }).filter(Boolean);
+    } else {
+       console.log("getSkillsArray: Input skills is neither string nor array, returning empty.");
     }
-    
-    return [];
+
+    console.log("getSkillsArray: Intermediate skillsList before final filter:", skillsList);
+
+    // Final cleanup: Filter out generic terms and ensure uniqueness
+    const finalSkills = skillsList
+      .filter(s => s && s.toLowerCase() !== 'skill' && s.toLowerCase() !== 'n/a');
+
+    console.log("getSkillsArray: Returning final skills:", finalSkills);
+    return Array.from(new Set(finalSkills));
   }
   
   // Generate outreach message based on job and contact details

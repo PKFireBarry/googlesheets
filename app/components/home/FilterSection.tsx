@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Search, Sliders, List, Grid, Calendar, MapPin, DollarSign, Ban, X, CheckCircle, Link2, Code, Filter, Briefcase } from 'lucide-react';
 
 interface FilterState {
@@ -38,6 +38,8 @@ interface FilterSectionProps {
   setNewTitle: React.Dispatch<React.SetStateAction<string>>;
   handleAddTitle: () => void;
   handleRemoveTitle: (title: string) => void;
+  handleAddLocation: (location: string) => void;
+  handleRemoveLocation: (location: string) => void;
   saveFilters: () => void;
   clearFilters: () => void;
   viewMode: 'card' | 'list';
@@ -71,11 +73,15 @@ const FilterSection: React.FC<FilterSectionProps> = ({
   setNewTitle,
   handleAddTitle,
   handleRemoveTitle,
+  handleAddLocation,
+  handleRemoveLocation,
   saveFilters,
   clearFilters,
   viewMode,
   toggleViewMode
 }) => {
+  const [newLocation, setNewLocation] = useState<string>("");
+
   return (
     <div className="mb-6">
       {/* Header section with search and buttons */}
@@ -141,31 +147,69 @@ const FilterSection: React.FC<FilterSectionProps> = ({
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md overflow-hidden border border-gray-200 dark:border-gray-700 mb-4 animate-fade-in">
           <div className="p-5 sm:p-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-              {/* Location filter */}
+              {/* Location filter - Updated for Multi-select */}
               <div className="p-4 rounded-xl bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-800/80 shadow-sm hover:shadow-md transition-shadow border border-gray-100/60 dark:border-gray-700/40">
                 <label htmlFor="location-filter" className="flex items-center text-sm font-medium text-gray-700 dark:text-gray-300 mb-2.5">
                   <MapPin className="h-4 w-4 text-blue-500 dark:text-blue-400 mr-2 flex-shrink-0" />
                   <span>Location</span>
                 </label>
-                <div className="relative">
-                  <input
-                    id="location-filter"
-                    type="text"
-                    list="location-options"
-                    value={filters.selectedLocation}
-                    onChange={(e) => setFilters(prev => ({ ...prev, selectedLocation: e.target.value }))}
-                    placeholder="Enter location..."
-                    className="pl-3 block w-full rounded-lg border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900/50 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm dark:text-white"
-                  />
-                  <datalist id="location-options">
-                    <option value="Remote">Remote Only</option>
-                    {uniqueLocations.map((location) => (
-                      location.toLowerCase() !== "remote" && (
-                        <option key={location} value={location}>{location}</option>
-                      )
-                    ))}
-                  </datalist>
+                <div className="flex">
+                  <div className="relative flex-grow">
+                    <input
+                      id="location-filter"
+                      type="text"
+                      list="location-options"
+                      value={newLocation}
+                      onChange={(e) => setNewLocation(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddLocation(newLocation);
+                          setNewLocation("");
+                        }
+                      }}
+                      placeholder="Add location filter..."
+                      className="pl-3 block w-full rounded-lg border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900/50 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm dark:text-white"
+                    />
+                    <datalist id="location-options">
+                      <option value="Remote">Remote Only</option>
+                      {uniqueLocations.map((location) => (
+                        location.toLowerCase() !== "remote" && (
+                          <option key={location} value={location}>{location}</option>
+                        )
+                      ))}
+                    </datalist>
+                  </div>
+                  <button
+                    onClick={() => {
+                      handleAddLocation(newLocation);
+                      setNewLocation("");
+                    }}
+                    className="ml-2 inline-flex items-center px-3 py-2 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+                  >
+                    Add
+                  </button>
                 </div>
+                {/* Selected locations tags */}
+                {filters.selectedLocation && (
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    {filters.selectedLocation.split(',').filter(Boolean).map((location) => {
+                      const trimmedLocation = location.trim();
+                      if (!trimmedLocation) return null;
+                      return (
+                        <div key={trimmedLocation} className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100/80 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-200/50 dark:border-blue-700/30 shadow-sm">
+                          {trimmedLocation}
+                          <button
+                            onClick={() => handleRemoveLocation(trimmedLocation)}
+                            className="ml-1.5 text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
               
               {/* Skills filter */}

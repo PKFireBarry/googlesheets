@@ -12,6 +12,8 @@ interface JobResultsGridProps {
   onHide?: (jobId: string, title: string, company: string) => void;
   viewMode: 'card' | 'list';
   onToggleViewMode: () => void;
+  onAddSkillFilter: (skill: string) => void;
+  onAddSourceFilter: (source: string) => void;
 }
 
 /**
@@ -27,7 +29,9 @@ const JobResultsGrid: React.FC<JobResultsGridProps> = ({
   onUpdateNote,
   onHide,
   viewMode,
-  onToggleViewMode
+  onToggleViewMode,
+  onAddSkillFilter,
+  onAddSourceFilter
 }) => {
   return (
     <div className="pb-8 sm:pb-12">
@@ -41,6 +45,8 @@ const JobResultsGrid: React.FC<JobResultsGridProps> = ({
         onHide={onHide}
         viewMode={viewMode}
         onToggleViewMode={onToggleViewMode}
+        onAddSkillFilter={onAddSkillFilter}
+        onAddSourceFilter={onAddSourceFilter}
         hideViewToggle={true}
       />
     </div>

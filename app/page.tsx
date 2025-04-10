@@ -364,47 +364,59 @@ export default function Home() {
       });
     }
 
-    // Apply title filter
+    // Apply title filter (OR logic)
     if (filters.titleFilter) {
       const requiredTitles = filters.titleFilter.toLowerCase().split(',').map(t => t.trim()).filter(Boolean);
-      filtered = filtered.filter((row) => {
-        const title = getFieldValue(row, "title", headers).toLowerCase();
-        // Match if any of the required titles is in the job title (case insensitive)
-        return requiredTitles.some(t => title.includes(t));
-      });
+      // Only apply the filter if there are required titles
+      if (requiredTitles.length > 0) {
+        filtered = filtered.filter((row) => {
+          const title = getFieldValue(row, "title", headers).toLowerCase();
+          // Match if job title includes ANY of the required titles
+          return requiredTitles.some(t => title.includes(t));
+        });
+      }
     }
 
-    // Apply location filter
+    // Apply location filter (multi-select - already OR logic)
     if (filters.selectedLocation) {
-      filtered = filtered.filter((row) => {
-        const location = getFieldValue(row, "location", headers).toLowerCase();
-        return location.includes(filters.selectedLocation.toLowerCase());
-      });
+      const requiredLocations = filters.selectedLocation.toLowerCase().split(',').map(loc => loc.trim()).filter(Boolean);
+      if (requiredLocations.length > 0) {
+        filtered = filtered.filter((row) => {
+          const location = getFieldValue(row, "location", headers).toLowerCase();
+          // Check if the job location string contains any of the required locations
+          return requiredLocations.some(reqLoc => location.includes(reqLoc));
+        });
+      }
     }
 
-    // Apply skill filter
+    // Apply skill filter (OR logic)
     if (filters.skillFilter) {
-      const requiredSkills = filters.skillFilter.toLowerCase().split(',').map(s => s.trim());
-      filtered = filtered.filter((row) => {
-        const skills = getFieldValue(row, "skills", headers).toLowerCase();
-        return requiredSkills.every(skill => skills.includes(skill));
-      });
+      const requiredSkills = filters.skillFilter.toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
+      if (requiredSkills.length > 0) {
+        filtered = filtered.filter((row) => {
+          const skills = getFieldValue(row, "skills", headers).toLowerCase();
+          // Match if job skills include ANY of the required skills
+          return requiredSkills.some(skill => skills.includes(skill));
+        });
+      }
     }
 
-    // Apply source filter
+    // Apply source filter (OR logic)
     if (filters.sourceFilter) {
       const requiredSources = filters.sourceFilter.toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
-      filtered = filtered.filter((row) => {
-        const source = getFieldValue(row, "source", headers) || '';
-        const url = getFieldValue(row, "url", headers) || '';
-        const companyWebsite = getFieldValue(row, "company_website", headers) || '';
-        
-        // Check both explicit source field and extract from URL if needed
-        const jobSource = source || extractSourceFromUrl(url || companyWebsite).toLowerCase();
-        
-        // With multi-select, any of the selected sources should match
-        return requiredSources.some(s => jobSource.toLowerCase().includes(s));
-      });
+      if (requiredSources.length > 0) {
+        filtered = filtered.filter((row) => {
+          const source = getFieldValue(row, "source", headers) || '';
+          const url = getFieldValue(row, "url", headers) || '';
+          const companyWebsite = getFieldValue(row, "company_website", headers) || '';
+          
+          // Check both explicit source field and extract from URL if needed
+          const jobSource = (source || extractSourceFromUrl(url || companyWebsite)).toLowerCase();
+          
+          // Match if job source includes ANY of the required sources
+          return requiredSources.some(s => jobSource.includes(s));
+        });
+      }
     }
 
     // Apply salary filter
@@ -981,7 +993,7 @@ export default function Home() {
       filterText: "",
       selectedLocation: "",
       skillFilter: "",
-      showFilters: true,
+      showFilters: false,
       timeRangeFilter: 168, // Reset to 168 hours (7 days)
       minSalary: 0,
       salaryType: "any",
@@ -1242,6 +1254,84 @@ export default function Home() {
     setIsSheetLoaded(false);
   };
 
+  // Add new skill filter from card/list item
+  const handleAddSkillFilter = (skillToAdd: string) => {
+    if (!skillToAdd) return;
+    const skill = skillToAdd.trim();
+    const currentSkills = filters.skillFilter.length
+      ? filters.skillFilter.split(',').map(s => s.trim())
+      : [];
+
+    // Case-insensitive check
+    if (!currentSkills.some(s => s.toLowerCase() === skill.toLowerCase())) {
+      const updatedSkills = [...currentSkills, skill];
+      const newFilters = { ...filters, skillFilter: updatedSkills.join(',') };
+      setFilters(newFilters);
+      toast.success(`Added skill filter: "${skill}"`);
+      // Explicitly save filters
+      Cookies.set("savedFilters", JSON.stringify(newFilters), { expires: 30 });
+    } else {
+      // Use generic toast if info isn't available
+      toast(`Skill filter "${skill}" already exists.`);
+    }
+  };
+
+  // Add new source filter from card/list item
+  const handleAddSourceFilter = (sourceToAdd: string) => {
+    if (!sourceToAdd) return;
+    const source = sourceToAdd.trim();
+    const currentSources = filters.sourceFilter.length
+      ? filters.sourceFilter.split(',').map(s => s.trim())
+      : [];
+
+    // Case-insensitive check
+    if (!currentSources.some(s => s.toLowerCase() === source.toLowerCase())) {
+      const updatedSources = [...currentSources, source];
+      const newFilters = { ...filters, sourceFilter: updatedSources.join(',') };
+      setFilters(newFilters);
+      toast.success(`Added source filter: "${source}"`);
+      // Explicitly save filters
+      Cookies.set("savedFilters", JSON.stringify(newFilters), { expires: 30 });
+    } else {
+      // Use generic toast if info isn't available
+      toast(`Source filter "${source}" already exists.`);
+    }
+  };
+
+  // Add new location
+  const handleAddLocation = (locationToAdd: string) => {
+    if (!locationToAdd.trim()) return;
+    const location = locationToAdd.trim();
+    const currentLocations = filters.selectedLocation.length
+      ? filters.selectedLocation.split(',').map(loc => loc.trim())
+      : [];
+
+    // Case-insensitive check
+    if (!currentLocations.some(loc => loc.toLowerCase() === location.toLowerCase())) {
+      const updatedLocations = [...currentLocations, location];
+      const newFilters = { ...filters, selectedLocation: updatedLocations.join(',') };
+      setFilters(newFilters);
+      toast.success(`Added location filter: "${location}"`);
+      Cookies.set("savedFilters", JSON.stringify(newFilters), { expires: 30 });
+    } else {
+      toast(`Location filter "${location}" already exists.`);
+    }
+  };
+
+  // Remove location
+  const handleRemoveLocation = (locationToRemove: string) => {
+    const currentLocations = filters.selectedLocation.split(',').map(loc => loc.trim());
+    // Case-insensitive removal
+    const updatedLocations = currentLocations.filter(loc => 
+      loc.toLowerCase() !== locationToRemove.toLowerCase()
+    );
+    
+    const newFilters = { ...filters, selectedLocation: updatedLocations.join(',') };
+    setFilters(newFilters);
+    toast.error(`Removed location filter: "${locationToRemove}"`);
+    Cookies.set("savedFilters", JSON.stringify(newFilters), { expires: 30 });
+  };
+
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 no-overflow mobile-container">
       {/* Page Header */}
@@ -1351,6 +1441,8 @@ export default function Home() {
             setNewTitle={setNewTitle}
             handleAddTitle={handleAddTitle}
             handleRemoveTitle={handleRemoveTitle}
+            handleAddLocation={handleAddLocation}
+            handleRemoveLocation={handleRemoveLocation}
             saveFilters={saveFilters}
             clearFilters={clearFilters}
             viewMode={viewMode}
@@ -1369,6 +1461,8 @@ export default function Home() {
               onHide={handleHideJob}
               viewMode={viewMode}
               onToggleViewMode={toggleViewMode}
+              onAddSkillFilter={handleAddSkillFilter}
+              onAddSourceFilter={handleAddSourceFilter}
             />
           ) : (
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 sm:p-8 text-center border border-gray-100 dark:border-gray-700">
