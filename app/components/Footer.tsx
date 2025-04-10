@@ -18,16 +18,17 @@ export default function Footer() {
               </svg>
               <h3 className="text-lg font-semibold text-white">JobTracker</h3>
             </div>
-            <p className="text-sm">Track and manage your job applications efficiently with Google Sheets integration</p>
+            <p className="text-sm">Track and manage your job applications efficiently with AI-powered tools</p>
           </div>
           
           <div className="space-y-4">
             <h4 className="text-sm font-semibold uppercase tracking-wider text-gray-400">Features</h4>
             <ul className="space-y-2">
-              <li><a href="#" className="text-sm hover:text-blue-400 transition-colors">Job Tracking</a></li>
-              <li><a href="#" className="text-sm hover:text-blue-400 transition-colors">Google Sheets Integration</a></li>
-              <li><a href="#" className="text-sm hover:text-blue-400 transition-colors">Analytics</a></li>
-              <li><a href="#" className="text-sm hover:text-blue-400 transition-colors">LinkedIn Lookup</a></li>
+              <li><a href="/" className="text-sm hover:text-blue-400 transition-colors">Jobs</a></li>
+              <li><a href="/linkedin-lookup" className="text-sm hover:text-blue-400 transition-colors">Linkedin Lookup</a></li>
+              <li><a href="/cover-letter" className="text-sm hover:text-blue-400 transition-colors">Cover Letter</a></li>
+              <li><a href="/resume-builder" className="text-sm hover:text-blue-400 transition-colors">Resume Builder</a></li>
+              <li><a href="/settings" className="text-sm hover:text-blue-400 transition-colors">Settings</a></li>
             </ul>
           </div>
           
@@ -42,7 +43,7 @@ export default function Footer() {
         
         <div className="border-t border-gray-700 mt-8 pt-6 flex flex-col md:flex-row justify-between items-center">
           <p className="text-sm">&copy; {new Date().getFullYear()} JobTracker. All rights reserved.</p>
-          <p className="text-xs mt-2 md:mt-0">Powered by Google Sheets</p>
+          <p className="text-xs mt-2 md:mt-0">Powered by Google Gemini</p>
         </div>
       </div>
     </footer>

@@ -11,7 +11,7 @@ const PageHeader = () => {
         Applied Jobs
       </h1>
       <p className="text-green-100 text-lg max-w-2xl">
-        Track and manage all the jobs you've applied to. Keep notes on your application status and interview progress.
+        Track and manage all the jobs you've applied to.
       </p>
     </div>
   );

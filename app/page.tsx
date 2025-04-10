@@ -35,6 +35,7 @@ import StatsDisplay from "./components/home/StatsDisplay";
 import FilterSection from "./components/home/FilterSection";
 import JobResultsGrid from "./components/home/JobResultsGrid";
 import IndustrySelector from "./components/home/IndustrySelector";
+import WelcomeModal from "./components/home/WelcomeModal";
 
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY;
 const RANGE = process.env.NEXT_PUBLIC_RANGE;
@@ -126,6 +127,10 @@ export default function Home() {
   const [showIndustrySelector, setShowIndustrySelector] = useState(false);
   const [currentSheetName, setCurrentSheetName] = useState("");
 
+  // State for Welcome Modal
+  const [isWelcomeModalOpen, setIsWelcomeModalOpen] = useState(false);
+  const [isFirstVisit, setIsFirstVisit] = useState(false);
+
   const router = useRouter();
 
   // Load saved filters on initial render
@@ -160,6 +165,13 @@ export default function Home() {
     // Check for legacy URL format in cookie
     const lastSheetUrl = Cookies.get("lastSheetUrl");
     
+    // Check if the user has visited before
+    const hasVisited = Cookies.get("hasVisited");
+
+    if (!hasVisited) {
+      setIsFirstVisit(true);
+    }
+
     // Prioritize lastSheetUrl for legacy users
     if (lastSheetUrl) {
       // Support legacy users
@@ -185,6 +197,13 @@ export default function Home() {
       setShowIndustrySelector(true);
     }
   }, []);
+
+  // Effect to show welcome modal for first-time visitors when industry selector appears
+  useEffect(() => {
+    if (isFirstVisit && showIndustrySelector) {
+      setIsWelcomeModalOpen(true);
+    }
+  }, [isFirstVisit, showIndustrySelector]);
 
   // Extract unique locations from job data
   useEffect(() => {
@@ -1332,13 +1351,26 @@ export default function Home() {
     Cookies.set("savedFilters", JSON.stringify(newFilters), { expires: 30 });
   };
 
+  // Function to handle closing the welcome modal
+  const handleCloseWelcomeModal = () => {
+    setIsWelcomeModalOpen(false);
+    setIsFirstVisit(false); // Mark as no longer first visit for this session
+    Cookies.set("hasVisited", "true", { expires: 365 }); // Set cookie for 1 year
+  };
+
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 no-overflow mobile-container">
       {/* Page Header */}
       <PageHeader />
 
+      {/* Welcome Modal */} 
+      <WelcomeModal 
+        isOpen={isWelcomeModalOpen} 
+        onClose={handleCloseWelcomeModal} 
+      />
+
       {/* Industry Selector */}
-      {showIndustrySelector && (
+      {showIndustrySelector && !isWelcomeModalOpen && (
         <IndustrySelector
           selectedIndustry={selectedIndustry}
           setSelectedIndustry={setSelectedIndustry}
@@ -1350,7 +1382,7 @@ export default function Home() {
       )}
 
       {/* Sheet URL Form - only show if not loading jobs and no industry selected */}
-      {!isSheetLoaded && !showIndustrySelector && (
+      {!isSheetLoaded && !showIndustrySelector && !isWelcomeModalOpen && (
         <SheetForm
           sheetUrl={sheetUrl}
           setSheetUrl={setSheetUrl}
