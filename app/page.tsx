@@ -47,6 +47,13 @@ const SHEET_NAME_HEALTHCARE = process.env.NEXT_PUBLIC_SHEET_NAME_HEALTHCARE || "
 const SHEET_NAME_CUSTOMER = process.env.NEXT_PUBLIC_SHEET_NAME_CUSTOMER || "Customer and Social Services and Transportation and Logistics";
 const SHEET_NAME_DEFAULT = process.env.NEXT_PUBLIC_SHEET_NAME_DEFAULT || "Sheet1";
 
+// Actual sheet tab names in the Google Sheet (these should match exactly what's in your spreadsheet)
+const SHEET_TAB_TECH = "Tech Jobs";
+const SHEET_TAB_BUSINESS = "Business Operations Jobs";
+const SHEET_TAB_HEALTHCARE = "Healthcare Jobs";
+const SHEET_TAB_CUSTOMER = "Customer and Social Services and Transportation and Logistics";
+const SHEET_TAB_DEFAULT = "Sheet1";
+
 // Industry options for the selector
 const INDUSTRY_OPTIONS = [
   { 
@@ -536,8 +543,24 @@ export default function Home() {
         setCurrentSheetName(sheetName);
       }
       
+      // Determine which sheet tab to query based on the industry name
+      let sheetTabName = sheetName;
+      
+      // If we're looking for a specific industry, use the actual sheet tab name from the spreadsheet
+      if (sheetName === SHEET_NAME_TECH) {
+        sheetTabName = SHEET_TAB_TECH;
+      } else if (sheetName === SHEET_NAME_BUSINESS) {
+        sheetTabName = SHEET_TAB_BUSINESS;
+      } else if (sheetName === SHEET_NAME_HEALTHCARE) {
+        sheetTabName = SHEET_TAB_HEALTHCARE;
+      } else if (sheetName === SHEET_NAME_CUSTOMER) {
+        sheetTabName = SHEET_TAB_CUSTOMER;
+      }
+      
+      console.log(`Using sheet tab name: "${sheetTabName}" for industry: "${sheetName}"`);
+      
       // Replace {sheetName} placeholder in the RANGE with actual sheet name
-      const range = process.env.NEXT_PUBLIC_RANGE?.replace('{sheetName}', sheetName) || `${sheetName}!A:Z`;
+      const range = process.env.NEXT_PUBLIC_RANGE?.replace('{sheetName}', sheetTabName) || `${sheetTabName}!A:Z`;
       
       const url = `https://sheets.googleapis.com/v4/spreadsheets/${id}/values/${range}?key=${API_KEY}`;
       console.log("Fetching URL:", url);
