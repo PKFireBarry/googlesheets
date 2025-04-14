@@ -71,8 +71,8 @@ const INDUSTRY_OPTIONS = [
   }
 ];
 
-// Hard-coded Google Sheet URL for the main spreadsheet
-const GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1dLV3n1XnbyxMaI71JqcWV-4OYnxa9sAl4kBRcST8rjE";
+// Google Sheet URL for the main spreadsheet from environment variable or fallback to hardcoded
+const GOOGLE_SHEET_URL = process.env.NEXT_PUBLIC_DEFAULT_SHEET_URL || "https://docs.google.com/spreadsheets/d/1dLV3n1XnbyxMaI71JqcWV-4OYnxa9sAl4kBRcST8rjE";
 
 export default function Home() {
   const [data, setData] = useState<string[][]>([]);
@@ -1254,11 +1254,15 @@ export default function Home() {
 
   // Function to load jobs for a specific industry
   const loadJobsForIndustry = (industry: string) => {
+    console.log(`Loading jobs for industry: ${industry} using sheet URL: ${GOOGLE_SHEET_URL}`);
     const id = extractSpreadsheetId(GOOGLE_SHEET_URL);
     if (id) {
       setSpreadsheetId(id);
       setCurrentSheetName(industry);
       fetchData(id, industry);
+    } else {
+      console.error("Failed to extract spreadsheet ID from URL:", GOOGLE_SHEET_URL);
+      setError("Invalid Google Sheets URL in environment configuration");
     }
   };
 
