@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// Bore.pub service URLs for task management
-const BORE_PUB_RUN_TASK_URL = 'http://bore.pub:37211/run-task';
-const BORE_PUB_STOP_TASK_URL = 'http://bore.pub:37211/stop-task';
-const BORE_PUB_TASK_STATUS_URL = 'http://bore.pub:37211/task-status'; // New endpoint for polling
+// Bore.pub service URLs for task management from environment variables
+const BORE_PUB_RUN_TASK_URL = process.env.LINKEDIN_RUN_TASK_URL || 'http://bore.pub:37211/run-task';
+const BORE_PUB_STOP_TASK_URL = process.env.LINKEDIN_STOP_TASK_URL || 'http://bore.pub:37211/stop-task';
+const BORE_PUB_TASK_STATUS_URL = process.env.LINKEDIN_TASK_STATUS_URL || 'http://bore.pub:37211/task-status';
 
 // Maximum time (in milliseconds) a task should run before we force stop it
 const MAX_TASK_RUNTIME = 95000; // 1.5 minutes
