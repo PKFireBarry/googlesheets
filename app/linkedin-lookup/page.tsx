@@ -254,8 +254,9 @@ function LinkedInLookupContent() {
     console.log('Fetching data directly from Google Sheet API...')
     
     try {
-      // We'll use the RANGE and API_KEY from environment variables if available
-      const RANGE = process.env.NEXT_PUBLIC_RANGE || 'Sheet1!A:Z'
+      // Always use Sheet1 for LinkedIn lookup to ensure compatibility
+      const SHEET_NAME = 'Sheet1'
+      const RANGE = `${SHEET_NAME}!A:Z`
       const API_KEY = process.env.NEXT_PUBLIC_API_KEY
       
       if (!API_KEY) {
@@ -264,6 +265,7 @@ function LinkedInLookupContent() {
       
       // Call the Google Sheets API
       const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${RANGE}?key=${API_KEY}`
+      console.log('Fetching LinkedIn data from URL:', url)
       const response = await fetch(url)
       
       if (!response.ok) {

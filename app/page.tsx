@@ -559,8 +559,8 @@ export default function Home() {
       
       console.log(`Using sheet tab name: "${sheetTabName}" for industry: "${sheetName}"`);
       
-      // Replace {sheetName} placeholder in the RANGE with actual sheet name
-      const range = process.env.NEXT_PUBLIC_RANGE?.replace('{sheetName}', sheetTabName) || `${sheetTabName}!A:Z`;
+      // Construct the range directly - DO NOT use NEXT_PUBLIC_RANGE to avoid overrides
+      const range = `${sheetTabName}!A:Z`;
       
       const url = `https://sheets.googleapis.com/v4/spreadsheets/${id}/values/${range}?key=${API_KEY}`;
       console.log("Fetching URL:", url);
@@ -737,7 +737,7 @@ export default function Home() {
       if (metadata.sheets && metadata.sheets.length > 0) {
         // Get the first sheet's title
         const firstSheetName = metadata.sheets[0].properties.title;
-        console.log(`Found first sheet name: ${firstSheetName}`);
+        console.log(`Found first sheet name: "${firstSheetName}"`);
         
         // Preserve special display names (Legacy or Custom)
         // Only update currentSheetName if we haven't already set it to a special value
@@ -745,8 +745,10 @@ export default function Home() {
           setCurrentSheetName(firstSheetName);
         }
         
+        // Construct the range directly - DO NOT use NEXT_PUBLIC_RANGE
         const range = `${firstSheetName}!A:Z`;
         const dataUrl = `https://sheets.googleapis.com/v4/spreadsheets/${id}/values/${range}?key=${API_KEY}`;
+        console.log("Fetching available sheet URL:", dataUrl);
         const dataResponse = await fetch(dataUrl);
         
         if (!dataResponse.ok) {

@@ -248,13 +248,13 @@ export default function AppliedJobsPage() {
         // Skip empty sheet names just in case env vars are missing
         if (!sheetName) continue; 
         
-        // Construct range dynamically. Assuming data is in columns A:Z. Adjust if needed.
+        // Construct range directly - do not use NEXT_PUBLIC_RANGE to avoid issues
         const range = `${sheetName}!A:Z`; 
         const url = `https://sheets.googleapis.com/v4/spreadsheets/${id}/values/${range}?key=${API_KEY}`;
+        console.log(`Trying to fetch from sheet: "${sheetName}" with URL: ${url}`);
         
         try {
-          // console.log(`Fetching from URL: ${url}`);
-      const response = await fetch(url);
+          const response = await fetch(url);
 
       if (!response.ok) {
         const errorData = await response.json();
