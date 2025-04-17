@@ -12,14 +12,12 @@ const extractJsonFromResponse = (text: string): string => {
   // Try to extract JSON from markdown code blocks (```json...```)
   const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
   if (codeBlockMatch && codeBlockMatch[1]) {
-    console.log('Found JSON in code block, extracting...');
     return codeBlockMatch[1].trim();
   }
 
   // Try to extract anything that looks like JSON (starts with { and ends with })
   const jsonObjectMatch = text.match(/({[\s\S]*})/);
   if (jsonObjectMatch && jsonObjectMatch[1]) {
-    console.log('Found potential JSON object structure, extracting...');
     return jsonObjectMatch[1].trim();
   }
 
@@ -48,7 +46,6 @@ export async function POST(request: NextRequest) {
     }
     
     // Use provided API key or environment variable
-    // Try both client-side and server-side environment variables
     const geminiApiKey = apiKey || 
                         process.env.GEMINI_API_KEY || 
                         process.env.NEXT_PUBLIC_GEMINI_API_KEY;
@@ -60,14 +57,17 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Log API key usage (securely)
-    console.log(`Using API key for Gemini: ${geminiApiKey.substring(0, 5)}... (${apiKey ? 'user provided' : 'from environment'})`);
+    // Validate API key format - should be a reasonably long string
+    if (geminiApiKey.length < 20) {
+      return NextResponse.json(
+        { error: 'The provided Gemini API key appears to be invalid. Please check your API key and try again.' },
+        { status: 400 }
+      );
+    }
     
     // Process job data if provided
     let jobDetailsSection = '';
     if (jobData) {
-      console.log('Job data provided for personalized messages');
-      
       // Extract key job details
       const jobTitle = jobData.title || jobData.job_title || 'Unknown Position';
       const jobDescription = jobData.description || jobData.job_description || '';
@@ -112,8 +112,6 @@ Here is the format of how I want you to respond. Only reply with information in 
 
 IMPORTANT: Return ONLY the JSON object with no markdown formatting, no code blocks, and no extra text before or after the JSON.`;
 
-    console.log('Calling Gemini API with prompt:', prompt.substring(0, 150) + '...');
-    
     // Create the API URL with the API key
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${geminiApiKey}`;
     
@@ -143,7 +141,6 @@ IMPORTANT: Return ONLY the JSON object with no markdown formatting, no code bloc
     
     if (!response.ok) {
       const errorData = await response.json();
-      console.error('Gemini API error:', errorData);
       
       // Provide more specific error messages for common API key issues
       if (response.status === 400) {
@@ -165,21 +162,17 @@ IMPORTANT: Return ONLY the JSON object with no markdown formatting, no code bloc
     }
     
     const data = await response.json();
-    console.log('Gemini API response structure:', Object.keys(data));
     
     // Extract the text from the Gemini response
     const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-    console.log('Raw text from Gemini:', rawText.substring(0, 100) + (rawText.length > 100 ? '...' : ''));
     
     // Clean up the text to extract JSON
     const cleanedText = extractJsonFromResponse(rawText);
-    console.log('Cleaned text for parsing:', cleanedText.substring(0, 100) + (cleanedText.length > 100 ? '...' : ''));
     
     // Parse the text as JSON
     try {
       // Try to parse the response as JSON
       const parsedData = JSON.parse(cleanedText);
-      console.log('Successfully parsed Gemini response as JSON:', parsedData);
       
       // Validate the parsed data has the expected structure
       const validatedData = {
@@ -197,9 +190,6 @@ IMPORTANT: Return ONLY the JSON object with no markdown formatting, no code bloc
       
       return NextResponse.json(validatedData);
     } catch (e) {
-      console.error('Failed to parse Gemini response as JSON:', e);
-      console.log('Cleaned text that failed to parse:', cleanedText);
-      
       // Try to make the text valid JSON by doing some additional cleaning
       try {
         // Replace single quotes with double quotes
@@ -209,7 +199,6 @@ IMPORTANT: Return ONLY the JSON object with no markdown formatting, no code bloc
           // Add quotes around unquoted keys
           .replace(/(\w+):/g, '"$1":');
           
-        console.log('Attempting to parse cleaned JSON:', fixedJson);
         const correctedData = JSON.parse(fixedJson);
         
         const validatedData = {
@@ -225,38 +214,18 @@ IMPORTANT: Return ONLY the JSON object with no markdown formatting, no code bloc
           suggestedMessage: correctedData.suggestedMessage || ''
         };
         
-        console.log('Successfully recovered JSON after fixing:', validatedData);
         return NextResponse.json(validatedData);
       } catch (recoverError) {
-        console.error('Failed to recover JSON after cleaning:', recoverError);
+        return NextResponse.json(
+          { error: 'Failed to parse Gemini response as valid JSON' },
+          { status: 500 }
+        );
       }
-      
-      // Create a fallback object with the company name
-      const fallbackData = {
-        name: 'Error parsing response',
-        title: 'n/a',
-        email: 'n/a',
-        linkedinUrl: 'n/a',
-        website: 'n/a',
-        profileImage: 'n/a',
-        company: company || 'n/a',
-        phone: 'n/a',
-        location: 'n/a',
-        suggestedMessage: '',
-        _error: true
-      };
-      
-      // Return both the fallback data and the raw text for debugging
-      return NextResponse.json({
-        ...fallbackData,
-        rawText: rawText,
-        error: 'Failed to parse Gemini response as valid JSON'
-      });
     }
   } catch (error) {
-    console.error('Error processing with Gemini:', error);
+    console.error('Error in Gemini API route:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Unknown error' },
+      { error: error instanceof Error ? error.message : 'Unknown error processing LinkedIn data' },
       { status: 500 }
     );
   }

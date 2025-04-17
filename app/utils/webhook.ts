@@ -36,7 +36,7 @@ const delay = (ms: number): Promise<void> => {
 /**
  * Interface for LinkedIn task status updates
  */
-interface TaskStatusUpdate {
+export interface TaskStatusUpdate {
   status: string;
   progress: number;
   elapsedTime: number;
@@ -46,8 +46,9 @@ interface TaskStatusUpdate {
 /**
  * Interface for task status update callback
  */
-type TaskStatusCallback = (update: TaskStatusUpdate) => void;
+export type TaskStatusCallback = (update: TaskStatusUpdate) => void;
 
+// Import after type definitions to avoid circular dependencies
 import { poll } from './polling';
 
 /**

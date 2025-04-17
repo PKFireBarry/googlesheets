@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 // Bore.pub service URLs for task management from environment variables
-const BORE_PUB_RUN_TASK_URL = process.env.LINKEDIN_RUN_TASK_URL || 'http://bore.pub:37211/run-task';
-const BORE_PUB_STOP_TASK_URL = process.env.LINKEDIN_STOP_TASK_URL || 'http://bore.pub:37211/stop-task';
-const BORE_PUB_TASK_STATUS_URL = process.env.LINKEDIN_TASK_STATUS_URL || 'http://bore.pub:37211/task-status';
+const BORE_PUB_RUN_TASK_URL = process.env.LINKEDIN_RUN_TASK_URL || 'http://bore.pub:7777/run-task';
+const BORE_PUB_STOP_TASK_URL = process.env.LINKEDIN_STOP_TASK_URL || 'http://bore.pub:7777/stop-task';
+const BORE_PUB_TASK_STATUS_URL = process.env.LINKEDIN_TASK_STATUS_URL || 'http://bore.pub:7777/task-status';
 
 // Maximum time (in milliseconds) a task should run before we force stop it
 const MAX_TASK_RUNTIME = 95000; // 1.5 minutes
@@ -19,7 +19,7 @@ interface LinkedInTaskRequestBody {
 /**
  * POST handler for LinkedIn lookup
  * This bypasses CORS using the bore.pub service to scrape LinkedIn data
- * Now implements the polling pattern instead of waiting for task completion
+ * Implements the polling pattern instead of waiting for task completion
  */
 export async function POST(request: NextRequest) {
   try {
@@ -83,92 +83,94 @@ Return the Results of the LinkedIn profile found
 Compile and return all collected information about the HR employee(s) and any available company HR contact details.
 `;
 
-    console.log('Starting LinkedIn search with task');
-    
     // Prepare the request body with optional parameters
     const requestBody: LinkedInTaskRequestBody = { task };
     
-    // Add system prompt if provided
+    // Add system prompt 
     requestBody.system_prompt = systemPrompt;
     
     // Use provided API key, or fall back to environment variable
     const geminiApiKey = apiKey || process.env.GEMINI_API_KEY;
     
-    // Add API key if provided - ensuring it's properly set for bore.pub
+    // Add API key if provided
     if (geminiApiKey) {
-      // Explicitly set the api_key in the format bore.pub expects
       requestBody.api_key = geminiApiKey.trim();
-      console.log('Using provided API key for the task:', geminiApiKey.substring(0, 5) + '...');
-      
-      // Log the full request body structure (without revealing the full key)
-      const debugRequestBody = { ...requestBody };
-      if (debugRequestBody.api_key) {
-        debugRequestBody.api_key = debugRequestBody.api_key.substring(0, 5) + '...';
-      }
-      console.log('Request body structure:', JSON.stringify(debugRequestBody, null, 2));
-    } else {
-      console.log('No API key provided, relying on bore.pub default');
+      console.log('Using API key for the task');
     }
     
     // Create the fetch request to bore.pub to START the task
-    const response = await fetch(BORE_PUB_RUN_TASK_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(requestBody)
-    });
-    
-    if (!response.ok) {
-      console.error(`LinkedIn lookup failed to start: ${response.statusText}`);
+    console.log(`Connecting to task service: ${BORE_PUB_RUN_TASK_URL}`);
+    try {
+      const response = await fetch(BORE_PUB_RUN_TASK_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Origin': 'https://googlesheets.vercel.app',
+          'Access-Control-Request-Method': 'POST'
+        },
+        body: JSON.stringify(requestBody)
+      });
+      
+      if (!response.ok) {
+        let errorMessage = `LinkedIn lookup failed to start: ${response.statusText}`;
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorMessage;
+        } catch (e) {
+          console.error('Could not parse error response');
+        }
+        
+        return NextResponse.json(
+          { error: errorMessage },
+          { status: response.status }
+        );
+      }
+      
+      // Get the task information with the task ID
+      const taskInfo = await response.json();
+      
+      if (!taskInfo || !taskInfo.task_id) {
+        return NextResponse.json(
+          { error: 'Failed to get task ID from service' },
+          { status: 500 }
+        );
+      }
+      
+      // Set up the automatic task stopping after MAX_TASK_RUNTIME
+      const taskId = taskInfo.task_id;
+      
+      // Set up a background timeout to stop the task if it runs too long
+      setTimeout(async () => {
+        try {
+          // Check if the task is still running before stopping it
+          const statusResponse = await fetch(`${BORE_PUB_TASK_STATUS_URL}/${taskId}`);
+          if (statusResponse.ok) {
+            const statusData = await statusResponse.json();
+            if (statusData.status === 'running') {
+              console.log(`Task ${taskId} is taking too long, stopping it automatically`);
+              await stopTask(taskId);
+            }
+          }
+        } catch (stopError) {
+          console.error(`Error in timeout handler for task ${taskId}:`, stopError);
+        }
+      }, MAX_TASK_RUNTIME);
+      
+      // Return the task ID for polling
+      return NextResponse.json({
+        task_id: taskId,
+        taskId: taskId,
+        status: 'running',
+        message: 'LinkedIn search task started successfully',
+        company: company
+      });
+    } catch (fetchError: any) {
+      console.error('Fetch error when connecting to service:', fetchError);
       return NextResponse.json(
-        { error: `LinkedIn lookup failed to start: ${response.statusText}` },
-        { status: response.status }
-      );
-    }
-    
-    // Get the task information with the task ID
-    const taskInfo = await response.json();
-    console.log('Task started with info:', taskInfo);
-    
-    if (!taskInfo || !taskInfo.task_id) {
-      return NextResponse.json(
-        { error: 'Failed to get task ID from service' },
+        { error: `Failed to connect to task service: ${fetchError.message || 'Unknown error'}` },
         { status: 500 }
       );
     }
-    
-    // Set up the automatic task stopping after MAX_TASK_RUNTIME
-    // This is a safety mechanism to prevent infinite looping tasks
-    const taskId = taskInfo.task_id;
-    
-    // Set up a background timeout to stop the task if it runs too long
-    // This is implemented server-side to avoid client-side issues
-    setTimeout(async () => {
-      try {
-        // Check if the task is still running before stopping it
-        const statusResponse = await fetch(`${BORE_PUB_TASK_STATUS_URL}/${taskId}`);
-        if (statusResponse.ok) {
-          const statusData = await statusResponse.json();
-          if (statusData.status === 'running') {
-            console.log(`Task ${taskId} is taking too long, stopping it automatically...`);
-            await stopTask(taskId);
-          }
-        }
-      } catch (stopError) {
-        console.error(`Error in timeout handler for task ${taskId}:`, stopError);
-      }
-    }, MAX_TASK_RUNTIME);
-    
-    // Return the task ID for polling
-    return NextResponse.json({
-      task_id: taskId,
-      taskId: taskId,
-      status: 'running',
-      message: 'LinkedIn search task started successfully',
-      company: company
-    });
-    
   } catch (error) {
     console.error('Error initiating LinkedIn HR lookup:', error);
     return NextResponse.json(
@@ -192,8 +194,6 @@ export async function GET(request: NextRequest) {
       );
     }
     
-    console.log(`Checking status of task: ${taskId}`);
-    
     // Call the task-status endpoint
     const statusUrl = `${BORE_PUB_TASK_STATUS_URL}/${taskId}`;
     const statusResponse = await fetch(statusUrl);
@@ -208,7 +208,6 @@ export async function GET(request: NextRequest) {
     
     // Return the status
     const statusData = await statusResponse.json();
-    console.log(`Task ${taskId} status:`, statusData.status);
     
     // Make sure we have consistent field names
     return NextResponse.json({
@@ -245,9 +244,6 @@ async function stopTask(taskId: string): Promise<void> {
       console.error(`Failed to stop task: ${stopResponse.statusText}`);
       return;
     }
-    
-    const stopResult = await stopResponse.json();
-    console.log('Task stop result:', stopResult);
   } catch (error) {
     console.error('Error stopping task:', error);
     throw error;

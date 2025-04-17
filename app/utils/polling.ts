@@ -1,4 +1,4 @@
-import { TaskStatusCallback } from '../types/common';
+import type { TaskStatusCallback } from './webhook';
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 

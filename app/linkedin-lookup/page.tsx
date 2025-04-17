@@ -254,19 +254,38 @@ function LinkedInLookupContent() {
     console.log('Fetching data directly from Google Sheet API...')
     
     try {
-      // Always use Sheet1 for LinkedIn lookup to ensure compatibility
-      const SHEET_NAME = 'Sheet1'
-      const RANGE = `${SHEET_NAME}!A:Z`
+      // Try to fetch the spreadsheet metadata first to discover available sheets
       const API_KEY = process.env.NEXT_PUBLIC_API_KEY
       
       if (!API_KEY) {
         throw new Error("API key not found. Please set NEXT_PUBLIC_API_KEY in your environment variables.")
       }
       
-      // Call the Google Sheets API
-      const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${RANGE}?key=${API_KEY}`
-      console.log('Fetching LinkedIn data from URL:', url)
-      const response = await fetch(url)
+      // First, get the metadata to see what sheets are available
+      const metadataUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?key=${API_KEY}`
+      console.log('Fetching spreadsheet metadata:', metadataUrl)
+      const metadataResponse = await fetch(metadataUrl)
+      
+      if (!metadataResponse.ok) {
+        const errorData = await metadataResponse.json()
+        throw new Error(errorData.error?.message || "Failed to fetch spreadsheet information")
+      }
+      
+      const metadata = await metadataResponse.json()
+      
+      if (!metadata.sheets || metadata.sheets.length === 0) {
+        throw new Error("No sheets found in this spreadsheet")
+      }
+      
+      // Get the first sheet's title
+      const firstSheetName = metadata.sheets[0].properties.title
+      console.log(`Found first sheet name: "${firstSheetName}"`)
+      
+      // Now fetch the data from the discovered sheet
+      const range = `${firstSheetName}!A:Z`
+      const dataUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}?key=${API_KEY}`
+      console.log('Fetching LinkedIn data from URL:', dataUrl)
+      const response = await fetch(dataUrl)
       
       if (!response.ok) {
         const errorData = await response.json()
@@ -359,10 +378,15 @@ function LinkedInLookupContent() {
       if (geminiApiKey) {
         // Use secure cookie storage with 30-day expiration
         CookieUtil.setSecure("geminiApiKey", geminiApiKey, 30);
+        console.log('Saved Gemini API key to cookie:', geminiApiKey.substring(0, 3) + '...')
       }
       
       // Clear any previous errors
       setError(null)
+      
+      // Show success message
+      setStatusMessage('Settings saved successfully')
+      setTimeout(() => setStatusMessage(''), 3000)
       
       console.log('Settings saved:', {
         geminiApiKey: geminiApiKey ? '[API KEY SET]' : '[NOT SET]'
@@ -397,21 +421,18 @@ function LinkedInLookupContent() {
       return
     }
     
-    // Log the current API key state to debug
-    console.log('Current geminiApiKey state:', geminiApiKey ? `${geminiApiKey.substring(0, 3)}...` : 'not set')
-    console.log('Environment API key:', process.env.NEXT_PUBLIC_GEMINI_API_KEY ? 'set' : 'not set')
-    
-    // Check if we have an API key in cookie but not in state
-    if (!geminiApiKey && !process.env.NEXT_PUBLIC_GEMINI_API_KEY) {
+    // Check if we have any API key available
+    if (!geminiApiKey) {
       const cookieApiKey = CookieUtil.get("geminiApiKey")
       if (cookieApiKey) {
-        console.log('Found API key in cookie but not in state, using cookie value')
         // Use the cookie value directly
         setGeminiApiKey(cookieApiKey)
         // Continue with the search using the cookie value
+      } else if (process.env.NEXT_PUBLIC_GEMINI_API_KEY) {
+        console.log('Using environment API key for search')
       } else {
-      setError('Please configure the Gemini API key first')
-      return
+        setError('Please configure the Gemini API key first')
+        return
       }
     }
     
@@ -428,11 +449,8 @@ function LinkedInLookupContent() {
     setStatusMessage('Preparing search...')
     
     try {
-      console.log(`Starting search for company: ${companyToSearch}`);
-      
       // Pass the full job data from selectedJob if available
       const jobInfo = selectedJob || extractJobInfo();
-      console.log('Job data for lookup:', jobInfo);
       
       try {
         // Define the status update callback
@@ -442,7 +460,6 @@ function LinkedInLookupContent() {
           elapsedTime: number; 
           message?: string;
         }) => {
-          console.log('Status update:', update);
           setTaskStatus(update.status);
           setTaskProgress(update.progress);
           setTaskElapsedTime(update.elapsedTime);
@@ -463,7 +480,6 @@ function LinkedInLookupContent() {
           180000, // 3 minutes timeout
           statusUpdateCallback
         );
-        console.log('LinkedIn search completed, response data:', responseData);
         
         // Check if we got valid results
         if (responseData && responseData.length > 0) {
