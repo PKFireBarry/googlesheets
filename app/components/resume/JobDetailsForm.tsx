@@ -26,6 +26,17 @@ const JobDetailsForm: React.FC<JobDetailsFormProps> = ({
   selectedJob,
   formatSkills
 }) => {
+  const job = (typeof selectedJob === 'object' && selectedJob !== null) ? selectedJob as Partial<{
+    title: string;
+    job_title: string;
+    company_name: string;
+    company: string;
+    description: string;
+    job_description: string;
+    requirements: string;
+    skills?: string | string[];
+  }> : {};
+
   return (
     <div className="space-y-6">
       <p className="text-gray-600 dark:text-gray-300 mb-6 text-mobile-sm">
@@ -36,27 +47,29 @@ const JobDetailsForm: React.FC<JobDetailsFormProps> = ({
         <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg mb-6">
           <h3 className="font-semibold text-blue-800 dark:text-blue-300 mb-2">Selected Job</h3>
           <div className="text-blue-700 dark:text-blue-300 space-y-2">
-            <p className="font-medium">{selectedJob.title || selectedJob.job_title} at {selectedJob.company_name || selectedJob.company}</p>
+            <p className="font-medium">{job.title || job.job_title} at {job.company_name || job.company}</p>
             
-            {(selectedJob.description || selectedJob.job_description) && (
+            {(job.description || job.job_description) && (
               <div className="mt-2">
                 <p className="text-sm font-medium">Description:</p>
-                <p className="text-sm">{selectedJob.description || selectedJob.job_description}</p>
+                <p className="text-sm">{job.description || job.job_description}</p>
               </div>
             )}
             
-            {selectedJob.requirements && selectedJob.requirements.trim() !== '' && (
+            {job.requirements && job.requirements.trim() !== '' && (
               <div className="mt-2">
                 <p className="text-sm font-medium">Requirements:</p>
-                <p className="text-sm">{selectedJob.requirements}</p>
+                <p className="text-sm">{job.requirements}</p>
               </div>
             )}
             
-            {selectedJob.skills && (
+            {(typeof job.skills === 'string' || Array.isArray(job.skills)) && (
               <div className="mt-2">
                 <p className="text-sm font-medium">Skills:</p>
                 <p className="text-sm">
-                  {formatSkills(selectedJob.skills)}
+                  {Array.isArray(job.skills)
+                    ? formatSkills(job.skills.join(', '))
+                    : formatSkills(job.skills || '')}
                 </p>
               </div>
             )}

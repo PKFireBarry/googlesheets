@@ -26,6 +26,7 @@ import {
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { extractSourceFromUrl, formatDateSafely } from '../utils/dataHelpers'
+import ActionButton from "./ActionButton";
 
 interface JobData {
   id: string;
@@ -53,7 +54,6 @@ interface JobCardProps {
   onApply: () => void;
   onDelete: () => void;
   onHide?: () => void;
-  onUpdateNote?: (note: string) => void;
   onAddSkillFilter?: (skill: string) => void;
   onAddSourceFilter?: (source: string) => void;
 }
@@ -75,7 +75,6 @@ export default function JobCard({
   onApply, 
   onDelete, 
   onHide,
-  onUpdateNote,
   onAddSkillFilter,
   onAddSourceFilter
 }: JobCardProps) {
@@ -139,7 +138,7 @@ export default function JobCard({
   const toggleDetails = () => setShowDetails(!showDetails);
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-200 dark:border-gray-700 transition-all hover:shadow-xl flex flex-col">
+    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden border border-gray-200 dark:border-gray-700 transition-all hover:shadow-xl flex flex-col card">
       {/* Top Section - Mimicking the image style */}
       <div className="p-5 sm:p-6 bg-orange-50 dark:bg-gray-800/50 relative">
         {/* Date and Bookmark */}
@@ -188,8 +187,8 @@ export default function JobCard({
           </span>
           
           {/* Clickable Source Tag */}
-          <button
-            onClick={(e) => { 
+          <ActionButton
+            onClick={e => { 
               e.stopPropagation(); // Prevent card click if needed
               onAddSourceFilter?.(getJobSource()); 
             }}
@@ -201,7 +200,7 @@ export default function JobCard({
             <span className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 opacity-0 group-hover:opacity-100 bg-black text-white text-[10px] px-1 py-0.5 rounded scale-90 group-hover:scale-100 transition-all duration-150 whitespace-nowrap z-10">
               Add Filter
             </span>
-          </button>
+          </ActionButton>
         </div>
       </div>
 
@@ -214,23 +213,29 @@ export default function JobCard({
             {showFullDescription ? (
               <>
                 <div className="whitespace-pre-line">{job.description}</div>
-                <button 
-                  onClick={() => setShowFullDescription(false)}
+                <ActionButton 
+                  onClick={e => { 
+                    e.stopPropagation();
+                    setShowFullDescription(false);
+                  }}
                   className="mt-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-medium text-sm flex items-center"
                 >
                   Show Less <ChevronUp className="w-4 h-4 ml-1" />
-                </button>
+                </ActionButton>
               </>
             ) : (
               <>
                 <div className="whitespace-pre-line">{truncateDescription(job.description)}</div>
                 {job.description && job.description.length > 150 && (
-                  <button 
-                    onClick={() => setShowFullDescription(true)}
+                  <ActionButton 
+                    onClick={e => { 
+                      e.stopPropagation();
+                      setShowFullDescription(true);
+                    }}
                     className="mt-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-medium text-sm flex items-center"
                   >
                     Show More <ChevronDown className="w-4 h-4 ml-1" />
-                  </button>
+                  </ActionButton>
                 )}
               </>
             )}
@@ -246,9 +251,9 @@ export default function JobCard({
                 .map(s => s.replace(/[\[\]"'{}]/g, '').trim())
                 .filter(Boolean)
                 .map((skill, index) => (
-                <button
+                <ActionButton
                   key={index}
-                  onClick={(e) => { 
+                  onClick={e => { 
                     e.stopPropagation(); 
                     onAddSkillFilter?.(skill); 
                   }}
@@ -259,7 +264,7 @@ export default function JobCard({
                   <span className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 opacity-0 group-hover:opacity-100 bg-black text-white text-[10px] px-1 py-0.5 rounded scale-90 group-hover:scale-100 transition-all duration-150 whitespace-nowrap z-10">
                     Add Filter
                   </span>
-                </button>
+                </ActionButton>
               ))}
             </div>
           </div>
@@ -281,15 +286,15 @@ export default function JobCard({
             </div>
           )}
         </div>
-        <button 
-          onClick={toggleDetails}
+        <ActionButton 
+          onClick={e => toggleDetails()}
           className="inline-flex items-center px-4 py-2 rounded-full text-sm font-semibold 
                    bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 
                    hover:bg-gray-700 dark:hover:bg-gray-300 transition-colors shadow-md"
         >
           Actions
           {showDetails ? <ChevronUp className="w-4 h-4 ml-1.5" /> : <ChevronDown className="w-4 h-4 ml-1.5" />}
-        </button>
+        </ActionButton>
       </div>
 
       {/* Collapsible Actions Section */}
@@ -298,23 +303,29 @@ export default function JobCard({
           {/* Applied Status Button (Simplified) */} 
           <div className="mb-4">
             {isApplied ? (
-              <button
-                onClick={onApply}
+              <ActionButton
+                onClick={e => { 
+                  e.stopPropagation();
+                  onApply();
+                }}
                 className="inline-flex items-center w-full justify-center px-4 py-2 rounded-lg text-sm font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 hover:bg-red-100 dark:hover:bg-red-900/30 hover:text-red-800 dark:hover:text-red-400 transition-colors group border border-green-200 dark:border-green-700"
               >
                 <CheckCircle className="w-4 h-4 mr-2 group-hover:hidden" />
                 <X className="w-4 h-4 mr-2 hidden group-hover:block" />
                 <span className="group-hover:hidden">Applied</span>
                 <span className="hidden group-hover:block">Mark as Not Applied</span>
-              </button>
+              </ActionButton>
             ) : (
-              <button 
-                onClick={onApply}
+              <ActionButton 
+                onClick={e => { 
+                  e.stopPropagation();
+                  onApply();
+                }}
                 className="inline-flex items-center w-full justify-center px-4 py-2 rounded-lg text-sm font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors border border-blue-200 dark:border-blue-700"
               >
                 <CheckCircle className="w-4 h-4 mr-2" />
                 Mark as Applied
-              </button>
+              </ActionButton>
             )}
           </div>
           
@@ -325,7 +336,7 @@ export default function JobCard({
             {/* Primary Actions */} 
             <div className="flex flex-col sm:flex-row gap-2">
               {job.url && (
-                <a 
+                <ActionButton
                   href={job.url} 
                   target="_blank" 
                   rel="noopener noreferrer"
@@ -335,10 +346,10 @@ export default function JobCard({
                 >
                   <ExternalLink className="w-4 h-4 mr-2" />
                   View Job
-                </a>
+                </ActionButton>
               )}
               {job.company_website && (
-                <a 
+                <ActionButton
                   href={job.company_website.startsWith('http') ? job.company_website : `https://${job.company_website}`} 
                   target="_blank" 
                   rel="noopener noreferrer"
@@ -349,14 +360,17 @@ export default function JobCard({
                 >
                   <Globe className="w-4 h-4 mr-2" />
                   Company Site
-                </a>
+                </ActionButton>
               )}
             </div>
 
             {/* Document & Network Actions (Combined Row) */} 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <button
-                onClick={handleCreateResume}
+              <ActionButton
+                onClick={e => { 
+                  e.stopPropagation();
+                  handleCreateResume();
+                }}
                 className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg
                          border border-green-600 dark:border-green-500 bg-white dark:bg-gray-700
                          text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/20
@@ -364,9 +378,12 @@ export default function JobCard({
               >
                 <File className="w-4 h-4 mr-2" />
                 Resume
-              </button>
-              <button
-                onClick={() => router.push(`/cover-letter?jobId=${encodeURIComponent(job.id)}`)}
+              </ActionButton>
+              <ActionButton
+                onClick={e => { 
+                  e.stopPropagation();
+                  router.push(`/cover-letter?jobId=${encodeURIComponent(job.id)}`);
+                }}
                 className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg
                          border border-purple-600 dark:border-purple-500 bg-white dark:bg-gray-700
                          text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20
@@ -374,9 +391,12 @@ export default function JobCard({
               >
                 <FileText className="w-4 h-4 mr-2" />
                 Cover Letter
-              </button>
-              <button
-                onClick={handleLinkedInLookup}
+              </ActionButton>
+              <ActionButton
+                onClick={e => { 
+                  e.stopPropagation();
+                  handleLinkedInLookup();
+                }}
                 className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg
                          border border-blue-600 dark:border-blue-500 bg-white dark:bg-gray-700
                          text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20
@@ -384,14 +404,17 @@ export default function JobCard({
               >
                 <Linkedin className="w-4 h-4 mr-2" />
                 Recruiter
-              </button>
+              </ActionButton>
             </div>
 
             {/* Management Actions */} 
             <div className="flex flex-col sm:flex-row gap-2">
               {onHide && (
-                <button
-                  onClick={onHide}
+                <ActionButton
+                  onClick={e => { 
+                    e.stopPropagation();
+                    onHide();
+                  }}
                   className="flex-1 inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg
                            border border-amber-600 dark:border-amber-500 bg-white dark:bg-gray-700
                            text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20
@@ -399,10 +422,13 @@ export default function JobCard({
                 >
                   <EyeOff className="w-4 h-4 mr-2" />
                   Hide Job
-                </button>
+                </ActionButton>
               )}
-              <button
-                onClick={onDelete}
+              <ActionButton
+                onClick={e => { 
+                  e.stopPropagation();
+                  onDelete();
+                }}
                 className="flex-1 inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg
                          border border-red-600 dark:border-red-500 bg-white dark:bg-gray-700
                          text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20
@@ -410,7 +436,7 @@ export default function JobCard({
               >
                 <Trash2 className="w-4 h-4 mr-2" />
                 Delete
-              </button>
+              </ActionButton>
             </div>
           </div>
         </div>

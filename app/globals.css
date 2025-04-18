@@ -57,6 +57,31 @@
     line-height: 1.4;
   }
   
+  /* Prevent scrolling when mobile menu is open */
+  body.mobile-menu-open {
+    overflow: hidden;
+  }
+  
+  body.navbar-collapsed main,
+  body.navbar-collapsed footer,
+  body.navbar-collapsed .navbar-margin-adjustment {
+    padding-left: 0;
+  }
+  
+  @media (min-width: 768px) {
+    body.navbar-collapsed main,
+    body.navbar-collapsed footer,
+    body.navbar-collapsed .navbar-margin-adjustment {
+      padding-left: 5rem; /* 20px for sidebar */
+    }
+    
+    body.navbar-expanded main,
+    body.navbar-expanded footer,
+    body.navbar-expanded .navbar-margin-adjustment {
+      padding-left: 16rem; /* 64px for sidebar */
+    }
+  }
+  
   img, svg, video {
     max-width: 100%;
     height: auto;
@@ -134,7 +159,7 @@
   
   /* Mobile-friendly container */
   .mobile-container {
-    @apply w-full max-w-full overflow-x-hidden px-4;
+    @apply w-full max-w-full overflow-x-hidden;
   }
   
   /* Mobile-optimized card with reduced padding */
@@ -150,6 +175,15 @@
   /* Compact section spacing */
   .mobile-section {
     @apply mb-4 sm:mb-8;
+  }
+
+  /* Navbar responsiveness */
+  .sidebar-collapsed {
+    @apply w-20;
+  }
+
+  .sidebar-expanded {
+    @apply w-64;
   }
 }
 
@@ -255,21 +289,25 @@
   
   @keyframes pulseSubtle {
     0%, 100% { opacity: 1; }
-    50% { opacity: 0.8; }
+    50% { opacity: 0.7; }
   }
   
   @keyframes slideOutLeft {
-    from { transform: translateX(0); opacity: 1; }
-    to { transform: translateX(-100%); opacity: 0; }
+    from { transform: translateX(0); }
+    to { transform: translateX(-100%); }
   }
   
   @keyframes slideOutRight {
-    from { transform: translateX(0); opacity: 1; }
-    to { transform: translateX(100%); opacity: 0; }
+    from { transform: translateX(0); }
+    to { transform: translateX(100%); }
   }
   
-  /* Gradient text */
   .text-gradient {
-    @apply bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600;
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-700;
+  }
+
+  /* Dynamic navigation margin class */
+  .navbar-margin-adjustment {
+    transition: padding-left 0.3s ease;
   }
 }

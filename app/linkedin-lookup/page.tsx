@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import CookieUtil from '../utils/cookies'
-import { Loader2, Linkedin, HelpCircle, ChevronDown } from 'lucide-react'
+import { Linkedin, HelpCircle, ChevronDown } from 'lucide-react'
 import { lookupLinkedInHR, LinkedInContactData } from '../utils/webhook'
 import ApiKeyConfiguration from '../components/linkedin/ApiKeyConfiguration'
 import CompanySelector from '../components/linkedin/CompanySelector'
@@ -12,6 +12,7 @@ import LinkedInContacts from '../components/linkedin/LinkedInContacts'
 import HowItWorksModal from '../components/linkedin/HowItWorksModal'
 import ApiInfoModal from '../components/linkedin/ApiInfoModal'
 import PageHeader from '../components/linkedin/PageHeader'
+import ActionButton from '../components/ActionButton'
 
 // Helper function to extract spreadsheet ID from URL
 function extractSpreadsheetId(url: string): string | null {
@@ -77,9 +78,6 @@ function LinkedInLookupContent() {
   
   const [selectedJob, setSelectedJob] = useState<Record<string, unknown> | null>(null)
   const [copiedMessageIds, setCopiedMessageIds] = useState<Record<string, boolean>>({})
-  
-  // We only need the referral template
-  const [messageTemplate] = useState('referral')
   
   // State for editable messages
   const [editableMessages, setEditableMessages] = useState<Record<string, string>>({})
@@ -582,7 +580,7 @@ function LinkedInLookupContent() {
       return [];
     }
 
-    let rawSkills: any = job.skills;
+    const rawSkills: any = job.skills;
     console.log("getSkillsArray: Raw skills input:", rawSkills, "(Type:", typeof rawSkills, ")");
     let skillsList: string[] = [];
 
@@ -790,8 +788,9 @@ Thank you for your assistance,`
       
       {/* How To Use Section - Moved to top */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border border-gray-100 dark:border-gray-700 mb-6 sm:mb-8">
-        <button 
+        <ActionButton 
           onClick={() => setShowHowItWorksModal(true)}
+          color="default"
           className="w-full flex items-center justify-between"
         >
           <div className="flex items-center">
@@ -801,7 +800,7 @@ Thank you for your assistance,`
             <h2 className="text-xl font-bold text-gray-900 dark:text-white">How to Use LinkedIn Connection Finder</h2>
           </div>
           <ChevronDown className="w-5 h-5 text-gray-500 dark:text-gray-400" />
-        </button>
+        </ActionButton>
         
         <div className="mt-4 text-gray-600 dark:text-gray-400">
           <p>Click to learn how this tool works and what you can do with it.</p>

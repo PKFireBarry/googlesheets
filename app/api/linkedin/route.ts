@@ -164,10 +164,10 @@ Compile and return all collected information about the HR employee(s) and any av
         message: 'LinkedIn search task started successfully',
         company: company
       });
-    } catch (fetchError: any) {
+    } catch (fetchError: unknown) {
       console.error('Fetch error when connecting to service:', fetchError);
       return NextResponse.json(
-        { error: `Failed to connect to task service: ${fetchError.message || 'Unknown error'}` },
+        { error: `Failed to connect to task service: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}` },
         { status: 500 }
       );
     }

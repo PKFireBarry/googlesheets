@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { 
   Briefcase, Building, MapPin, DollarSign, 
-  Clock, Sparkles, MessageSquare, ArrowRight,
-  ExternalLink, Loader2, Linkedin, ChevronDown, ChevronUp, Edit3, Save
+  Clock, Sparkles, MessageSquare,
+  ExternalLink, Loader2, Linkedin, ChevronDown, ChevronUp
 } from 'lucide-react';
+import ActionButton from '../ActionButton';
 
 interface JobDetailsProps {
   job: Record<string, unknown>;
@@ -89,27 +90,15 @@ const JobDetails: React.FC<JobDetailsProps> = ({
               </a>
             )}
             
-            <button
+            <ActionButton
               onClick={onSearch}
               disabled={isSearching}
-              className={`inline-flex items-center px-5 py-3 text-sm font-medium rounded-lg transition-colors duration-200 shadow-sm hover:shadow whitespace-nowrap ${
-                  isSearching
-                    ? 'bg-gray-400 cursor-not-allowed text-gray-200'
-                    : 'bg-green-600 hover:bg-green-700 text-white'
-              }`}
+              color={isSearching ? "gray" : "green"}
+              icon={isSearching ? Loader2 : Linkedin}
+              className={isSearching ? "animate-spin" : ""}
             >
-              {isSearching ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Searching...
-                </>
-              ) : (
-                <>
-                  <Linkedin className="w-4 h-4 mr-2" />
-                  Find HR Contacts
-                </>
-              )}
-            </button>
+              {isSearching ? "Searching..." : "Find HR Contacts"}
+            </ActionButton>
           </div>
         </div>
         

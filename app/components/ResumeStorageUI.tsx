@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { toast } from 'react-hot-toast';
-import { FileUp, FileText, Trash2, Save, Info } from 'lucide-react';
+import { FileUp, FileText, Trash2, Save } from 'lucide-react';
 import { resumeExists, loadResume, saveResume, deleteResume } from '../utils/resumeStorage';
 import { prepareResumeTextForAPI } from '../utils/resumeAdapter';
 import { ResumeData } from '../types/resume';
 import Cookies from 'js-cookie';
+import ActionButton from './ActionButton';
 
 interface ResumeStorageUIProps {
   onResumeLoaded?: (resumeText: string, isPdf: boolean) => void;
@@ -210,39 +211,42 @@ export default function ResumeStorageUI({
           className="hidden"
           accept=".txt,.pdf,.docx,.doc"
         />
-        <button
+        <ActionButton
           type="button"
           onClick={() => fileInputRef.current?.click()}
-          className="flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          color="default"
+          className="flex items-center"
+          icon={FileUp}
         >
-          <FileUp className="w-4 h-4 mr-2" />
           Upload Resume
-        </button>
+        </ActionButton>
         
         {hasStoredResume && (
           <>
-            <button
+            <ActionButton
               type="button"
               onClick={loadExistingResume}
-              className="flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-blue-600 dark:text-blue-400 bg-white dark:bg-gray-700 hover:bg-blue-50 dark:hover:bg-blue-900/20 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              color="blue"
+              className="flex items-center"
+              icon={FileText}
             >
-              <FileText className="w-4 h-4 mr-2" />
               Load Saved Resume
-            </button>
+            </ActionButton>
             
-            <button
+            <ActionButton
               type="button"
               onClick={deleteSavedResume}
-              className="flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-red-600 dark:text-red-400 bg-white dark:bg-gray-700 hover:bg-red-50 dark:hover:bg-red-900/20 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+              color="red"
+              className="flex items-center"
+              icon={Trash2}
             >
-              <Trash2 className="w-4 h-4 mr-2" />
               Delete Saved Resume
-            </button>
+            </ActionButton>
           </>
         )}
         
         {resumeContent && !resumePdfData && !hasStoredResume && (
-          <button
+          <ActionButton
             type="button"
             onClick={() => {
               try {
@@ -268,15 +272,14 @@ export default function ResumeStorageUI({
                 toast.error('Failed to save resume to shared storage');
               }
             }}
-            className="flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-green-600 dark:text-green-400 bg-white dark:bg-gray-700 hover:bg-green-50 dark:hover:bg-green-900/20 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+            color="green"
+            className="flex items-center"
+            icon={Save}
           >
-            <Save className="w-4 h-4 mr-2" />
             Save to Shared Storage
-          </button>
+          </ActionButton>
         )}
       </div>
-      
-
       
       {resumePdfData && (
         <div className="flex items-center text-sm text-green-600 dark:text-green-400 mt-1 mb-2">

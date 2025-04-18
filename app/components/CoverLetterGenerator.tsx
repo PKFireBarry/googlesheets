@@ -17,6 +17,8 @@ import {
 import { jsPDF } from "jspdf";
 import Cookies from "js-cookie";
 import pdfParse from "pdf-parse";
+import type { ResumeData, ExperienceEntry, EducationEntry, CertificationEntry, ProjectEntry } from '../types/resume';
+import ActionButton from './ActionButton';
 
 interface CoverLetterGeneratorProps {
   jobTitle: string;
@@ -26,24 +28,93 @@ interface CoverLetterGeneratorProps {
   location?: string;
 }
 
-interface ResumeData {
-  fullName: string;
-  email: string;
-  phone: string;
-  location: string;
-  website?: string;
-  summary: string;
-  experience: string;
-  education: string;
-  skills: string;
-  certifications?: string;
-  projects?: string;
-}
-
 interface ResumeAnalysis {
   used: boolean;
   matchCount: number;
   matches: string[];
+}
+
+function resumeDataToForm(resumeData: ResumeData) {
+  return {
+    fullName: resumeData.name || '',
+    email: resumeData.contact?.email || '',
+    phone: resumeData.contact?.phone || '',
+    location: resumeData.contact?.location || '',
+    website: resumeData.contact?.website || '',
+    summary: resumeData.summary || '',
+    skills: resumeData.skills?.join(', ') || '',
+    experience: (resumeData.experience || [])
+      .map(e => `${e.title} at ${e.company} | ${e.location} | ${e.dates}\n${e.highlights?.map(h => '- ' + h).join('\n')}`)
+      .join('\n\n'),
+    education: (resumeData.education || [])
+      .map(e => `${e.degree} - ${e.institution} | ${e.location} | ${e.dates}\n${e.details?.map(d => '- ' + d).join('\n')}`)
+      .join('\n\n'),
+    certifications: (resumeData.certifications || [])
+      .map(c => `${c.name} - ${c.issuer} (${c.date})`).join('\n'),
+    projects: (resumeData.projects || [])
+      .map(p => `${p.name}${p.description ? ': ' + p.description : ''}${p.technologies && p.technologies.length ? '\nTech: ' + p.technologies.join(', ') : ''}${p.highlights && p.highlights.length ? '\n' + p.highlights.map(h => '- ' + h).join('\n') : ''}`)
+      .join('\n\n'),
+  };
+}
+
+function formToResumeData(form: any): ResumeData {
+  const skills = form.skills.split(',').map((s: string) => s.trim()).filter(Boolean);
+  const experience: ExperienceEntry[] = form.experience
+    .split(/\n\n+/)
+    .map((block: string) => {
+      const [header, ...rest] = block.split('\n');
+      const [titleCompany, location, dates] = header.split('|').map(s => s.trim());
+      const [title, company] = (titleCompany || '').split(' at ').map(s => s.trim());
+      const highlights = rest.filter(Boolean).map(line => line.replace(/^[-•]\s*/, '').trim()).filter(Boolean);
+      return title && company ? { title, company, location: location || '', dates: dates || '', highlights } : null;
+    })
+    .filter(Boolean) as ExperienceEntry[];
+  const education: EducationEntry[] = form.education
+    .split(/\n\n+/)
+    .map((block: string) => {
+      const [header, ...rest] = block.split('\n');
+      const [degreeInst, location, dates] = header.split('|').map(s => s.trim());
+      const [degree, institution] = (degreeInst || '').split(' - ').map(s => s.trim());
+      const details = rest.filter(Boolean).map(line => line.replace(/^[-•]\s*/, '').trim()).filter(Boolean);
+      return degree && institution ? { degree, institution, location: location || '', dates: dates || '', details } : null;
+    })
+    .filter(Boolean) as EducationEntry[];
+  const certifications: CertificationEntry[] = (form.certifications || '').split('\n').map((line: string) => {
+    const match = line.match(/^(.*?)\s*-\s*(.*?)\s*\((.*?)\)$/);
+    if (match) {
+      return { name: match[1].trim(), issuer: match[2].trim(), date: match[3].trim() };
+    }
+    return null;
+  }).filter(Boolean) as CertificationEntry[];
+  const projects: ProjectEntry[] = (form.projects || '').split(/\n\n+/).map((block: string) => {
+    const [firstLine, ...rest] = block.split('\n');
+    const [name, description] = firstLine.split(':').map(s => s.trim());
+    let technologies: string[] = [];
+    const highlights: string[] = [];
+    rest.forEach(line => {
+      if (line.startsWith('Tech:')) {
+        technologies = line.replace('Tech:', '').split(',').map(s => s.trim()).filter(Boolean);
+      } else if (line.startsWith('-') || line.startsWith('•')) {
+        highlights.push(line.replace(/^[-•]\s*/, '').trim());
+      }
+    });
+    return name ? { name, description: description || '', technologies, highlights } : null;
+  }).filter(Boolean) as ProjectEntry[];
+  return {
+    name: form.fullName,
+    contact: {
+      email: form.email,
+      phone: form.phone,
+      location: form.location,
+      website: form.website,
+    },
+    summary: form.summary,
+    skills,
+    experience,
+    education,
+    certifications,
+    projects,
+  };
 }
 
 export default function CoverLetterGenerator({
@@ -54,6 +125,24 @@ export default function CoverLetterGenerator({
   location,
 }: CoverLetterGeneratorProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [resumeData, setResumeData] = useState<ResumeData>(() => {
+    // Try to load from cookies, else blank
+    try {
+      const saved = Cookies.get('resumeData');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return {
+      name: '',
+      contact: { email: '', phone: '', location: '', website: '' },
+      summary: '',
+      skills: [],
+      experience: [],
+      education: [],
+      certifications: [],
+      projects: [],
+    };
+  });
+  const [form, setForm] = useState(() => resumeDataToForm(resumeData));
   const [resumeContent, setResumeContent] = useState("");
   const [coverLetterText, setCoverLetterText] = useState("");
   const [loading, setLoading] = useState(false);
@@ -65,22 +154,6 @@ export default function CoverLetterGenerator({
   const [resumeProcessed, setResumeProcessed] = useState(false);
   const [resumeAnalysis, setResumeAnalysis] = useState<ResumeAnalysis | null>(null);
   const [showResumeForm, setShowResumeForm] = useState(false);
-  const [resumeData, setResumeData] = useState<ResumeData>(() => {
-    const savedData = Cookies.get("resumeData");
-    return savedData ? JSON.parse(savedData) : {
-      fullName: "",
-      email: "",
-      phone: "",
-      location: "",
-      website: "",
-      summary: "",
-      experience: "",
-      education: "",
-      skills: "",
-      certifications: "",
-      projects: ""
-    };
-  });
 
   // Force debugging to browser console
   useEffect(() => {
@@ -216,13 +289,13 @@ export default function CoverLetterGenerator({
     addDebugMessage(`Resume content available: ${resumeContent ? 'YES' : 'NO'}`);
     
     // If no resume content but we have resume data, generate it
-    if (!resumeContent && (resumeData.fullName || resumeData.experience || resumeData.skills)) {
-      const formattedResumeContent = generateResumeText();
+    if (!resumeContent && (resumeData.name || resumeData.experience.length > 0 || resumeData.skills.length > 0)) {
+      const formattedResumeContent = generateResumeText(resumeData);
       setResumeContent(formattedResumeContent);
       addDebugMessage(`Generated resume content from form data: ${formattedResumeContent.length} characters`);
     }
     
-    const finalResumeContent = resumeContent || generateResumeText();
+    const finalResumeContent = resumeContent || generateResumeText(resumeData);
     
     if (finalResumeContent) {
       addDebugMessage(`Resume content length: ${finalResumeContent.length} characters`);
@@ -276,7 +349,7 @@ export default function CoverLetterGenerator({
       Cookies.set("geminiApiKey", apiKey, { expires: 30 });
       
       // Save resume data (if provided)
-      if (resumeData.fullName || resumeData.skills || resumeData.experience) {
+      if (resumeData.name || resumeData.skills.length > 0 || resumeData.experience.length > 0) {
         Cookies.set("resumeData", JSON.stringify(resumeData), { expires: 30 });
       }
       
@@ -357,77 +430,89 @@ export default function CoverLetterGenerator({
   };
 
   const saveResumeData = () => {
-    // Convert resume data to formatted text content
-    const formattedResumeContent = generateResumeText();
-    
-    // Save resume data to cookies (expires in 30 days)
-    Cookies.set("resumeData", JSON.stringify(resumeData), { expires: 30 });
-    
-    // Update the resume content with formatted text
+    const canonical = formToResumeData(form);
+    const formattedResumeContent = generateResumeText(canonical);
+    Cookies.set('resumeData', JSON.stringify(canonical), { expires: 30 });
+    setResumeData(canonical);
     setResumeContent(formattedResumeContent);
     setResumeProcessed(true);
     setShowResumeForm(false);
-    
-    addDebugMessage("Resume data saved to cookies and formatted for use");
-    toast.success("Resume information saved");
+    toast.success('Resume information saved');
   };
 
-  const generateResumeText = (): string => {
-    let resumeText = `${resumeData.fullName || "Applicant Name"}\n`;
-    resumeText += `${resumeData.email || "email@example.com"}${resumeData.phone ? ` | ${resumeData.phone}` : ""}\n`;
-    resumeText += `${resumeData.location || "Location"}${resumeData.website ? ` | ${resumeData.website}` : ""}\n\n`;
-    
-    // Summary
-    if (resumeData.summary) {
-      resumeText += `PROFESSIONAL SUMMARY\n${resumeData.summary}\n\n`;
+  const generateResumeText = (data: ResumeData): string => {
+    let resumeText = `${data.name || 'Applicant Name'}\n`;
+    resumeText += `${data.contact.email || 'email@example.com'}${data.contact.phone ? ` | ${data.contact.phone}` : ''}\n`;
+    resumeText += `${data.contact.location || 'Location'}${data.contact.website ? ` | ${data.contact.website}` : ''}\n\n`;
+    if (data.summary) {
+      resumeText += `PROFESSIONAL SUMMARY\n${data.summary}\n\n`;
     }
-    
-    // Experience
-    if (resumeData.experience) {
-      resumeText += `PROFESSIONAL EXPERIENCE\n${resumeData.experience}\n\n`;
+    if (data.experience && data.experience.length > 0) {
+      resumeText += `PROFESSIONAL EXPERIENCE\n`;
+      data.experience.forEach(exp => {
+        resumeText += `${exp.title} at ${exp.company} (${exp.dates})\n${exp.location}\n`;
+        exp.highlights.forEach(h => {
+          resumeText += `- ${h}\n`;
+        });
+        resumeText += `\n`;
+      });
     }
-    
-    // Education
-    if (resumeData.education) {
-      resumeText += `EDUCATION\n${resumeData.education}\n\n`;
+    if (data.education && data.education.length > 0) {
+      resumeText += `EDUCATION\n`;
+      data.education.forEach(edu => {
+        resumeText += `${edu.degree} - ${edu.institution} (${edu.dates})\n${edu.location}\n`;
+        if (edu.details && edu.details.length > 0) {
+          edu.details.forEach(d => {
+            resumeText += `- ${d}\n`;
+          });
+        }
+        resumeText += `\n`;
+      });
     }
-    
-    // Skills
-    if (resumeData.skills) {
-      resumeText += `SKILLS\n${resumeData.skills}\n\n`;
+    if (data.skills && data.skills.length > 0) {
+      resumeText += `SKILLS\n${data.skills.join(', ')}\n\n`;
     }
-    
-    // Certifications
-    if (resumeData.certifications) {
-      resumeText += `CERTIFICATIONS\n${resumeData.certifications}\n\n`;
+    if (data.certifications && data.certifications.length > 0) {
+      resumeText += `CERTIFICATIONS\n`;
+      data.certifications.forEach(cert => {
+        resumeText += `${cert.name} - ${cert.issuer} (${cert.date})\n`;
+      });
+      resumeText += `\n`;
     }
-    
-    // Projects
-    if (resumeData.projects) {
-      resumeText += `PROJECTS\n${resumeData.projects}\n\n`;
+    if (data.projects && data.projects.length > 0) {
+      resumeText += `PROJECTS\n`;
+      data.projects.forEach(proj => {
+        resumeText += `${proj.name}\n`;
+        if (proj.description) resumeText += `${proj.description}\n`;
+        if (proj.technologies && proj.technologies.length > 0) resumeText += `Technologies: ${proj.technologies.join(', ')}\n`;
+        if (proj.highlights && proj.highlights.length > 0) {
+          proj.highlights.forEach(h => {
+            resumeText += `- ${h}\n`;
+          });
+        }
+        resumeText += `\n`;
+      });
     }
-    
     return resumeText;
   };
 
   const handleResumeFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    setResumeData(prev => ({
-      ...prev,
-      [name]: value
-    }));
+    setForm(prev => ({ ...prev, [name]: value }));
+    setResumeData(formToResumeData({ ...form, [name]: value }));
   };
 
   return (
     <>
-      <button
+      <ActionButton
         type="button"
         onClick={openModal}
-        className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+        color="blue"
+        className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md"
       >
         <FileText className="w-3.5 h-3.5 mr-1.5" />
         Generate Cover Letter
-      </button>
+      </ActionButton>
 
       <Transition appear show={isOpen}>
         <Dialog as="div" className="relative z-50" onClose={closeModal}>
@@ -460,13 +545,14 @@ export default function CoverLetterGenerator({
                     >
                       Generate Cover Letter for {jobTitle} at {companyName}
                     </Dialog.Title>
-                    <button
+                    <ActionButton
                       type="button"
-                      className="text-gray-400 hover:text-gray-500 focus:outline-none"
+                      color="gray"
+                      className="text-gray-400 hover:text-gray-500 focus:outline-none px-2 py-1"
                       onClick={closeModal}
                     >
                       <X className="h-5 w-5" />
-                    </button>
+                    </ActionButton>
                   </div>
 
                   <div className="space-y-4">
@@ -519,13 +605,14 @@ export default function CoverLetterGenerator({
                               Resume Ready
                             </span>
                           )}
-                          <button
+                          <ActionButton
                             type="button"
                             onClick={() => setShowResumeForm(!showResumeForm)}
+                            color="blue"
                             className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-100"
                           >
                             {showResumeForm ? 'Hide Form' : 'Show Form'}
-                          </button>
+                          </ActionButton>
                         </div>
                       </div>
 
@@ -543,7 +630,7 @@ export default function CoverLetterGenerator({
                               <input
                                 type="text"
                                 name="fullName"
-                                value={resumeData.fullName}
+                                value={form.fullName}
                                 onChange={handleResumeFormChange}
                                 className="w-full rounded-md border-gray-300 dark:border-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm dark:bg-gray-700 dark:text-white"
                                 placeholder="John Doe"
@@ -557,7 +644,7 @@ export default function CoverLetterGenerator({
                               <input
                                 type="email"
                                 name="email"
-                                value={resumeData.email}
+                                value={form.email}
                                 onChange={handleResumeFormChange}
                                 className="w-full rounded-md border-gray-300 dark:border-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm dark:bg-gray-700 dark:text-white"
                                 placeholder="john.doe@example.com"
@@ -571,7 +658,7 @@ export default function CoverLetterGenerator({
                               <input
                                 type="text"
                                 name="phone"
-                                value={resumeData.phone}
+                                value={form.phone}
                                 onChange={handleResumeFormChange}
                                 className="w-full rounded-md border-gray-300 dark:border-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm dark:bg-gray-700 dark:text-white"
                                 placeholder="(123) 456-7890"
@@ -585,7 +672,7 @@ export default function CoverLetterGenerator({
                               <input
                                 type="text"
                                 name="location"
-                                value={resumeData.location}
+                                value={form.location}
                                 onChange={handleResumeFormChange}
                                 className="w-full rounded-md border-gray-300 dark:border-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm dark:bg-gray-700 dark:text-white"
                                 placeholder="City, State"
@@ -599,7 +686,7 @@ export default function CoverLetterGenerator({
                               <input
                                 type="text"
                                 name="website"
-                                value={resumeData.website}
+                                value={form.website}
                                 onChange={handleResumeFormChange}
                                 className="w-full rounded-md border-gray-300 dark:border-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm dark:bg-gray-700 dark:text-white"
                                 placeholder="https://yourportfolio.com"
@@ -615,7 +702,7 @@ export default function CoverLetterGenerator({
                               </label>
                               <textarea
                                 name="summary"
-                                value={resumeData.summary}
+                                value={form.summary}
                                 onChange={handleResumeFormChange}
                                 rows={2}
                                 className="w-full rounded-md border-gray-300 dark:border-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm dark:bg-gray-700 dark:text-white"
@@ -629,7 +716,7 @@ export default function CoverLetterGenerator({
                               </label>
                               <textarea
                                 name="experience"
-                                value={resumeData.experience}
+                                value={form.experience}
                                 onChange={handleResumeFormChange}
                                 rows={4}
                                 className="w-full rounded-md border-gray-300 dark:border-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm dark:bg-gray-700 dark:text-white"
@@ -643,7 +730,7 @@ export default function CoverLetterGenerator({
                               </label>
                               <textarea
                                 name="education"
-                                value={resumeData.education}
+                                value={form.education}
                                 onChange={handleResumeFormChange}
                                 rows={2}
                                 className="w-full rounded-md border-gray-300 dark:border-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm dark:bg-gray-700 dark:text-white"
@@ -657,7 +744,7 @@ export default function CoverLetterGenerator({
                               </label>
                               <textarea
                                 name="skills"
-                                value={resumeData.skills}
+                                value={form.skills}
                                 onChange={handleResumeFormChange}
                                 rows={2}
                                 className="w-full rounded-md border-gray-300 dark:border-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm dark:bg-gray-700 dark:text-white"
@@ -671,7 +758,7 @@ export default function CoverLetterGenerator({
                               </label>
                               <textarea
                                 name="certifications"
-                                value={resumeData.certifications}
+                                value={form.certifications}
                                 onChange={handleResumeFormChange}
                                 rows={2}
                                 className="w-full rounded-md border-gray-300 dark:border-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm dark:bg-gray-700 dark:text-white"
@@ -685,7 +772,7 @@ export default function CoverLetterGenerator({
                               </label>
                               <textarea
                                 name="projects"
-                                value={resumeData.projects}
+                                value={form.projects}
                                 onChange={handleResumeFormChange}
                                 rows={2}
                                 className="w-full rounded-md border-gray-300 dark:border-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm dark:bg-gray-700 dark:text-white"
@@ -695,14 +782,15 @@ export default function CoverLetterGenerator({
                           </div>
                           
                           <div className="mt-4 flex justify-end">
-                            <button
+                            <ActionButton
                               type="button"
                               onClick={saveResumeData}
-                              className="inline-flex items-center px-3 py-1.5 border border-transparent rounded-md shadow-sm text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                              color="blue"
+                              className="inline-flex items-center px-3 py-1.5 border border-transparent rounded-md shadow-sm text-xs font-medium"
                             >
                               <Check className="w-3.5 h-3.5 mr-1.5" />
                               Save Resume Data
-                            </button>
+                            </ActionButton>
                           </div>
                         </div>
                       )}
@@ -717,16 +805,18 @@ export default function CoverLetterGenerator({
                             className="hidden"
                             accept=".txt,.pdf,.doc,.docx"
                           />
-                          <button
+                          <ActionButton
                             type="button"
-                            onClick={() => fileInputRef.current?.click()}
+                            color="gray"
+                            as="label"
+                            htmlFor="resume-upload"
                             className="flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                           >
-                            <FileUp className="w-4 h-4 mr-1.5" />
+                            <FileUp className="w-4 h-4 mr-1" />
                             Upload Resume
-                          </button>
+                          </ActionButton>
                           {resumeContent && (
-                            <button
+                            <ActionButton
                               type="button"
                               onClick={() => {
                                 setResumeContent("");
@@ -734,11 +824,12 @@ export default function CoverLetterGenerator({
                                 addDebugMessage("Resume content cleared");
                                 toast.success("Resume content cleared");
                               }}
+                              color="red"
                               className="flex items-center px-3 py-1.5 border border-red-300 dark:border-red-600 rounded-md shadow-sm text-xs font-medium text-red-700 dark:text-red-300 bg-white dark:bg-gray-700 hover:bg-red-50 dark:hover:bg-red-900/20 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
                             >
                               <X className="w-4 h-4 mr-1.5" />
                               Clear
-                            </button>
+                            </ActionButton>
                           )}
                         </div>
                         <textarea
@@ -781,11 +872,12 @@ export default function CoverLetterGenerator({
 
                     {/* Generate Button */}
                     <div className="flex justify-center">
-                      <button
+                      <ActionButton
                         type="button"
                         onClick={generateCoverLetter}
                         disabled={loading}
-                        className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                        color="blue"
+                        className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         {loading ? (
                           <>
@@ -798,14 +890,14 @@ export default function CoverLetterGenerator({
                             Generate Cover Letter
                           </>
                         )}
-                      </button>
+                      </ActionButton>
                     </div>
 
                     {/* Cover Letter Result */}
                     {coverLetterText && (
                       <div className="mt-4 space-y-3">
                         {resumeContent && resumeAnalysis && (
-                          <div className={`p-3 ${resumeAnalysis.used ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300' : 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300'} rounded-md flex items-start`}>
+                          <div className={resumeAnalysis.used ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 rounded-md flex items-start p-3' : 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300 rounded-md flex items-start p-3'}>
                             {resumeAnalysis.used ? (
                               <Check className="w-4 h-4 mr-2 mt-0.5 flex-shrink-0" />
                             ) : (
@@ -835,38 +927,39 @@ export default function CoverLetterGenerator({
                             </div>
                           </div>
                         )}
-                        
                         <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-md bg-gray-50 dark:bg-gray-900 overflow-auto max-h-80">
                           <pre className="text-sm whitespace-pre-wrap font-sans text-gray-800 dark:text-gray-200">
                             {coverLetterText}
                           </pre>
                         </div>
-
                         <div className="flex flex-wrap gap-2 justify-center">
-                          <button
+                          <ActionButton
                             type="button"
                             onClick={downloadAsPDF}
-                            className="inline-flex items-center px-3 py-1.5 border border-transparent rounded-md shadow-sm text-xs font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                            color="green"
+                            className="inline-flex items-center px-3 py-1.5 border border-transparent rounded-md shadow-sm text-xs font-medium"
                           >
                             <Download className="w-4 h-4 mr-1.5" />
                             Download PDF
-                          </button>
-                          <button
+                          </ActionButton>
+                          <ActionButton
                             type="button"
                             onClick={downloadAsDocx}
-                            className="inline-flex items-center px-3 py-1.5 border border-transparent rounded-md shadow-sm text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                            color="indigo"
+                            className="inline-flex items-center px-3 py-1.5 border border-transparent rounded-md shadow-sm text-xs font-medium"
                           >
                             <Download className="w-4 h-4 mr-1.5" />
                             Download DOCX
-                          </button>
-                          <button
+                          </ActionButton>
+                          <ActionButton
                             type="button"
                             onClick={copyToClipboard}
+                            color="gray"
                             className="inline-flex items-center px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                           >
                             <Copy className="w-4 h-4 mr-1.5" />
                             Copy to Clipboard
-                          </button>
+                          </ActionButton>
                         </div>
                       </div>
                     )}
@@ -879,4 +972,4 @@ export default function CoverLetterGenerator({
       </Transition>
     </>
   );
-} 
+}

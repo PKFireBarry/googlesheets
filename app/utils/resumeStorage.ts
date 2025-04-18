@@ -208,37 +208,4 @@ export function deleteResume(): boolean {
     console.error('Error deleting resume:', e);
     return false;
   }
-}
-
-/**
- * Logs debug information about all stored resumes
- * Useful for troubleshooting resume storage issues
- */
-export function debugResumeStorage(): void {
-  if (!isBrowser()) return;
-
-  console.log('--- DEBUG: Resume Storage ---');
-  
-  // Log cookie information
-  console.log('Cookie info - lastSheetUrl:', Cookies.get('lastSheetUrl'));
-  
-  // Log storage key being used
-  const storageKey = getResumeStorageKey();
-  console.log('Current storage key:', storageKey);
-  
-  // Log all localStorage items that look like resume storage
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (key && key.startsWith('masterResume_')) {
-      try {
-        const value = localStorage.getItem(key);
-        const parsed = JSON.parse(value || '{}');
-        console.log(`${key}: type=${parsed.type}, timestamp=${new Date(parsed.timestamp).toLocaleString()}`);
-      } catch (e) {
-        console.log(`${key}: [Error reading value]`);
-      }
-    }
-  }
-  
-  console.log('------------------------');
 } 

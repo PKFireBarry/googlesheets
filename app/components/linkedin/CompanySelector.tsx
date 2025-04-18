@@ -1,6 +1,7 @@
 import React from 'react';
 import { Globe, Search, Loader2, Plus } from 'lucide-react';
 import CookieUtil from '../../utils/cookies';
+import ActionButton from '../ActionButton';
 
 interface CompanySelectorProps {
   loading: boolean;
@@ -34,7 +35,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({
   onSearch
 }) => {
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border border-gray-100 dark:border-gray-700 h-full">
+    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border border-gray-100 dark:border-gray-700 h-full card">
       <div className="flex items-center mb-4">
         <div className="bg-blue-100 dark:bg-blue-900/30 p-2 rounded-lg mr-3">
           <Globe className="w-5 h-5 text-blue-600 dark:text-blue-400" />
@@ -75,18 +76,14 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({
                 placeholder="Enter company name"
                 className="flex-1 px-3 py-2 border border-yellow-400 bg-white dark:bg-yellow-900/20 rounded-md shadow-sm text-yellow-800 dark:text-yellow-200"
               />
-              <button
+              <ActionButton
                 onClick={onSearch}
                 disabled={!customCompany || isSearching}
-                className={`px-4 py-2 rounded-md font-medium flex items-center ${
-                    !customCompany || isSearching
-                      ? 'bg-yellow-300/50 cursor-not-allowed text-yellow-700/50'
-                      : 'bg-yellow-500 hover:bg-yellow-600 text-white'
-                }`}
+                color="emerald"
+                icon={Search}
               >
-                <Search className="w-4 h-4 mr-2" />
                 Search
-              </button>
+              </ActionButton>
             </div>
           </div>
         </div>
@@ -128,27 +125,24 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({
                     )}
                   </div>
                   
-                  <button
-                    type="button"
+                  <ActionButton
                     onClick={() => setUseCustomCompany(!useCustomCompany)}
-                    className="inline-flex items-center justify-center px-4 py-3 border border-gray-300 dark:border-gray-700 shadow-sm text-sm font-medium rounded-lg text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200"
+                    color="default"
+                    icon={Plus}
                   >
-                    <Plus className="w-4 h-4 mr-1.5" />
                     {useCustomCompany ? "Use List" : "Custom"}
-                  </button>
+                  </ActionButton>
                 </div>
               </div>
             </div>
           </div>
           
-          <button
+          <ActionButton
             onClick={onSearch}
             disabled={(!selectedCompany && !customCompany) || isSearching}
-            className={`w-full mt-4 px-4 py-3 rounded-lg font-medium flex items-center justify-center transition-all duration-200 ${
-                (!selectedCompany && !customCompany) || isSearching
-                  ? 'bg-gray-400 cursor-not-allowed text-gray-200'
-                  : 'bg-blue-600 hover:bg-blue-700 text-white shadow-md hover:shadow-lg'
-            }`}
+            color="blue"
+            className="w-full mt-4"
+            size="lg"
           >
             {isSearching ? (
               <>
@@ -161,7 +155,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({
                 Find HR Contacts
               </>
             )}
-          </button>
+          </ActionButton>
         </>
       )}
     </div>

@@ -1,10 +1,10 @@
 "use client"
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import JobCard from './JobCard'
 import { ChevronLeft, ChevronRight, Grid, List, MapPin, Calendar, Link2, CheckCircle, Filter, ArrowUpDown, Briefcase } from 'lucide-react'
 import { generateJobId, getFieldValue, formatDateSafely, formatExperience } from '../utils/dataHelpers'
-import { RowData } from '../types/data'
+import ActionButton from './ActionButton'
 
 interface JobData {
   data?: string[];
@@ -59,6 +59,24 @@ const checkIfJobApplied = (consistentJobId: string, title: string, company: stri
           appliedJobs.some(id => company ? id.startsWith(`${title}-${company}`) : id === title);
 };
 
+// Remove duplicate import block and fix Tag component
+const Tag = ({ text, icon: Icon, onClick, className = "" }: { text: string; icon?: React.ElementType; onClick?: (e: React.MouseEvent<HTMLButtonElement, MouseEvent>) => void; className?: string }) => {
+  if (!text) return null;
+  return (
+    <ActionButton
+      type={onClick ? "button" : undefined}
+      onClick={(e) => { e.stopPropagation(); if (onClick) onClick(e); }}
+      color="gray"
+      className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 hover:bg-blue-100 dark:hover:bg-blue-900 transition-colors whitespace-nowrap ${className}`}
+      style={{ cursor: onClick ? "pointer" : "default" }}
+      tabIndex={onClick ? 0 : -1}
+    >
+      {Icon && <Icon className="w-3.5 h-3.5 mr-1" />}
+      {text}
+    </ActionButton>
+  );
+};
+
 export default function JobCardGrid({
   jobs,
   headers,
@@ -74,7 +92,6 @@ export default function JobCardGrid({
   onAddSourceFilter
 }: JobCardGridProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [sortedJobs, setSortedJobs] = useState<JobData[]>([]);
   const cardRef = useRef<HTMLDivElement>(null);
   const [selectedJobForDetail, setSelectedJobForDetail] = useState<PreparedJob | null>(null);
   const [keyboardListIndex, setKeyboardListIndex] = useState<number>(-1);
@@ -90,67 +107,60 @@ export default function JobCardGrid({
   // Minimum swipe distance (in px)
   const minSwipeDistance = 50;
 
-  useEffect(() => {
-    // Sort jobs by date (newest first)
-    if (jobs.length > 0) {
-      const datePostedIndex = findColumnIndex('date_posted');
-      const currentDateIndex = findColumnIndex('currentdate');
-      
-      const sortedJobsCopy = [...jobs].sort((a, b) => {
-        const jobA = Array.isArray(a) ? a : a.data || [];
-        const jobB = Array.isArray(b) ? b : b.data || [];
-        
-        let dateA: Date | null = null;
-        let dateB: Date | null = null;
-        
-        // Try to get dates from either date_posted or currentDate
-        if (datePostedIndex !== -1) {
-          dateA = new Date(jobA[datePostedIndex] || '');
-          dateB = new Date(jobB[datePostedIndex] || '');
-        } else if (currentDateIndex !== -1) {
-          dateA = new Date(jobA[currentDateIndex] || '');
-          dateB = new Date(jobB[currentDateIndex] || '');
-        }
-        
-        // If both dates are valid, compare them
-        if (dateA && dateB && !isNaN(dateA.getTime()) && !isNaN(dateB.getTime())) {
-          return dateB.getTime() - dateA.getTime();
-        }
-        
-        // Default to original order
-        return 0;
-      });
-      
-      // Diagnostic: Check for duplicate jobs
-      const jobMap = new Map<string, JobData[]>();
-      sortedJobsCopy.forEach((job) => {
-        const title = getFieldValue(job, "title", headers);
-        const company = getFieldValue(job, "company_name", headers);
-        
-        if (title && company) {
-          const key = `${title.trim()}_${company.trim()}`.toLowerCase().replace(/\s+/g, '_');
-          if (!jobMap.has(key)) {
-            jobMap.set(key, []);
-          }
-          jobMap.get(key)!.push(job);
-        }
-      });
-      
-      // Log any duplicates found
-      let duplicatesFound = false;
-      jobMap.forEach((jobList, key) => {
-        if (jobList.length > 1) {
-          duplicatesFound = true;
-          console.warn(`Found duplicates for job: ${key} (${jobList.length} instances)`);
-        }
-      });
-      
-      if (!duplicatesFound) {
-        console.log("No duplicate jobs found in the current view");
+  // Move findColumnIndex above useMemo
+  const findColumnIndex = (fieldName: string) => {
+    if (!headers || headers.length === 0) return -1
+    return headers.findIndex(
+      (header) => header.toLowerCase() === fieldName.toLowerCase()
+    )
+  }
+
+  // Remove sortedJobs state and useMemo for sorting
+  const sortedJobs = useMemo(() => {
+    if (jobs.length === 0) return [];
+    const datePostedIndex = findColumnIndex('date_posted');
+    const currentDateIndex = findColumnIndex('currentdate');
+    const sortedJobsCopy = [...jobs].sort((a, b) => {
+      const jobA = Array.isArray(a) ? a : a.data || [];
+      const jobB = Array.isArray(b) ? b : b.data || [];
+      let dateA: Date | null = null;
+      let dateB: Date | null = null;
+      if (datePostedIndex !== -1) {
+        dateA = new Date(jobA[datePostedIndex] || '');
+        dateB = new Date(jobB[datePostedIndex] || '');
+      } else if (currentDateIndex !== -1) {
+        dateA = new Date(jobA[currentDateIndex] || '');
+        dateB = new Date(jobB[currentDateIndex] || '');
       }
-      
-      setSortedJobs(sortedJobsCopy);
+      if (dateA && dateB && !isNaN(dateA.getTime()) && !isNaN(dateB.getTime())) {
+        return dateB.getTime() - dateA.getTime();
+      }
+      return 0;
+    });
+    // Diagnostic: Check for duplicate jobs
+    const jobMap = new Map<string, JobData[]>();
+    sortedJobsCopy.forEach((job) => {
+      const title = getFieldValue(job, "title", headers);
+      const company = getFieldValue(job, "company_name", headers);
+      if (title && company) {
+        const key = `${title.trim()}_${company.trim()}`.toLowerCase().replace(/\s+/g, '_');
+        if (!jobMap.has(key)) {
+          jobMap.set(key, []);
+        }
+        jobMap.get(key)!.push(job);
+      }
+    });
+    let duplicatesFound = false;
+    jobMap.forEach((jobList, key) => {
+      if (jobList.length > 1) {
+        duplicatesFound = true;
+        console.warn(`Found duplicates for job: ${key} (${jobList.length} instances)`);
+      }
+    });
+    if (!duplicatesFound) {
+      console.log("No duplicate jobs found in the current view");
     }
+    return sortedJobsCopy;
   }, [jobs, headers]);
 
   const onTouchStart = (e: React.TouchEvent) => {
@@ -183,14 +193,6 @@ export default function JobCardGrid({
     document.addEventListener('touchmove', handleTouchMove);
     document.addEventListener('touchend', handleTouchEnd);
   };
-
-  const findColumnIndex = (fieldName: string) => {
-    if (!headers || headers.length === 0) return -1
-    
-    return headers.findIndex(
-      (header) => header.toLowerCase() === fieldName.toLowerCase()
-    )
-  }
   
   const goToNextJob = () => {
     if (sortedJobs.length === 0 || isAnimating) return
@@ -234,11 +236,6 @@ export default function JobCardGrid({
         setDirection(null)
       }, 50)
     }, 200)
-  }
-  
-  const isJobInAppliedList = (job: JobData, index: number): boolean => {
-    const id = generateJobId(job, index, headers)
-    return appliedJobs.includes(id)
   }
   
   const prepareJobData = (job: JobData, index: number): any => {
@@ -604,12 +601,6 @@ export default function JobCardGrid({
               onDelete(selectedJobForDetail.originalIndex)
               handleBackToList()
             }}
-            onUpdateNote={(note) => {
-              const notesIndex = findColumnIndex('notes')
-              if (notesIndex !== -1) {
-                onUpdateNote(selectedJobForDetail.originalIndex, note, notesIndex)
-              }
-            }}
             onHide={() => handleHide(selectedJobForDetail)}
             onAddSkillFilter={onAddSkillFilter}
             onAddSourceFilter={onAddSourceFilter}
@@ -714,17 +705,15 @@ export default function JobCardGrid({
                     <div className="flex flex-wrap gap-y-1 gap-x-3 text-xs text-gray-500 dark:text-gray-400 mb-3">
                       {preparedJob.source && (
                          <div className="flex items-center">
-                            <Link2 className="w-3 h-3 mr-1 flex-shrink-0 text-gray-400" />
-                            <button
+                            <Tag
+                              text={preparedJob.source}
+                              icon={Link2}
                               onClick={(e) => { 
                                 e.stopPropagation(); 
                                 onAddSourceFilter?.(preparedJob.source); 
                               }}
-                              className="source-text group relative cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 font-medium"
-                              title={`Click to add "${preparedJob.source}" to source filters`}
-                            >
-                              {preparedJob.source}
-                            </button>
+                              className="source-text font-medium"
+                            />
                           </div>
                       )}
                       {preparedJob.experience && (
@@ -741,17 +730,15 @@ export default function JobCardGrid({
                          <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1.5">Skills</h4>
                         <div className="flex flex-wrap gap-1.5">
                           {skills.slice(0, 4).map((skill: string, idx: number) => (
-                             <button
-                                key={idx}
-                                onClick={(e) => { 
-                                  e.stopPropagation();
-                                  onAddSkillFilter?.(skill); 
-                                }}
-                                className="skill-badge group relative cursor-pointer text-[11px] bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full px-2 py-0.5 hover:bg-blue-100 dark:hover:bg-blue-900 transition-colors whitespace-nowrap"
-                                title={`Click to add "${skill}" to skill filters`}
-                              >
-                                {skill}
-                              </button>
+                            <Tag
+                              key={idx}
+                              text={skill}
+                              onClick={(e) => { 
+                                e.stopPropagation();
+                                onAddSkillFilter?.(skill); 
+                              }}
+                              className="skill-badge"
+                            />
                           ))}
                           {skills.length > 4 && (
                             <span className="text-[11px] text-gray-400 dark:text-gray-500 px-1 py-0.5">+{skills.length - 4} more</span>
@@ -813,17 +800,15 @@ export default function JobCardGrid({
                         </div>
                         {preparedJob.source && (
                           <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 flex items-center">
-                            <Link2 className="w-3 h-3 mr-1" />
-                            <button
+                            <Tag
+                              text={preparedJob.source}
+                              icon={Link2}
                               onClick={(e) => { 
                                 e.stopPropagation();
                                 onAddSourceFilter?.(preparedJob.source); 
                               }}
-                              className="source-text group relative cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 font-medium"
-                              title={`Click to add \"${preparedJob.source}\" to source filters`}
-                            >
-                              {preparedJob.source}
-                            </button>
+                              className="source-text font-medium"
+                            />
                           </div>
                         )}
                       </td>
@@ -877,7 +862,7 @@ export default function JobCardGrid({
       <ViewToggle />
       <div
         ref={cardRef}
-        className={`relative ${animationClass}`}
+        className={`relative ${animationClass} card`}
         onTouchStart={onTouchStart}
       >
         <JobCard
@@ -887,7 +872,6 @@ export default function JobCardGrid({
           onApply={handleApply}
           onDelete={handleDelete}
           onHide={() => handleHide(currentJob)}
-          onUpdateNote={handleUpdateNote}
           onAddSkillFilter={onAddSkillFilter}
           onAddSourceFilter={onAddSourceFilter}
         />

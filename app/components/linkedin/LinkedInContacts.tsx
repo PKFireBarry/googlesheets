@@ -1,9 +1,10 @@
 import React from 'react';
 import { 
   Search, Linkedin, Key, ExternalLink, X, Copy, Check, 
-  MessageSquare, RefreshCw, MapPin, ArrowRight, Loader2 
+  MessageSquare, RefreshCw, MapPin, ArrowRight 
 } from 'lucide-react';
 import { LinkedInContactData } from '../../utils/webhook';
+import ActionButton from '../ActionButton';
 
 interface LinkedInContactsProps {
   geminiApiKey: string;
@@ -294,23 +295,20 @@ const LinkedInContacts: React.FC<LinkedInContactsProps> = ({
                     
                     <div className="flex items-center gap-2">
                       {/* Edit/Save Button */}
-                      <button
+                      <ActionButton
                         onClick={() => onEditMessage(safeContact.linkedinUrl || safeContact.name)}
-                        className={`inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-lg transition-colors duration-200 ${
-                            isEditingMessage[safeContact.linkedinUrl || safeContact.name] 
-                              ? 'bg-blue-600 text-white hover:bg-blue-700'
-                              : 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900/50'
-                        }`}
+                        color={isEditingMessage[safeContact.linkedinUrl || safeContact.name] ? "blue" : "default"}
+                        className="text-xs"
                       >
                         {isEditingMessage[safeContact.linkedinUrl || safeContact.name] ? (
                           <>Save Changes</>
                         ) : (
                           <>Edit Message</>
                         )}
-                      </button>
+                      </ActionButton>
                       
                       {/* Copy Button */}
-                      <button
+                      <ActionButton
                         onClick={() => onCopyMessage(
                           editableMessages[safeContact.linkedinUrl || safeContact.name] || generateOutreachMessage(
                             contact, 
@@ -318,11 +316,8 @@ const LinkedInContacts: React.FC<LinkedInContactsProps> = ({
                           ),
                           safeContact.linkedinUrl || safeContact.name
                         )}
-                        className={`inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-lg transition-colors duration-200 ${
-                            copiedMessageIds[safeContact.linkedinUrl || safeContact.name]
-                              ? 'bg-green-600 text-white'
-                              : 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-900/50'
-                        }`}
+                        color={copiedMessageIds[safeContact.linkedinUrl || safeContact.name] ? "green" : "default"}
+                        className="text-xs"
                       >
                         {copiedMessageIds[safeContact.linkedinUrl || safeContact.name] ? (
                           <>
@@ -335,7 +330,7 @@ const LinkedInContacts: React.FC<LinkedInContactsProps> = ({
                             Copy Message
                           </>
                         )}
-                      </button>
+                      </ActionButton>
                     </div>
                   </div>
                   
@@ -357,19 +352,21 @@ const LinkedInContacts: React.FC<LinkedInContactsProps> = ({
                         </div>
                       </div>
                       <div className="mt-3 flex justify-end space-x-3">
-                        <button
+                        <ActionButton
                           onClick={() => onRegenerateMessage(safeContact.linkedinUrl || safeContact.name, contact)}
-                          className="px-3 py-2 text-xs font-medium rounded-lg bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 flex items-center transition-colors duration-200"
+                          color="default"
+                          className="text-xs"
+                          icon={RefreshCw}
                         >
-                          <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
                           Regenerate
-                        </button>
-                        <button
+                        </ActionButton>
+                        <ActionButton
                           onClick={() => onSaveMessage(safeContact.linkedinUrl || safeContact.name)}
-                          className="px-3 py-2 text-xs font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors duration-200 shadow-sm"
+                          color="blue"
+                          className="text-xs"
                         >
                           Save Changes
-                        </button>
+                        </ActionButton>
                       </div>
                     </div>
                   ) : (
@@ -381,34 +378,37 @@ const LinkedInContacts: React.FC<LinkedInContactsProps> = ({
                         )}
                       </div>
                       <div className="mt-3 flex justify-end space-x-3">
-                        <button
+                        <ActionButton
                           onClick={() => onRegenerateMessage(safeContact.linkedinUrl || safeContact.name, contact)}
-                          className="px-3 py-2 text-xs font-medium rounded-lg bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 flex items-center transition-colors duration-200"
+                          color="default"
+                          className="text-xs"
+                          icon={RefreshCw}
                         >
-                          <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
                           Regenerate
-                        </button>
-                        <button
+                        </ActionButton>
+                        <ActionButton
                           onClick={() => onEditMessage(safeContact.linkedinUrl || safeContact.name)}
-                          className="px-3 py-2 text-xs font-medium rounded-lg bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors duration-200"
+                          color="blue"
+                          className="text-xs"
                         >
                           Edit Message
-                        </button>
+                        </ActionButton>
                       </div>
                     </div>
                   )}
                   
                   <div className="mt-3 flex justify-end">
                     {safeContact.linkedinUrl && safeContact.linkedinUrl !== 'n/a' && (
-                      <a 
-                        href={`${formatUrl(safeContact.linkedinUrl)}/message`} 
-                        target="_blank" 
+                      <ActionButton
+                        href={`${formatUrl(safeContact.linkedinUrl)}/message`}
+                        target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center px-4 py-2 text-xs font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors duration-200 shadow-sm hover:shadow"
+                        color="blue"
+                        className="text-xs"
+                        icon={MessageSquare}
                       >
-                        <MessageSquare className="w-3.5 h-3.5 mr-1.5" />
                         Message on LinkedIn
-                      </a>
+                      </ActionButton>
                     )}
                   </div>
                 </div>
@@ -424,14 +424,15 @@ const LinkedInContacts: React.FC<LinkedInContactsProps> = ({
           <div className="text-center sm:text-left flex-1">
             <p className="font-medium text-lg">Ready to search</p>
             <p className="mt-1">Click "Find HR Contacts" to search for HR personnel at {selectedCompany}</p>
-            <button
+            <ActionButton
               onClick={onSearch}
               disabled={isSearching}
-              className="mt-4 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors duration-200 inline-flex items-center"
+              color="blue"
+              className="mt-4"
+              icon={Search}
             >
-              <Search className="w-4 h-4 mr-2" />
               Find HR Contacts
-            </button>
+            </ActionButton>
           </div>
         </div>
       ) : (

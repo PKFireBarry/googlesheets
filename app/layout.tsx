@@ -4,6 +4,7 @@ import "./globals.css";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
 import { Toaster } from "sonner";
+import { Providers } from "./providers";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -31,12 +32,22 @@ export default function RootLayout({
       <body
         className={`${inter.variable} font-sans antialiased min-h-screen flex flex-col bg-gradient-to-b from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-950 no-overflow`}
       >
-        <Navbar />
-        <main className="flex-grow container mx-auto px-4 py-8 no-overflow mobile-container">
-          {children}
-        </main>
-        <Footer />
-        <Toaster richColors position="top-right" />
+        <Providers>
+          <div className="flex h-screen overflow-hidden">
+            <Navbar />
+            <div className="flex-1 overflow-y-auto w-full flex flex-col">
+              <main className="flex-grow py-8 navbar-margin-adjustment">
+                <div className="max-w-6xl mx-auto px-4 sm:px-6">
+                  {children}
+                </div>
+              </main>
+              <div className="navbar-margin-adjustment">
+                <Footer />
+              </div>
+            </div>
+          </div>
+          <Toaster richColors position="top-right" />
+        </Providers>
       </body>
     </html>
   );

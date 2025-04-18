@@ -2,7 +2,7 @@
 
 import { RowData, FilteredRow } from './types/data';
 import { getRowData, getRowIndex } from './utils/dataHelpers';
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useState, useEffect } from "react";
 import Cookies from "js-cookie";
 import { FileSpreadsheet, CheckCircle, AlertCircle, Search, X, Sliders, Calendar, MapPin, DollarSign, Ban, List, Grid, XCircle, HelpCircle, ChevronDown, Briefcase } from "lucide-react";
 import ClientSkillsFilter from "./components/ClientSkillsFilter";
@@ -36,9 +36,9 @@ import FilterSection from "./components/home/FilterSection";
 import JobResultsGrid from "./components/home/JobResultsGrid";
 import IndustrySelector from "./components/home/IndustrySelector";
 import WelcomeModal from "./components/home/WelcomeModal";
+import ActionButton from './components/ActionButton';
 
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY;
-const RANGE = process.env.NEXT_PUBLIC_RANGE;
 
 // Sheet name constants
 const SHEET_NAME_TECH = process.env.NEXT_PUBLIC_SHEET_NAME_TECH || "Tech Jobs";
@@ -96,7 +96,6 @@ export default function Home() {
     const saved = Cookies.get("hiddenJobs");
     return saved ? JSON.parse(saved) : [];
   });
-  const [rowIndices, setRowIndices] = useState<number[]>([]);
   const [totalSheetRows, setTotalSheetRows] = useState<number>(0);
   const [isSheetLoaded, setIsSheetLoaded] = useState(false);
   const [loadingJobs, setLoadingJobs] = useState(false);
@@ -633,9 +632,6 @@ export default function Home() {
       // Keep the original structure with originalIndex for JobCardGrid
       setData([headers, ...uniqueRows]);
 
-      const indices = uniqueRows.map((row: RowData) => Array.isArray(row) ? -1 : (row.originalIndex || -1));
-      setRowIndices(indices);
-
       // Find column indices for skills and locations processing
       const locationIndex = headers.findIndex((h: string) => h.toLowerCase() === 'location');
       const skillsIndex = headers.findIndex((h: string) => h.toLowerCase() === 'skills');
@@ -808,12 +804,6 @@ export default function Home() {
         const uniqueRows = dedupJobs(validRows, headers);
         setData([headers, ...uniqueRows]);
         
-        const indices = uniqueRows.map((row: RowData) => Array.isArray(row) ? -1 : (row.originalIndex || -1));
-        setRowIndices(indices);
-        
-        // Process other data like skills, locations, etc.
-        // This code is duplicated from fetchData - consider refactoring later
-        
         setLoadingJobs(false);
         setIsSheetLoaded(true);
         return true;
@@ -861,7 +851,7 @@ export default function Home() {
                                 appliedJobs.some(id => id.startsWith(`${jobTitle}-${jobCompany}`));
       
       // Create a new array without any variations of this job ID
-      let newAppliedJobs = appliedJobs.filter(id => 
+      const newAppliedJobs = appliedJobs.filter(id => 
         id !== consistentJobId && 
         id !== jobTitle && 
         !id.startsWith(`${jobTitle}-${jobCompany}`));
@@ -1461,13 +1451,14 @@ export default function Home() {
               <div className="text-sm text-gray-600 dark:text-gray-400">
                 Viewing: <span className="font-medium">{currentSheetName}</span>
               </div>
-              <button
+              <ActionButton
                 onClick={handleChangeIndustry}
-                className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 flex items-center"
+                color="blue"
+                className="text-sm flex items-center"
               >
                 <Briefcase className="w-4 h-4 mr-1" />
                 Change Industry
-              </button>
+              </ActionButton>
             </div>
           )}
 
@@ -1528,12 +1519,13 @@ export default function Home() {
           ) : (
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 sm:p-8 text-center border border-gray-100 dark:border-gray-700">
               <p className="text-mobile-sm text-gray-600 dark:text-gray-400 mb-2">No jobs match your current filters</p>
-              <button
+              <ActionButton
                 onClick={clearFilters}
-                className="inline-flex items-center px-3 py-1.5 sm:px-4 sm:py-2 border border-transparent rounded-md shadow-sm text-xs sm:text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                color="blue"
+                className="inline-flex items-center px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-medium"
               >
                 Clear All Filters
-              </button>
+              </ActionButton>
             </div>
           )}
         </>

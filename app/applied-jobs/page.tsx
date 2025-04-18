@@ -11,11 +11,10 @@ import LoadingState from "../components/appliedjobs/LoadingState";
 import EmptyState from "../components/appliedjobs/EmptyState";
 import JobStatusHeader from "../components/appliedjobs/JobStatusHeader";
 import ToastNotification from "../components/appliedjobs/ToastNotification";
-import { dedupJobs, getFieldValue } from "../utils/dataHelpers";
+import { getFieldValue } from "../utils/dataHelpers";
 import { RowData, RowDataObject } from "../types/data";
 
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY;
-const RANGE = process.env.NEXT_PUBLIC_RANGE;
 
 // Define potential sheet names (mirroring app/page.tsx)
 const SHEET_NAMES = [
@@ -370,9 +369,9 @@ export default function AppliedJobsPage() {
   const handleToggleApplied = (jobIdentifier: string, jobDetails?: { title: string, company: string, sheetName: string }) => {
     console.log("Toggle applied for identifier:", jobIdentifier, "with details:", jobDetails);
     
-    let titleToRemove = jobDetails?.title || jobIdentifier; // Fallback to identifier if details missing
-    let companyToRemove = jobDetails?.company || "";
-    let sheetToRemove = jobDetails?.sheetName || "";
+    const titleToRemove = jobDetails?.title || jobIdentifier; // Fallback to identifier if details missing
+    const companyToRemove = jobDetails?.company || "";
+    const sheetToRemove = jobDetails?.sheetName || "";
 
     // Create IDs to potentially remove based on the provided details or the identifier
     const titleCompanyId = titleToRemove && companyToRemove ? `${titleToRemove}-${companyToRemove}`.replace(/\s+/g, '-') : "";

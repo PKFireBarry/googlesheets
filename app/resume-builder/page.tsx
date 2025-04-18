@@ -7,7 +7,7 @@ import { generateResumeFile } from '../utils/resumeGenerator';
 import { ResumeData, PersonalInfo } from '../types/resume';
 import { toast, Toaster } from 'react-hot-toast';
 import Cookies from 'js-cookie';
-import { saveResume, loadResume, deleteResume, resumeExists, getResumeStorageKey } from '../utils/resumeStorage';
+import { saveResume, loadResume, deleteResume, resumeExists } from '../utils/resumeStorage';
 import ResumeStorageUI from '../components/ResumeStorageUI';
 
 // Import our new components
@@ -226,7 +226,7 @@ function ResumeBuilderContent(): React.ReactElement {
       try {
         // If jobId is provided in the URL, load just that job
         if (jobId) {
-          let jobData = null;
+          const jobData = null;
           
           // Try to find the job in different storage locations
           const savedJobsData = localStorage.getItem('savedJobs');

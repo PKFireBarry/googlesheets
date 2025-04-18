@@ -1,5 +1,6 @@
 import React from 'react';
 import { Info } from 'lucide-react';
+import ActionButton from '../ActionButton';
 
 interface ResumeUploadProps {
   resumeContent: string;
@@ -50,12 +51,14 @@ const ResumeUpload: React.FC<ResumeUploadProps> = ({
               onChange={onResumeUpload}
               className="sr-only"
             />
-            <label
+            <ActionButton
+              as="label"
               htmlFor="resume-upload"
+              color="gray"
               className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
             >
               Upload Resume
-            </label>
+            </ActionButton>
           </div>
           
           {Object.keys(savedResumes).length > 0 && (

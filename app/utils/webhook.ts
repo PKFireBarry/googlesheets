@@ -1,30 +1,6 @@
 // LinkedIn lookup utility functions
 
 /**
- * Ensures the URL has the proper protocol
- * @param url The URL to process
- * @returns The URL with the proper protocol
- */
-export const ensureProperProtocol = (url: string): string => {
-  // If it's a localhost URL without protocol, add https:// for our specific webhook
-  if (url.startsWith('localhost') && url.includes('5678/webhook')) {
-    return `https://${url}`;
-  }
-  
-  // If it's a regular localhost URL without protocol, add http://
-  if (url.startsWith('localhost')) {
-    return `http://${url}`;
-  }
-  
-  // If there's no protocol, add https://
-  if (!url.startsWith('http://') && !url.startsWith('https://')) {
-    return `https://${url}`;
-  }
-  
-  return url;
-};
-
-/**
  * Creates a promise that resolves after a specified delay
  * @param ms Delay in milliseconds
  * @returns A promise that resolves after the delay

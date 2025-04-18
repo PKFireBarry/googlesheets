@@ -1,4 +1,5 @@
 import React from 'react';
+import ActionButton from '../ActionButton';
 
 interface ActionButtonsProps {
   step: number;
@@ -27,28 +28,29 @@ const ActionButtons: React.FC<ActionButtonsProps> = ({
 }) => {
   return (
     <div className="flex justify-between">
-      <button
+      <ActionButton
         onClick={onPrevious}
+        color="gray"
         className="inline-flex items-center px-3 py-1.5 sm:px-4 sm:py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
       >
         Back
-      </button>
+      </ActionButton>
       
       {step === 3 && onStartOver ? (
-        <button
+        <ActionButton
           onClick={onStartOver}
+          color="gray"
           className="inline-flex items-center px-3 py-1.5 sm:px-4 sm:py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gray-600 hover:bg-gray-700 transition focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
         >
           Start Over
-        </button>
+        </ActionButton>
       ) : onNext ? (
-        <button
+        <ActionButton
           onClick={onNext}
           disabled={isLoading || isNextDisabled}
           title={isNextDisabled ? nextDisabledReason : ''}
-          className={`${
-            isLoading ? 'bg-blue-400' : isNextDisabled ? 'bg-blue-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
-          } text-white px-3 py-1.5 sm:px-4 sm:py-2 border border-transparent rounded-md shadow-sm text-sm font-medium transition flex items-center focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500`}
+          color="blue"
+          className={`${isLoading ? 'bg-blue-400' : isNextDisabled ? 'bg-blue-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'} text-white px-3 py-1.5 sm:px-4 sm:py-2 border border-transparent rounded-md shadow-sm text-sm font-medium transition flex items-center focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500`}
         >
           {isLoading ? (
             <>
@@ -61,7 +63,7 @@ const ActionButtons: React.FC<ActionButtonsProps> = ({
           ) : (
             nextLabel
           )}
-        </button>
+        </ActionButton>
       ) : null}
     </div>
   );

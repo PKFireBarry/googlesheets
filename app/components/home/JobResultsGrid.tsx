@@ -1,6 +1,6 @@
 import React from 'react';
 import JobCardGrid from '../JobCardGrid';
-import { RowData, FilteredRow } from '../../types/data';
+import { FilteredRow } from '../../types/data';
 
 interface JobResultsGridProps {
   jobs: FilteredRow[];

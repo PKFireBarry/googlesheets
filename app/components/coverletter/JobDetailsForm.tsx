@@ -1,5 +1,6 @@
 import React from 'react';
 import { Building, Briefcase, MapPin, Edit3, Save } from 'lucide-react';
+import ActionButton from '../ActionButton';
 
 interface JobDetailsFormProps {
   jobTitle: string;
@@ -128,13 +129,14 @@ const JobDetailsForm: React.FC<JobDetailsFormProps> = ({
           
           {jobDetailsEditable && (
             <div className="flex justify-end">
-              <button
+              <ActionButton
                 onClick={onSaveJobDetails}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                color="blue"
+                className="px-4 py-2 text-sm font-medium rounded-md shadow-sm"
                 disabled={!jobTitle || !companyName || !jobDescription}
               >
                 <Save className="w-4 h-4 mr-1" /> Save Job Details
-              </button>
+              </ActionButton>
             </div>
           )}
         </div>

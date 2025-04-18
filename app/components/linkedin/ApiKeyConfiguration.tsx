@@ -1,5 +1,6 @@
 import React from 'react';
 import { Settings, Key, HelpCircle } from 'lucide-react';
+import ActionButton from '../ActionButton';
 
 interface ApiKeyConfigurationProps {
   geminiApiKey: string;
@@ -19,7 +20,7 @@ const ApiKeyConfiguration: React.FC<ApiKeyConfigurationProps> = ({
   onHelp
 }) => {
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border border-gray-100 dark:border-gray-700 h-full">
+    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 border border-gray-100 dark:border-gray-700 h-full card">
       <div className="flex items-center mb-4">
         <div className="bg-blue-100 dark:bg-blue-900/30 p-2 rounded-lg mr-3">
           <Settings className="w-5 h-5 text-blue-600 dark:text-blue-400" />
@@ -32,13 +33,15 @@ const ApiKeyConfiguration: React.FC<ApiKeyConfigurationProps> = ({
           <label htmlFor="gemini-api-key" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
             Gemini API Key
           </label>
-          <button
+          <ActionButton
             onClick={onHelp}
-            className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 inline-flex items-center text-xs"
+            color="blue"
+            className="inline-flex items-center text-xs"
+            size="xs"
           >
             <HelpCircle className="w-3 h-3 mr-1" />
             How to get an API key
-          </button>
+          </ActionButton>
         </div>
         <div className="relative">
           <input
@@ -69,12 +72,13 @@ const ApiKeyConfiguration: React.FC<ApiKeyConfigurationProps> = ({
       </div>
       
       <div className="flex space-x-2">
-        <button
+        <ActionButton
           onClick={onSave}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md"
+          color="blue"
+          icon={Key}
         >
           Save Configuration
-        </button>
+        </ActionButton>
       </div>
     </div>
   );

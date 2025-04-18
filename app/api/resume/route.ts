@@ -59,7 +59,7 @@ const extractJsonFromResponse = (text: string): string => {
  * @param data The resume data object
  * @returns Cleaned resume data with placeholder locations removed
  */
-const cleanPlaceholderLocations = (data: any): any => {
+const cleanPlaceholderLocations = (data: unknown): unknown => {
   // Helper function to check if a location is a placeholder
   const isPlaceholderLocation = (loc: string): boolean => {
     const placeholderPatterns = [
@@ -73,28 +73,35 @@ const cleanPlaceholderLocations = (data: any): any => {
     return placeholderPatterns.some(pattern => pattern.test(loc));
   };
 
+  // Type assertion for main object
+  const d = data as {
+    contact?: { location?: string };
+    experience?: { location?: string }[];
+    education?: { location?: string }[];
+  };
+
   // Clean the main contact location
-  if (data.contact?.location && isPlaceholderLocation(data.contact.location)) {
-    data.contact.location = '';
+  if (d.contact?.location && isPlaceholderLocation(d.contact.location)) {
+    d.contact.location = '';
   }
 
   // Clean experience locations
-  if (Array.isArray(data.experience)) {
-    data.experience = data.experience.map((exp: any) => ({
+  if (Array.isArray(d.experience)) {
+    d.experience = d.experience.map((exp) => ({
       ...exp,
       location: exp.location && isPlaceholderLocation(exp.location) ? '' : exp.location
     }));
   }
 
   // Clean education locations
-  if (Array.isArray(data.education)) {
-    data.education = data.education.map((edu: any) => ({
+  if (Array.isArray(d.education)) {
+    d.education = d.education.map((edu) => ({
       ...edu,
       location: edu.location && isPlaceholderLocation(edu.location) ? '' : edu.location
     }));
   }
 
-  return data;
+  return d;
 };
 
 /**

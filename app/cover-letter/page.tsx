@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { toast, Toaster } from "react-hot-toast";
 import { jsPDF } from "jspdf";
 import Cookies from "js-cookie";
-import { loadResume, saveResume, deleteResume, resumeExists } from '../utils/resumeStorage';
+import { loadResume, saveResume, resumeExists } from '../utils/resumeStorage';
 import { convertToCoverLetterFormat, prepareResumeTextForAPI } from '../utils/resumeAdapter';
 import ResumeStorageUI from '../components/ResumeStorageUI';
 import ResumeForm, { 
@@ -22,7 +22,6 @@ import ResumeUpload from '../components/coverletter/ResumeUpload';
 import CoverLetterOutput from '../components/coverletter/CoverLetterOutput';
 import GenerateButton from '../components/coverletter/GenerateButton';
 import LoadingState from '../components/coverletter/LoadingState';
-import ErrorDisplay from '../components/resume/ErrorDisplay';
 
 // Helper function to parse skills string
 function parseSkillsString(skillsString: string): string {

@@ -1,9 +1,9 @@
 import React from 'react';
-import { AlertCircle } from 'lucide-react';
+import Alert from '../appliedjobs/ErrorMessage';
 
 interface ErrorDisplayProps {
   error: string | null;
-  onClearFilters: () => void;
+  onClearFilters?: () => void;
 }
 
 /**
@@ -12,26 +12,20 @@ interface ErrorDisplayProps {
  */
 const ErrorDisplay: React.FC<ErrorDisplayProps> = ({ error, onClearFilters }) => {
   if (!error) return null;
-  
   return (
-    <div className="max-w-4xl mx-auto mb-6">
-      <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative" role="alert">
-        <div className="flex items-center">
-          <AlertCircle className="h-5 w-5 mr-2" />
-          <p>{error}</p>
+    <>
+      <Alert message={error} type="error" />
+      {onClearFilters && error.includes('filter') && (
+        <div className="w-full max-w-2xl mx-auto px-4 mb-4">
+          <button
+            onClick={onClearFilters}
+            className="text-sm bg-red-100 hover:bg-red-200 text-red-700 px-3 py-1 rounded transition-colors"
+          >
+            Clear All Filters
+          </button>
         </div>
-        {error.includes('filter') && (
-          <div className="mt-2 flex gap-2">
-            <button
-              onClick={onClearFilters}
-              className="text-sm bg-red-100 hover:bg-red-200 text-red-700 px-3 py-1 rounded transition-colors"
-            >
-              Clear All Filters
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
+      )}
+    </>
   );
 };
 

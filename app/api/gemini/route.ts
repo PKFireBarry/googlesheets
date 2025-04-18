@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 // Gemini API Configuration
-const GEMINI_MODEL = 'gemini-2.0-flash';
+const GEMINI_MODEL = 'ggemini-2.5-flash-preview-04-17';
 
 /**
  * Extracts JSON from a possibly markdown-formatted response
@@ -140,21 +140,6 @@ IMPORTANT: Return ONLY the JSON object with no markdown formatting, no code bloc
     });
     
     if (!response.ok) {
-      const errorData = await response.json();
-      
-      // Provide more specific error messages for common API key issues
-      if (response.status === 400) {
-        return NextResponse.json(
-          { error: 'Invalid request to Gemini API. Check your API key format.' },
-          { status: 400 }
-        );
-      } else if (response.status === 403) {
-        return NextResponse.json(
-          { error: 'Access denied by Gemini API. Your API key may be invalid or you may have exceeded your quota.' },
-          { status: 403 }
-        );
-      }
-      
       return NextResponse.json(
         { error: `Gemini API error: ${response.statusText}` },
         { status: response.status }

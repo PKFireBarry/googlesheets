@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { Filter } from 'lucide-react'
+import ActionButton from './ActionButton'
 
 interface FilterPanelProps {
   filterFields: Array<{ label: string; value: string }>;
@@ -101,15 +102,14 @@ export default function FilterPanel({
               </div>
             </div>
             
-            <button
+            <ActionButton
               type="submit"
               disabled={!filterField || !filterValue}
-              className={`w-full px-3 sm:px-4 py-1.5 sm:py-2 rounded-md text-xs sm:text-sm font-medium ${
-                filterType === "include" ? "bg-blue-600 hover:bg-blue-700" : "bg-red-600 hover:bg-red-700"
-              } text-white disabled:bg-gray-400 disabled:cursor-not-allowed`}
+              color={filterType === "include" ? "blue" : "red"}
+              className="w-full px-3 sm:px-4 py-1.5 sm:py-2 rounded-md text-xs sm:text-sm font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
             >
               {filterType === "include" ? "Add Include Filter" : "Add Exclude Filter"}
-            </button>
+            </ActionButton>
           </form>
           
           {activeFilters.length > 0 && (
@@ -126,12 +126,13 @@ export default function FilterPanel({
                     <span>
                       {filterFields.find((f) => f.value === filter.field)?.label || filter.field}: {filter.value}
                     </span>
-                    <button
-                      className="ml-1.5 sm:ml-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+                    <ActionButton
+                      className="ml-1.5 sm:ml-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 px-2 py-0.5"
+                      color="gray"
                       onClick={() => onToggleFilter(filter.field, filter.value, filter.type)}
                     >
                       &times;
-                    </button>
+                    </ActionButton>
                   </div>
                 ))}
               </div>
