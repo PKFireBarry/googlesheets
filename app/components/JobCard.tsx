@@ -291,6 +291,7 @@ export default function JobCard({
           className="inline-flex items-center px-4 py-2 rounded-full text-sm font-semibold 
                    bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 
                    hover:bg-gray-700 dark:hover:bg-gray-300 transition-colors shadow-md"
+                   color='blue'
         >
           Actions
           {showDetails ? <ChevronUp className="w-4 h-4 ml-1.5" /> : <ChevronDown className="w-4 h-4 ml-1.5" />}
@@ -322,6 +323,7 @@ export default function JobCard({
                   onApply();
                 }}
                 className="inline-flex items-center w-full justify-center px-4 py-2 rounded-lg text-sm font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900/50 transition-colors border border-blue-200 dark:border-blue-700"
+                color='blue'
               >
                 <CheckCircle className="w-4 h-4 mr-2" />
                 Mark as Applied
@@ -357,6 +359,7 @@ export default function JobCard({
                            border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 
                            text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600
                            transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+                           color='blue'
                 >
                   <Globe className="w-4 h-4 mr-2" />
                   Company Site
@@ -401,6 +404,7 @@ export default function JobCard({
                          border border-blue-600 dark:border-blue-500 bg-white dark:bg-gray-700
                          text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20
                          transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                         color='blue'
               >
                 <Linkedin className="w-4 h-4 mr-2" />
                 Recruiter
@@ -419,6 +423,7 @@ export default function JobCard({
                            border border-amber-600 dark:border-amber-500 bg-white dark:bg-gray-700
                            text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20
                            transition-all duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500"
+                           color='blue'
                 >
                   <EyeOff className="w-4 h-4 mr-2" />
                   Hide Job
