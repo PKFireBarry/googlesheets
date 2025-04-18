@@ -149,7 +149,7 @@ export default function Home() {
           filterText: parsedFilters.filterText || "",
           selectedLocation: parsedFilters.selectedLocation || "",
           skillFilter: parsedFilters.skillFilter || "",
-          showFilters: parsedFilters.showFilters || false,
+          showFilters: parsedFilters.showFilters === true || parsedFilters.showFilters === 'true',
           timeRangeFilter: parsedFilters.timeRangeFilter || 168,
           minSalary: parsedFilters.minSalary || 0,
           salaryType: parsedFilters.salaryType || "any",
@@ -485,6 +485,17 @@ export default function Home() {
       });
     }
 
+    // Filter out hidden jobs
+    if (hiddenJobs.length > 0) {
+      filtered = filtered.filter((row) => {
+        const title = getFieldValue(row, "title", headers);
+        const company = getFieldValue(row, "company_name", headers);
+        const consistentJobId = `${title}-${company}`.replace(/\s+/g, '-');
+        const hiddenIdentifier = `hide:${title}::${company}`;
+        return !hiddenJobs.includes(consistentJobId) && !hiddenJobs.includes(hiddenIdentifier);
+      });
+    }
+
     // Update the filtered rows mapping
     const filteredWithIndices: FilteredRow[] = filtered.map((row, index) => ({
       data: getRowData(row),
@@ -492,7 +503,7 @@ export default function Home() {
     }));
 
     setFilteredRows(filteredWithIndices);
-  }, [data, filters.filterText, filters.selectedLocation, filters.skillFilter, filters.timeRangeFilter, filters.minSalary, filters.salaryType, filters.excludedWords, appliedJobs, filters.sourceFilter, filters.titleFilter, filters.maxExperience]);
+  }, [data, filters.filterText, filters.selectedLocation, filters.skillFilter, filters.timeRangeFilter, filters.minSalary, filters.salaryType, filters.excludedWords, appliedJobs, filters.sourceFilter, filters.titleFilter, filters.maxExperience, hiddenJobs]);
 
   const handleUrlSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -806,6 +817,7 @@ export default function Home() {
         
         setLoadingJobs(false);
         setIsSheetLoaded(true);
+
         return true;
       } else {
         throw new Error("No sheets found in this spreadsheet");
@@ -885,12 +897,29 @@ export default function Home() {
     }
   };
 
-  const handleDeleteJob = async (rowIndex: number) => {
+  const handleDeleteJob = async (jobId: string) => {
     if (!spreadsheetId) return;
 
-    console.log('Deleting job with rowIndex:', rowIndex);
-    
     try {
+      // Find the rowIndex in the data array for the jobId
+      const headers = data.length > 0 ? data[0] : [];
+      const rows = data.slice(1);
+      let rowIndexToDelete = -1;
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const title = getFieldValue(row, "title", headers);
+        const company = getFieldValue(row, "company_name", headers);
+        const rowJobId = `${title}-${company}`.replace(/\s+/g, '-');
+        if (rowJobId === jobId) {
+          rowIndexToDelete = i + 2; // originalIndex is idx+2
+          break;
+        }
+      }
+      if (rowIndexToDelete === -1) {
+        setError("Could not find job to delete");
+        return;
+      }
+
       const response = await fetch("/api/sheets/delete", {
         method: "POST",
         headers: {
@@ -898,25 +927,30 @@ export default function Home() {
         },
         body: JSON.stringify({
           spreadsheetId,
-          rowIndex,
+          rowIndex: rowIndexToDelete,
         }),
       });
 
-      console.log('Delete response status:', response.status);
-      
       if (!response.ok) {
         const errorData = await response.json();
-        console.error('Delete error response:', errorData);
         throw new Error(errorData.error || "Failed to delete row");
       }
 
-      const result = await response.json();
-      console.log('Delete success response:', result);
+      // Remove the job from local state by jobId
+      setData(prevData => {
+        if (prevData.length === 0) return prevData;
+        const headers = prevData[0];
+        const rows = prevData.slice(1);
+        const newRows = rows.filter(row => {
+          const title = getFieldValue(row, "title", headers);
+          const company = getFieldValue(row, "company_name", headers);
+          const rowJobId = `${title}-${company}`.replace(/\s+/g, '-');
+          return rowJobId !== jobId;
+        });
+        return [headers, ...newRows];
+      });
 
-      // Refresh data after deletion
-      fetchData(spreadsheetId);
     } catch (error: any) {
-      console.error("Error deleting row:", error);
       setError(error.message || "Failed to delete row");
     }
   };
@@ -1009,7 +1043,7 @@ export default function Home() {
       filterText: filters.filterText,
       selectedLocation: filters.selectedLocation,
       skillFilter: filters.skillFilter,
-      showFilters: filters.showFilters,
+      showFilters: !!filters.showFilters,
       timeRangeFilter: filters.timeRangeFilter,
       minSalary: filters.minSalary,
       salaryType: filters.salaryType,
@@ -1261,7 +1295,7 @@ export default function Home() {
     if (selectedIndustry) {
       // Save selected industry in cookie
       Cookies.set("lastIndustry", selectedIndustry, { expires: 30 });
-      
+      Cookies.remove("lastSheetUrl"); // Remove legacy if not using custom
       loadJobsForIndustry(selectedIndustry);
       setShowIndustrySelector(false);
     }
@@ -1379,6 +1413,9 @@ export default function Home() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 no-overflow mobile-container">
+      {/* Loading Indicator - show if loadingJobs or data is not loaded and not blocked by modal/error */}
+      {(loadingJobs || (!isSheetLoaded && !showIndustrySelector && !isWelcomeModalOpen && !error)) && <LoadingIndicator />}
+
       {/* Page Header */}
       <PageHeader />
 
@@ -1420,9 +1457,6 @@ export default function Home() {
           onClearFilters={clearFilters} 
         />
       )}
-
-      {/* Loading Indicator */}
-      {loadingJobs && <LoadingIndicator />}
 
       {/* No Results Message */}
       {!loadingJobs && !error && filteredRows.length === 0 && data.length > 1 && (

@@ -7,7 +7,7 @@ interface JobResultsGridProps {
   headers: string[];
   appliedJobs: string[];
   onApply: (jobId: string) => void;
-  onDelete: (rowIndex: number) => void;
+  onDelete: (jobId: string) => void;
   onUpdateNote: (rowIndex: number, note: string, columnIndex: number) => void;
   onHide?: (jobId: string, title: string, company: string) => void;
   viewMode: 'card' | 'list';

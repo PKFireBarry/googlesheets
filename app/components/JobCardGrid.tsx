@@ -42,7 +42,7 @@ interface JobCardGridProps {
   headers: string[];
   appliedJobs: string[];
   onApply: (jobId: string) => void;
-  onDelete: (rowIndex: number) => void;
+  onDelete: (jobId: string) => void;
   onUpdateNote: (rowIndex: number, note: string, columnIndex: number) => void;
   onHide?: (jobId: string, title: string, company: string) => void;
   viewMode?: 'card' | 'list';
@@ -106,6 +106,8 @@ export default function JobCardGrid({
   
   // Minimum swipe distance (in px)
   const minSwipeDistance = 50;
+
+  const prevJobsLength = useRef(jobs.length);
 
   // Move findColumnIndex above useMemo
   const findColumnIndex = (fieldName: string) => {
@@ -328,12 +330,12 @@ export default function JobCardGrid({
   }
   
   const handleDelete = () => {
-    if (sortedJobs.length === 0) return
-    
-    const job = sortedJobs[currentIndex]
-    const originalIndex = job.originalIndex || 0
-    
-    onDelete(originalIndex)
+    if (sortedJobs.length === 0) return;
+    const job = sortedJobs[currentIndex];
+    const title = getFieldValue(job, "title", headers);
+    const company = getFieldValue(job, "company_name", headers);
+    const jobId = `${title}-${company}`.replace(/\s+/g, '-');
+    onDelete(jobId);
   }
   
   const handleApply = () => {
@@ -499,7 +501,20 @@ export default function JobCardGrid({
     }
   }, [currentIndex, viewMode, sortedJobs]);
 
-  if (sortedJobs.length === 0) {
+  // After jobs change, advance to next card if a card was deleted
+  useEffect(() => {
+    if (jobs.length < prevJobsLength.current) {
+      setCurrentIndex(prev => {
+        if (prev >= jobs.length) {
+          return jobs.length - 1 >= 0 ? jobs.length - 1 : 0;
+        }
+        return prev;
+      });
+    }
+    prevJobsLength.current = jobs.length;
+  }, [jobs.length]);
+
+  if (!sortedJobs.length || currentIndex < 0 || currentIndex >= sortedJobs.length) {
     return <div className="text-center py-8 text-gray-500">No job listings found</div>
   }
 
@@ -598,7 +613,7 @@ export default function JobCardGrid({
               onApply(consistentJobId || selectedJobForDetail.id || selectedJobForDetail.title)
             }}
             onDelete={() => {
-              onDelete(selectedJobForDetail.originalIndex)
+              onDelete(selectedJobForDetail.id)
               handleBackToList()
             }}
             onHide={() => handleHide(selectedJobForDetail)}
