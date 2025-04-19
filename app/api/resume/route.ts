@@ -170,7 +170,10 @@ Website: ${personalInfo.website || 'Extract from resume or omit'}
     }
     
     // Prepare the prompt for Gemini
-    const instructionText = `I need you to create a tailored resume for a job application. I'll provide you with my resume ${resumePdfData ? 'as a PDF' : 'data'} and the job details. Please create a professional resume that highlights the most relevant skills, experiences, and qualifications that match the job requirements without adding any false information.
+    const instructionText = `I need you to create a tailored resume for a job application. I'll provide you with my resume ${resumePdfData ? 'as a PDF' : 'data'} and the job details. Please create a professional resume that highlights the most relevant skills, experiences, and qualifications that match the job requirements without adding any false information. 
+    Be sure to make sure to ajust the skills to better align with the job but dont just add the skills to the resume if not found in the provided resume. 
+    If the job is related to software development make sure to add only the most relevant projects to the resume. you can ajust the bullet points of the experience for each job to better align to the job description by crafting a better story to why the information is googd for the role. The resume at most Should Only be at most 1 pages long.
+     At most pick 3 experience and 2 projects.
 
 Here are the job details:
 ${jobDetailsSection}
@@ -199,7 +202,8 @@ Return the complete resume content in a structured JSON format:
     "phone": "555-555-5555",
     "location": "City, State",
     "linkedin": "linkedin.com/in/username",
-    "website": "personalwebsite.com"
+    "website": "personalwebsite.com",
+    "Github": "github.com"
   },
   "summary": "Professional summary paragraph",
   "skills": ["Skill 1", "Skill 2", "Skill 3", ...],
