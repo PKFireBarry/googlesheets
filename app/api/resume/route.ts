@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ResumeData, ExperienceEntry } from '../../types/resume';
 
 // Gemini API Configuration
-const GEMINI_MODEL = 'gemini-2.5-flash-preview-04-17';
+const GEMINI_MODEL = 'gemini-2.0-flash';
+
 
 // Gemini API Types
 interface GeminiTextPart {
