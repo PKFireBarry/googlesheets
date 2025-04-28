@@ -201,6 +201,9 @@ export default function Home() {
     } else {
       // First time user - show industry selector
       setShowIndustrySelector(true);
+      // Make sure loading state is false to prevent infinite loading
+      setLoading(false);
+      setLoadingJobs(false);
     }
   }, []);
 
@@ -507,39 +510,47 @@ export default function Home() {
 
   const handleUrlSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (sheetUrl) {
-      const id = extractSpreadsheetId(sheetUrl);
-      if (id) {
-        setSpreadsheetId(id);
-        setLoadingJobs(true);
-        Cookies.set("lastSheetUrl", sheetUrl, { expires: 30 }); // Save URL in cookie for 30 days
-        
-        // Remove any lastIndustry cookie to prevent it from overriding this URL on reload
-        Cookies.remove("lastIndustry");
-        
-        // For manually added sheets, set a custom label right away
-        setCurrentSheetName("Legacy");
-        
-        // Try Sheet1 first for compatibility
-        fetchData(id, "Sheet1")
-          .catch(error => {
-            console.error("Error fetching Sheet1:", error);
-            // If Sheet1 fails, try to find available sheets as fallback
-            return tryFetchAvailableSheets(id);
-          })
-          .then(success => {
-            if (success) {
-              setIsSheetLoaded(true);
-            }
-          })
-          .catch(err => {
-            console.error("Error fetching sheets:", err);
-          });
-      } else {
-        setError("Invalid Google Sheets URL");
-      }
+    
+    // Clear any previous errors
+    setError(null);
+    
+    if (!sheetUrl || sheetUrl.trim() === '') {
+      setError("Please enter a Google Sheets URL");
+      return;
+    }
+    
+    const id = extractSpreadsheetId(sheetUrl);
+    if (id) {
+      setSpreadsheetId(id);
+      setLoadingJobs(true);
+      Cookies.set("lastSheetUrl", sheetUrl, { expires: 30 }); // Save URL in cookie for 30 days
+      
+      // Remove any lastIndustry cookie to prevent it from overriding this URL on reload
+      Cookies.remove("lastIndustry");
+      
+      // For manually added sheets, set a custom label right away
+      setCurrentSheetName("Legacy");
+      
+      // Try Sheet1 first for compatibility
+      fetchData(id, "Sheet1")
+        .catch(error => {
+          console.error("Error fetching Sheet1:", error);
+          // If Sheet1 fails, try to find available sheets as fallback
+          return tryFetchAvailableSheets(id);
+        })
+        .then(success => {
+          if (success) {
+            setIsSheetLoaded(true);
+          }
+        })
+        .catch(err => {
+          console.error("Error fetching sheets:", err);
+          setLoadingJobs(false);
+          setError("Failed to load sheet data. Please verify the URL and try again.");
+        });
     } else {
       setError("Invalid Google Sheets URL");
+      setLoadingJobs(false);
     }
   };
 
@@ -1324,6 +1335,12 @@ export default function Home() {
   const handleShowCustomUrlInput = () => {
     setShowIndustrySelector(false);
     setIsSheetLoaded(false);
+    // Ensure loading states are reset when showing the custom URL input
+    setLoading(false);
+    setLoadingJobs(false);
+    setError(null);
+    // Clear any previously set URL
+    setSheetUrl("");
   };
 
   // Add new skill filter from card/list item
@@ -1413,8 +1430,8 @@ export default function Home() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 no-overflow mobile-container">
-      {/* Loading Indicator - show if loadingJobs or data is not loaded and not blocked by modal/error */}
-      {(loadingJobs || (!isSheetLoaded && !showIndustrySelector && !isWelcomeModalOpen && !error)) && <LoadingIndicator />}
+      {/* Loading Indicator - only show if explicitly loading jobs or data */}
+      {(loadingJobs) && <LoadingIndicator />}
 
       {/* Page Header */}
       <PageHeader />
