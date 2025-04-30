@@ -37,6 +37,19 @@ export async function generateResumeFile(
 }
 
 /**
+ * Sanitize text to prevent null or undefined values that might cause PDF generation errors
+ * 
+ * @param text The text to sanitize
+ * @returns A sanitized string
+ */
+function sanitizeText(text: string | null | undefined): string {
+  if (text === null || text === undefined) {
+    return '';
+  }
+  return String(text);
+}
+
+/**
  * Generate and download a PDF resume
  * 
  * @param resumeData The structured resume data
@@ -52,9 +65,9 @@ async function generatePDF(resumeData: ResumeData, filename: string): Promise<vo
   
   // Set document properties
   doc.setProperties({
-    title: `${resumeData.name} - Resume`,
+    title: `${sanitizeText(resumeData.name)} - Resume`,
     subject: 'Resume',
-    author: resumeData.name,
+    author: sanitizeText(resumeData.name),
     creator: 'Job Application Tracker'
   });
   
@@ -81,6 +94,9 @@ async function generatePDF(resumeData: ResumeData, filename: string): Promise<vo
   };
   
   const formatCompanyLocation = (company: string, location: string): string => {
+    company = sanitizeText(company);
+    location = sanitizeText(location);
+    
     if (!location || location.trim() === '') return company;
     return !location.includes('City') && 
            !location.includes('State') &&
@@ -88,6 +104,8 @@ async function generatePDF(resumeData: ResumeData, filename: string): Promise<vo
   };
   
   const addSectionTitle = (text: string): void => {
+    text = sanitizeText(text);
+    
     // Check if we need a page break - don't put section title at very bottom of page
     checkPageBreak(MIN_SECTION_SPACE);
     
@@ -100,6 +118,8 @@ async function generatePDF(resumeData: ResumeData, filename: string): Promise<vo
   };
   
   const addParagraph = (text: string): void => {
+    text = sanitizeText(text);
+    
     // Split text into lines that fit within the page width
     const lines = doc.splitTextToSize(text, width);
     
@@ -111,7 +131,13 @@ async function generatePDF(resumeData: ResumeData, filename: string): Promise<vo
   };
   
   const addBulletPoints = (points: string[]): void => {
+    if (!points || !Array.isArray(points)) {
+      return;
+    }
+    
     points.forEach(point => {
+      point = sanitizeText(point);
+      
       // Calculate space needed for this bullet point
       const lines = doc.splitTextToSize(`• ${point}`, width - 2);
       
@@ -126,7 +152,7 @@ async function generatePDF(resumeData: ResumeData, filename: string): Promise<vo
   // Add header with name and contact info
   doc.setFontSize(24);
   doc.setFont('helvetica', 'bold');
-  doc.text(resumeData.name, margin, y);
+  doc.text(sanitizeText(resumeData.name), margin, y);
   y += 8;
   
   // Contact information
@@ -134,19 +160,21 @@ async function generatePDF(resumeData: ResumeData, filename: string): Promise<vo
   doc.setFont('helvetica', 'normal');
   const contact = resumeData.contact;
   const contactText = [
-    `${contact.email} | ${contact.phone}`,
-    `${contact.location}${contact.linkedin ? ` | ${contact.linkedin}` : ''}${contact.website ? ` | ${contact.website}` : ''}`
+    `${sanitizeText(contact.email)} | ${sanitizeText(contact.phone)}`,
+    `${sanitizeText(contact.location)}${contact.linkedin ? ` | ${sanitizeText(contact.linkedin)}` : ''}${contact.website ? ` | ${sanitizeText(contact.website)}` : ''}`
   ];
   doc.text(contactText, margin, y);
   y += 10;
   
   // Summary
   addSectionTitle('SUMMARY');
-  addParagraph(resumeData.summary);
+  addParagraph(sanitizeText(resumeData.summary));
   
   // Skills
   addSectionTitle('SKILLS');
-  const skillsText = resumeData.skills.join(', ');
+  const skillsArray = Array.isArray(resumeData.skills) ? resumeData.skills : [];
+  const sanitizedSkills = skillsArray.map(skill => sanitizeText(skill));
+  const skillsText = sanitizedSkills.join(', ');
   addParagraph(skillsText);
   
   // Experience
@@ -154,19 +182,21 @@ async function generatePDF(resumeData: ResumeData, filename: string): Promise<vo
   resumeData.experience.forEach((exp: ExperienceEntry) => {
     // Calculate minimum space needed for this experience entry
     // Title + company + at least one bullet point
-    const estimatedHeight = 15 + (exp.highlights[0] ? 
-                                 doc.splitTextToSize(`• ${exp.highlights[0]}`, width - 2).length * 5 : 0);
+    const highlights = Array.isArray(exp.highlights) ? exp.highlights : [];
+    const firstHighlight = highlights.length > 0 ? sanitizeText(highlights[0]) : '';
+    const estimatedHeight = 15 + (firstHighlight ? 
+                                 doc.splitTextToSize(`• ${firstHighlight}`, width - 2).length * 5 : 0);
     
     // Check if we need a new page - don't split a job entry heading from its first content
     checkPageBreak(Math.max(MIN_ENTRY_SPACE, estimatedHeight));
     
     doc.setFont('helvetica', 'bold');
-    doc.text(`${exp.title}`, margin, y);
+    doc.text(sanitizeText(exp.title), margin, y);
     
     // Company and dates right-aligned
-    const dateWidth = doc.getTextWidth(exp.dates);
+    const dateWidth = doc.getTextWidth(sanitizeText(exp.dates));
     doc.setFont('helvetica', 'normal');
-    doc.text(exp.dates, margin + width - dateWidth, y);
+    doc.text(sanitizeText(exp.dates), margin + width - dateWidth, y);
     y += 5;
     
     // Company and location
@@ -183,30 +213,32 @@ async function generatePDF(resumeData: ResumeData, filename: string): Promise<vo
   addSectionTitle('EDUCATION');
   resumeData.education.forEach((edu: EducationEntry) => {
     // Calculate minimum space needed for this education entry
-    const estimatedHeight = 15 + ((edu.details && edu.details[0]) ? 
-                                 doc.splitTextToSize(`• ${edu.details[0]}`, width - 2).length * 5 : 0);
+    const details = Array.isArray(edu.details) ? edu.details : [];
+    const firstDetail = details.length > 0 ? sanitizeText(details[0]) : '';
+    const estimatedHeight = 15 + (firstDetail ? 
+                                 doc.splitTextToSize(`• ${firstDetail}`, width - 2).length * 5 : 0);
     
     // Check if we need a new page - don't split education entry header from its content
     checkPageBreak(Math.max(25, estimatedHeight));
     
     doc.setFont('helvetica', 'bold');
-    doc.text(`${edu.degree}`, margin, y);
+    doc.text(sanitizeText(edu.degree), margin, y);
     
     // Dates right-aligned
-    const dateWidth = doc.getTextWidth(edu.dates);
+    const dateWidth = doc.getTextWidth(sanitizeText(edu.dates));
     doc.setFont('helvetica', 'normal');
-    doc.text(edu.dates, margin + width - dateWidth, y);
+    doc.text(sanitizeText(edu.dates), margin + width - dateWidth, y);
     y += 5;
     
     // Institution and location
     doc.setFont('helvetica', 'italic');
-    doc.text(`${edu.institution}, ${edu.location}`, margin, y);
+    doc.text(`${sanitizeText(edu.institution)}, ${sanitizeText(edu.location)}`, margin, y);
     y += 6;
     
     // Details
-    if (edu.details && edu.details.length > 0) {
+    if (details.length > 0) {
       doc.setFont('helvetica', 'normal');
-      addBulletPoints(edu.details);
+      addBulletPoints(details);
     }
   });
   
@@ -215,22 +247,28 @@ async function generatePDF(resumeData: ResumeData, filename: string): Promise<vo
     addSectionTitle('PROJECTS');
     resumeData.projects.forEach((project: ProjectEntry) => {
       // Calculate minimum space needed for this project entry
-      const descLines = project.description ? doc.splitTextToSize(project.description, width).length * 5 : 0;
-      const highlightLines = (project.highlights && project.highlights[0]) ? 
-                             doc.splitTextToSize(`• ${project.highlights[0]}`, width - 2).length * 5 : 0;
+      const projectDescription = sanitizeText(project.description);
+      const descLines = projectDescription ? doc.splitTextToSize(projectDescription, width).length * 5 : 0;
+      
+      const highlights = Array.isArray(project.highlights) ? project.highlights : [];
+      const firstHighlight = highlights.length > 0 ? sanitizeText(highlights[0]) : '';
+      const highlightLines = firstHighlight ? 
+                             doc.splitTextToSize(`• ${firstHighlight}`, width - 2).length * 5 : 0;
       const estimatedHeight = 10 + (project.technologies ? 5 : 0) + descLines + highlightLines;
       
       // Check if we need a new page
       checkPageBreak(Math.max(20, estimatedHeight));
       
       doc.setFont('helvetica', 'bold');
-      doc.text(project.name, margin, y);
+      doc.text(sanitizeText(project.name), margin, y);
       y += 5;
       
       // Technologies
       if (project.technologies && project.technologies.length > 0) {
         doc.setFont('helvetica', 'italic');
-        const techText = `Technologies: ${project.technologies.join(', ')}`;
+        const techArray = Array.isArray(project.technologies) ? project.technologies : [];
+        const sanitizedTechnologies = techArray.map(tech => sanitizeText(tech));
+        const techText = `Technologies: ${sanitizedTechnologies.join(', ')}`;
         const techLines = doc.splitTextToSize(techText, width);
         
         // Check if tech list will fit on this page
@@ -241,15 +279,15 @@ async function generatePDF(resumeData: ResumeData, filename: string): Promise<vo
       }
       
       // Description
-      if (project.description) {
+      if (projectDescription) {
         doc.setFont('helvetica', 'normal');
-        addParagraph(project.description);
+        addParagraph(projectDescription);
       }
       
       // Highlights
-      if (project.highlights && project.highlights.length > 0) {
+      if (highlights.length > 0) {
         doc.setFont('helvetica', 'normal');
-        addBulletPoints(project.highlights);
+        addBulletPoints(highlights);
       }
     });
   }
@@ -262,18 +300,18 @@ async function generatePDF(resumeData: ResumeData, filename: string): Promise<vo
       checkPageBreak(10);
       
       doc.setFont('helvetica', 'bold');
-      doc.text(cert.name, margin, y);
+      doc.text(sanitizeText(cert.name), margin, y);
       
       // Date right-aligned
-      const dateWidth = doc.getTextWidth(cert.date);
+      const dateWidth = doc.getTextWidth(sanitizeText(cert.date));
       doc.setFont('helvetica', 'normal');
-      doc.text(cert.date, margin + width - dateWidth, y);
+      doc.text(sanitizeText(cert.date), margin + width - dateWidth, y);
       y += 6;
       
       // Issuer if available
       if (cert.issuer) {
       doc.setFont('helvetica', 'italic');
-        doc.text(cert.issuer, margin, y);
+        doc.text(sanitizeText(cert.issuer), margin, y);
         y += 5;
       }
     });
@@ -292,6 +330,9 @@ async function generatePDF(resumeData: ResumeData, filename: string): Promise<vo
 async function generateDOCX(resumeData: ResumeData, filename: string): Promise<void> {
   // Helper function for formatting company location
   const formatCompanyLocation = (company: string, location: string): string => {
+    company = sanitizeText(company);
+    location = sanitizeText(location);
+    
     if (!location || location.trim() === '') return company;
     return !location.includes('City') && 
            !location.includes('State') &&
@@ -304,7 +345,7 @@ async function generateDOCX(resumeData: ResumeData, filename: string): Promise<v
     <html>
     <head>
       <meta charset="utf-8">
-      <title>${resumeData.name} - Resume</title>
+      <title>${sanitizeText(resumeData.name)} - Resume</title>
       <style>
         body {
           font-family: Arial, sans-serif;
@@ -372,21 +413,21 @@ async function generateDOCX(resumeData: ResumeData, filename: string): Promise<v
       </style>
     </head>
     <body>
-      <h1>${resumeData.name}</h1>
+      <h1>${sanitizeText(resumeData.name)}</h1>
       <div class="contact">
-        ${resumeData.contact.email} | ${resumeData.contact.phone} | ${resumeData.contact.location}
-        ${resumeData.contact.linkedin ? ` | ${resumeData.contact.linkedin}` : ''}
-        ${resumeData.contact.website ? ` | ${resumeData.contact.website}` : ''}
+        ${sanitizeText(resumeData.contact.email)} | ${sanitizeText(resumeData.contact.phone)} | ${sanitizeText(resumeData.contact.location)}
+        ${resumeData.contact.linkedin ? ` | ${sanitizeText(resumeData.contact.linkedin)}` : ''}
+        ${resumeData.contact.website ? ` | ${sanitizeText(resumeData.contact.website)}` : ''}
       </div>
       
       <div class="section">
         <h2>SUMMARY</h2>
-        <p>${resumeData.summary}</p>
+        <p>${sanitizeText(resumeData.summary)}</p>
       </div>
       
       <div class="section">
         <h2>SKILLS</h2>
-        <p>${resumeData.skills.join(', ')}</p>
+        <p>${Array.isArray(resumeData.skills) ? resumeData.skills.map(skill => sanitizeText(skill)).join(', ') : ''}</p>
       </div>
       
       <div class="section">
@@ -394,12 +435,12 @@ async function generateDOCX(resumeData: ResumeData, filename: string): Promise<v
         ${resumeData.experience.map(exp => `
           <div class="job">
             <div class="job-header">
-              <span class="job-title">${exp.title}</span>
-              <span class="job-date">${exp.dates}</span>
+              <span class="job-title">${sanitizeText(exp.title)}</span>
+              <span class="job-date">${sanitizeText(exp.dates)}</span>
             </div>
             <div class="company">${formatCompanyLocation(exp.company, exp.location)}</div>
             <ul>
-              ${exp.highlights.map(highlight => `<li>${highlight}</li>`).join('')}
+              ${Array.isArray(exp.highlights) ? exp.highlights.map(highlight => `<li>${sanitizeText(highlight)}</li>`).join('') : ''}
             </ul>
           </div>
         `).join('')}
@@ -410,34 +451,34 @@ async function generateDOCX(resumeData: ResumeData, filename: string): Promise<v
         ${resumeData.education.map(edu => `
           <div class="education">
             <div class="edu-header">
-              <span class="edu-degree">${edu.degree}</span>
-              <span class="edu-date">${edu.dates}</span>
+              <span class="edu-degree">${sanitizeText(edu.degree)}</span>
+              <span class="edu-date">${sanitizeText(edu.dates)}</span>
             </div>
-            <div class="institution">${edu.institution}, ${edu.location}</div>
-            ${edu.details && edu.details.length > 0 ? `
+            <div class="institution">${sanitizeText(edu.institution)}, ${sanitizeText(edu.location)}</div>
+            ${edu.details && Array.isArray(edu.details) && edu.details.length > 0 ? `
               <ul>
-                ${edu.details.map(detail => `<li>${detail}</li>`).join('')}
+                ${edu.details.map(detail => `<li>${sanitizeText(detail)}</li>`).join('')}
               </ul>
             ` : ''}
           </div>
         `).join('')}
       </div>
       
-      ${resumeData.projects && resumeData.projects.length > 0 ? `
+      ${resumeData.projects && Array.isArray(resumeData.projects) && resumeData.projects.length > 0 ? `
         <div class="section">
           <h2>PROJECTS</h2>
           ${resumeData.projects.map(project => `
             <div class="project">
               <div class="project-header">
-                <span class="project-name">${project.name}</span>
+                <span class="project-name">${sanitizeText(project.name)}</span>
               </div>
-              ${project.technologies && project.technologies.length > 0 ? `
-                <div class="tech">Technologies: ${project.technologies.join(', ')}</div>
+              ${project.technologies && Array.isArray(project.technologies) && project.technologies.length > 0 ? `
+                <div class="tech">Technologies: ${project.technologies.map(tech => sanitizeText(tech)).join(', ')}</div>
               ` : ''}
-              ${project.description ? `<p>${project.description}</p>` : ''}
-              ${project.highlights && project.highlights.length > 0 ? `
+              ${project.description ? `<p>${sanitizeText(project.description)}</p>` : ''}
+              ${project.highlights && Array.isArray(project.highlights) && project.highlights.length > 0 ? `
                 <ul>
-                  ${project.highlights.map(highlight => `<li>${highlight}</li>`).join('')}
+                  ${project.highlights.map(highlight => `<li>${sanitizeText(highlight)}</li>`).join('')}
                 </ul>
               ` : ''}
             </div>
@@ -445,16 +486,16 @@ async function generateDOCX(resumeData: ResumeData, filename: string): Promise<v
         </div>
       ` : ''}
       
-      ${resumeData.certifications && resumeData.certifications.length > 0 ? `
+      ${resumeData.certifications && Array.isArray(resumeData.certifications) && resumeData.certifications.length > 0 ? `
         <div class="section">
           <h2>CERTIFICATIONS</h2>
           ${resumeData.certifications.map(cert => `
             <div class="certification">
               <div class="cert-header">
-                <span class="cert-name">${cert.name}</span>
-                <span class="cert-date">${cert.date}</span>
+                <span class="cert-name">${sanitizeText(cert.name)}</span>
+                <span class="cert-date">${sanitizeText(cert.date)}</span>
               </div>
-              ${cert.issuer ? `<div class="institution">${cert.issuer}</div>` : ''}
+              ${cert.issuer ? `<div class="institution">${sanitizeText(cert.issuer)}</div>` : ''}
             </div>
           `).join('')}
         </div>
