@@ -529,7 +529,7 @@ export default function AppliedJobsPage() {
   };
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6">
+    <div>
       <div className="mb-8 sm:mb-12">
         <PageHeader />
       </div>

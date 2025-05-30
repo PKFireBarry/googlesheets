@@ -465,7 +465,7 @@ function CoverLetterForm() {
   };
   
   return (
-    <div className="container mx-auto px-4 py-8">
+    <div>
       <Toaster position="top-right" />
       
       <div className="max-w-4xl mx-auto">

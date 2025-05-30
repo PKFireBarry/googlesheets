@@ -1359,7 +1359,7 @@ export default function Home() {
   };
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 no-overflow mobile-container">
+    <div className="no-overflow mobile-container">
       {/* Page Header */}
       <PageHeader />
 
