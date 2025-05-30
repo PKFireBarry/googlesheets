@@ -10,16 +10,17 @@
   },
   "dependencies": {
     "clsx": "^2.1.1",
-    "html-react-parser": "^5.2.2",
     "date-fns": "^4.1.0",
     "formidable": "^3.5.2",
     "framer-motion": "^12.6.3",
     "googleapis": "^146.0.0",
+    "html-react-parser": "^5.2.2",
     "html2pdf.js": "^0.10.3",
     "js-cookie": "^3.0.5",
     "next": "15.1.6",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "react-hot-toast": "^2.5.2"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
