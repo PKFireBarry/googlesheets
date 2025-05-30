@@ -25,17 +25,57 @@ const isBrowser = () => typeof window !== 'undefined';
 export function getResumeStorageKey(): string {
   if (!isBrowser()) return 'masterResume_default';
 
+  // Debug logging
+  console.log('Getting resume storage key...');
+  
+  // Try to get the spreadsheet ID from the URL if we're on a specific page
+  if (typeof window !== 'undefined') {
+    const url = window.location.href;
+    console.log('Current URL:', url);
+    
+    // Check if we're on the auto-apply page with a job ID
+    if (url.includes('/auto-apply')) {
+      // First try to get job ID from URL parameter
+      const jobIdMatch = url.match(/jobId=([^&]+)/);
+      if (jobIdMatch && jobIdMatch[1]) {
+        const jobId = decodeURIComponent(jobIdMatch[1]);
+        console.log('Found job ID in URL:', jobId);
+        // Use a consistent key for this job
+        return `masterResume_job_${jobId}`;
+      }
+      
+      // If no job ID in URL, use a default key for auto-apply page
+      console.log('No job ID found in URL, using default key for auto-apply');
+      return 'masterResume_default';
+    }
+    
+    // Check if we're on the resume-builder page with a job ID
+    if (url.includes('/resume-builder')) {
+      const jobIdMatch = url.match(/jobId=([^&]+)/);
+      if (jobIdMatch && jobIdMatch[1]) {
+        const jobId = decodeURIComponent(jobIdMatch[1]);
+        console.log('Found job ID in URL:', jobId);
+        // Use a consistent key for this job
+        return `masterResume_job_${jobId}`;
+      }
+    }
+  }
+
   // Try multiple sources to get a sheet ID
   const sources = [
     // First try sheet URL from cookie (where homepage stores it)
     Cookies.get('lastSheetUrl'),
     // Then try localStorage for sheet URL
     localStorage.getItem('lastSheetUrl'),
+    // Try to get the industry from cookie
+    Cookies.get('lastIndustry'),
     // Then try jobData which might contain sheet ID
     localStorage.getItem('jobData'),
     // Finally, look for savedJobs
     localStorage.getItem('savedJobs')
   ];
+  
+  console.log('Checking sources for sheet ID:', sources.map(s => s ? s.substring(0, 30) + '...' : 'null').join(', '));
   
   for (const source of sources) {
     if (!source) continue;
@@ -46,28 +86,44 @@ export function getResumeStorageKey(): string {
       if (urlMatch && urlMatch[1]) {
         const sheetId = urlMatch[1];
         const idHash = `${sheetId.slice(0, 4)}${sheetId.slice(-4)}`;
+        console.log('Found sheet ID in URL:', sheetId, 'using hash:', idHash);
         return `masterResume_${idHash}`;
+      }
+      
+      // Check if it's an industry name
+      if (source === 'Tech Jobs' || 
+          source === 'Business Operations Jobs' || 
+          source === 'Healthcare Jobs' || 
+          source === 'Customer and Social Services and Transportation and Logistics') {
+        console.log('Found industry name:', source);
+        return `masterResume_${source.replace(/\s+/g, '_')}`;
       }
       
       // If not a URL, maybe it's JSON with other identifiers we can use
-      const parsed = JSON.parse(source);
-      
-      // If we find a spreadsheetId property
-      if (parsed.spreadsheetId) {
-        const sheetId = parsed.spreadsheetId;
-        const idHash = `${sheetId.slice(0, 4)}${sheetId.slice(-4)}`;
-        return `masterResume_${idHash}`;
-      }
-      
-      // For arrays of objects (like job listings)
-      if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].spreadsheetId) {
-        const sheetId = parsed[0].spreadsheetId;
-        const idHash = `${sheetId.slice(0, 4)}${sheetId.slice(-4)}`;
-        return `masterResume_${idHash}`;
+      try {
+        const parsed = JSON.parse(source);
+        
+        // If we find a spreadsheetId property
+        if (parsed.spreadsheetId) {
+          const sheetId = parsed.spreadsheetId;
+          const idHash = `${sheetId.slice(0, 4)}${sheetId.slice(-4)}`;
+          console.log('Found spreadsheetId in JSON:', sheetId, 'using hash:', idHash);
+          return `masterResume_${idHash}`;
+        }
+        
+        // For arrays of objects (like job listings)
+        if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].spreadsheetId) {
+          const sheetId = parsed[0].spreadsheetId;
+          const idHash = `${sheetId.slice(0, 4)}${sheetId.slice(-4)}`;
+          console.log('Found spreadsheetId in JSON array:', sheetId, 'using hash:', idHash);
+          return `masterResume_${idHash}`;
+        }
+      } catch {
+        // Not valid JSON, continue to next source
       }
     } catch (e) {
       // Ignore errors from JSON parsing attempts
-      console.log('Not JSON or couldn\'t extract ID from source:', e);
+      console.log('Error processing source for resume storage key:', e);
     }
   }
   
@@ -160,23 +216,75 @@ export function loadResume(): { resumeData: ResumeData | null, resumePdfData: st
   }
   
   try {
+    // Try with the determined storage key first
     const storedResume = localStorage.getItem(storageKey);
-    if (!storedResume) {
-      return { resumeData: null, resumePdfData: null };
-    }
     
-    const parsedResume: StoredResume = JSON.parse(storedResume);
-    
-    if (parsedResume.type === 'parsed') {
-      return { 
-        resumeData: parsedResume.data as ResumeData, 
-        resumePdfData: null 
-      };
-    } else if (parsedResume.type === 'pdf') {
-      return { 
-        resumeData: null, 
-        resumePdfData: parsedResume.data as string 
-      };
+    if (storedResume) {
+      console.log(`Found resume data with key: ${storageKey}`);
+      const parsedResume: StoredResume = JSON.parse(storedResume);
+      
+      if (parsedResume.type === 'parsed') {
+        return { 
+          resumeData: parsedResume.data as ResumeData, 
+          resumePdfData: null 
+        };
+      } else if (parsedResume.type === 'pdf') {
+        return { 
+          resumeData: null, 
+          resumePdfData: parsedResume.data as string 
+        };
+      }
+    } else {
+      console.log(`No resume found with key: ${storageKey}, trying fallback keys`);
+      
+      // If not found with the primary key, try fallback keys
+      const fallbackKeys = [
+        'masterResume_default',
+        'masterResume'
+      ];
+      
+      // Also try to find any keys that start with masterResume_
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('masterResume_') && !fallbackKeys.includes(key) && key !== storageKey) {
+          fallbackKeys.push(key);
+        }
+      }
+      
+      console.log('Checking fallback keys:', fallbackKeys);
+      
+      // Try each fallback key
+      for (const fallbackKey of fallbackKeys) {
+        const fallbackResume = localStorage.getItem(fallbackKey);
+        if (fallbackResume) {
+          console.log(`Found resume with fallback key: ${fallbackKey}`);
+          try {
+            const parsedFallback: StoredResume = JSON.parse(fallbackResume);
+            
+            if (parsedFallback.type === 'parsed') {
+              // Copy to the current key for future consistency
+              localStorage.setItem(storageKey, fallbackResume);
+              console.log(`Copied resume from ${fallbackKey} to ${storageKey} for consistency`);
+              
+              return { 
+                resumeData: parsedFallback.data as ResumeData, 
+                resumePdfData: null 
+              };
+            } else if (parsedFallback.type === 'pdf') {
+              // Copy to the current key for future consistency
+              localStorage.setItem(storageKey, fallbackResume);
+              console.log(`Copied resume from ${fallbackKey} to ${storageKey} for consistency`);
+              
+              return { 
+                resumeData: null, 
+                resumePdfData: parsedFallback.data as string 
+              };
+            }
+          } catch (e) {
+            console.error(`Error parsing fallback resume from ${fallbackKey}:`, e);
+          }
+        }
+      }
     }
     
     return { resumeData: null, resumePdfData: null };
@@ -208,37 +316,4 @@ export function deleteResume(): boolean {
     console.error('Error deleting resume:', e);
     return false;
   }
-}
-
-/**
- * Logs debug information about all stored resumes
- * Useful for troubleshooting resume storage issues
- */
-export function debugResumeStorage(): void {
-  if (!isBrowser()) return;
-
-  console.log('--- DEBUG: Resume Storage ---');
-  
-  // Log cookie information
-  console.log('Cookie info - lastSheetUrl:', Cookies.get('lastSheetUrl'));
-  
-  // Log storage key being used
-  const storageKey = getResumeStorageKey();
-  console.log('Current storage key:', storageKey);
-  
-  // Log all localStorage items that look like resume storage
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (key && key.startsWith('masterResume_')) {
-      try {
-        const value = localStorage.getItem(key);
-        const parsed = JSON.parse(value || '{}');
-        console.log(`${key}: type=${parsed.type}, timestamp=${new Date(parsed.timestamp).toLocaleString()}`);
-      } catch (e) {
-        console.log(`${key}: [Error reading value]`);
-      }
-    }
-  }
-  
-  console.log('------------------------');
 } 

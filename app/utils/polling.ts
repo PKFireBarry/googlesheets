@@ -1,4 +1,4 @@
-import { TaskStatusCallback } from '../types/common';
+import type { TaskStatusCallback } from './webhook';
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -46,3 +46,120 @@ export const poll = async <T>(
   
   throw new Error(`Polling timed out after ${timeout}ms`);
 }; 
+
+/**
+ * Utility functions for polling APIs
+ */
+
+/**
+ * Generic polling function that calls a callback until a condition is met
+ * @param callback Function to call on each poll
+ * @param condition Function that returns true when polling should stop
+ * @param interval Polling interval in ms
+ * @param maxAttempts Maximum number of polling attempts
+ * @returns Promise that resolves when condition is met or rejects after maxAttempts
+ */
+export async function pollUntil<T>(
+  callback: () => Promise<T>,
+  condition: (result: T) => boolean,
+  interval: number = 2000,
+  maxAttempts: number = 30
+): Promise<T> {
+  let attempts = 0;
+  let lastResult: T | null = null;
+  let lastError: Error | null = null;
+  
+  return new Promise<T>(async (resolve, reject) => {
+    const executePoll = async () => {
+      try {
+        const result = await callback();
+        lastResult = result;
+        
+        if (condition(result)) {
+          resolve(result);
+          return;
+        }
+        
+        attempts++;
+        
+        if (attempts >= maxAttempts) {
+          reject(new Error(`Polling timed out after ${maxAttempts} attempts. Last result: ${JSON.stringify(lastResult)}`));
+          return;
+        }
+        
+        setTimeout(executePoll, interval);
+      } catch (error: any) {
+        lastError = error;
+        attempts++;
+        
+        if (attempts >= maxAttempts) {
+          reject(new Error(`Polling failed after ${maxAttempts} attempts. Last error: ${error.message}`));
+          return;
+        }
+        
+        // Continue polling despite errors
+        console.warn(`Polling attempt ${attempts} failed: ${error.message}. Retrying in ${interval}ms...`);
+        setTimeout(executePoll, interval);
+      }
+    };
+    
+    executePoll();
+  });
+}
+
+/**
+ * Polls the auto-apply status endpoint until a terminal state is reached
+ * @param taskId The task ID to poll for
+ * @param interval Polling interval in ms
+ * @param maxAttempts Maximum number of polling attempts
+ * @returns Promise that resolves with the final status data
+ */
+export async function pollAutoApplyStatus(
+  taskId: string,
+  interval: number = 3000,
+  maxAttempts: number = 40
+): Promise<{
+  status: string;
+  result?: any;
+  error?: string;
+}> {
+  console.log(`Starting to poll for task ${taskId} status...`);
+  
+  return pollUntil(
+    async () => {
+      try {
+        const response = await fetch(`/api/resume/auto-apply?taskId=${taskId}`);
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error(`Error response from status API: ${response.status} ${errorText}`);
+          throw new Error(`Failed to check upload status: ${response.status} ${errorText}`);
+        }
+        
+        const data = await response.json();
+        console.log(`Poll status for task ${taskId}:`, data.status);
+        return data;
+      } catch (error: any) {
+        console.error(`Error polling for task ${taskId}:`, error);
+        throw error;
+      }
+    },
+    (result) => {
+      // Terminal states: completed, failed
+      const isTerminal = result.status === 'completed' || result.status === 'failed';
+      if (isTerminal) {
+        console.log(`Task ${taskId} reached terminal state: ${result.status}`);
+      }
+      return isTerminal;
+    },
+    interval,
+    maxAttempts
+  ).catch(error => {
+    // If polling fails, return a failed status
+    console.error(`Polling for task ${taskId} failed:`, error);
+    return {
+      status: 'failed',
+      error: `Polling failed: ${error.message}`
+    };
+  });
+} 
