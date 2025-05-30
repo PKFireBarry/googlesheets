@@ -10,15 +10,12 @@
   },
   "dependencies": {
     "clsx": "^2.1.1",
-<<<<<<< Updated upstream
     "html-react-parser": "^5.2.2",
-=======
     "date-fns": "^4.1.0",
     "formidable": "^3.5.2",
     "framer-motion": "^12.6.3",
     "googleapis": "^146.0.0",
     "html2pdf.js": "^0.10.3",
->>>>>>> Stashed changes
     "js-cookie": "^3.0.5",
     "next": "15.1.6",
     "react": "^19.0.0",
