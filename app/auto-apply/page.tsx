@@ -206,7 +206,37 @@ function AutoApplyContent(): React.ReactElement {
   // Load job data from URL parameters
   useEffect(() => {
     if (jobId) {
-      loadJobDetails(jobId);
+      // Check if we have full job data in URL parameters
+      const jobDataParam = searchParams.get('jobData');
+      
+      if (jobDataParam) {
+        try {
+          // Parse job data directly from URL parameter
+          const decodedJobData = decodeURIComponent(jobDataParam);
+          const parsedJobData = JSON.parse(decodedJobData);
+          console.log('Job data loaded from URL parameter:', parsedJobData);
+          
+          // Set the job data directly
+          setSelectedJob(parsedJobData);
+          
+          // Pre-fill upload prompt with job URL if available
+          if (parsedJobData.company_website) {
+            setUploadPrompt(
+              `your goal is to navigate the the application form and fill out the form using the personal data and resume infomation sent in the prompt to apply for the ${parsedJobData.title} position at ${parsedJobData.company_name}. ` + 
+              `Step 1: Navigate to ${parsedJobData.company_website}. and find the application form.` +
+              `Step 2: find all of the required fields in the application form and fill them out with the personal information sent in the prompt. Make sure to scroll down after each field.` +
+              `Step 3: skip any fields that are not required(optional fields).` +
+              `Step 4: If a coverletter is required use the resume informaiton to generate one` +
+              `Step 5: for any questions the company asks, answer them with the resume information sent in the prompt.` +
+              `` 
+            );
+          } 
+          setStep(2); // Move to job details step
+        } catch (error) {
+          console.error('Error parsing job data from URL:', error);
+
+        }
+      }  
     }
     
     // Debug localStorage
@@ -305,49 +335,26 @@ function AutoApplyContent(): React.ReactElement {
       
       toast.success('A sample resume has been created for testing');
     }
-  }, [jobId]);
+  }, [jobId, searchParams]);
 
-  // Load job details from the job ID
-  const loadJobDetails = async (id: string) => {
-    try {
-      setIsLoading(true);
-      const response = await fetch(`/api/jobs/${id}`);
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch job details');
-      }
-      
-      const jobData = await response.json();
-      console.log('Job data loaded:', jobData);
-      
-      // Map company_website to url if url doesn't exist
-      if (!jobData.url && jobData.company_website) {
-        jobData.url = jobData.company_website;
-      }
-      
-      setSelectedJob(jobData);
-      
-      // Pre-fill upload prompt with job URL if available
-      if (jobData.url) {
-        setUploadPrompt(
-          `Upload my resume to apply for the ${jobData.title || 'this'} position at ${jobData.company_name || 'this company'}. ` + 
-          `Navigate to ${jobData.url}, complete the application form, and submit my application. ` +
-          `Use the attached resume and fill in any required fields with my information.`
-        );
-      } else {
-        setUploadPrompt(
-          `Upload my resume to apply for the ${jobData.title || 'this'} position at ${jobData.company_name || 'this company'}. ` +
-          `Complete the application form and submit my application. Use the attached resume and fill in any required fields with my information.`
-        );
-      }
-      
-      setStep(2); // Move to job details step
-    } catch (error) {
-      console.error('Error loading job details:', error);
-      setError('Failed to load job details. Please try again or enter details manually.');
-    } finally {
-      setIsLoading(false);
+
+
+  // Helper function to normalize URLs
+  const normalizeUrl = (url: string): string => {
+    if (!url) return '';
+    
+    // Trim whitespace
+    url = url.trim();
+    
+    // Return empty string if URL is empty after trimming
+    if (!url) return '';
+    
+    // Add https:// if no protocol is specified
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      return `https://${url}`;
     }
+    
+    return url;
   };
 
   // Handle API key change
@@ -510,6 +517,11 @@ function AutoApplyContent(): React.ReactElement {
       return;
     }
     
+    // Ensure company_website is properly formatted and always included in the API payload
+    if (selectedJob && selectedJob.company_website) {
+      selectedJob.company_website = normalizeUrl(selectedJob.company_website);
+    }
+    
     setIsUploading(true);
     setUploadError('');
     setUploadStatus('starting');
@@ -526,6 +538,7 @@ function AutoApplyContent(): React.ReactElement {
 
       console.log("Starting auto-apply with full prompt:", fullPrompt);
       console.log("Generated PDF URL for auto-apply:", generatedPdfUrl);
+      console.log("Using company website URL:", selectedJob?.company_website);
 
       // Use our internal API endpoint instead of calling the external API directly
       const res = await fetch('/api/resume/auto-apply', {
@@ -537,7 +550,11 @@ function AutoApplyContent(): React.ReactElement {
           pdfUrl: generatedPdfUrl,
           prompt: fullPrompt, // Send the combined prompt
           apiKey: apiKey,
-          jobData: selectedJob // Pass the job data to the API
+          url: selectedJob?.company_website || '', // Pass company_website as top-level url
+          jobData: {
+            ...selectedJob,
+            // company_website is NOT needed here for the API call
+          },
         }),
       });
       

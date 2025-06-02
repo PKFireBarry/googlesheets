@@ -6,6 +6,28 @@ const API_KEY = process.env.NEXT_PUBLIC_API_KEY;
 const GOOGLE_SHEET_URL = process.env.NEXT_PUBLIC_DEFAULT_SHEET_URL || "https://docs.google.com/spreadsheets/d/1dLV3n1XnbyxMaI71JqcWV-4OYnxa9sAl4kBRcST8rjE";
 
 /**
+ * Normalize URL to ensure it has a proper protocol prefix
+ * @param url The URL to normalize
+ * @returns Normalized URL with proper protocol
+ */
+function normalizeUrl(url: string): string {
+  if (!url) return '';
+  
+  // Trim whitespace
+  url = url.trim();
+  
+  // Return empty string if URL is empty after trimming
+  if (!url) return '';
+  
+  // Add https:// if no protocol is specified
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    return `https://${url}`;
+  }
+  
+  return url;
+}
+
+/**
  * GET handler for job details by ID
  * Fetches job details from Google Sheets based on job ID
  */
@@ -118,6 +140,12 @@ export async function GET(
         
         // Add job ID
         jobData.id = jobId;
+        
+        // Normalize company_website and use it as the URL
+        if (jobData.company_website) {
+          jobData.company_website = normalizeUrl(jobData.company_website);
+          jobData.url = jobData.company_website;
+        }
         
         break;
       }

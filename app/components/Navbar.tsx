@@ -40,12 +40,6 @@ export default function Navbar() {
               Applied Jobs
             </NavLink>
             
-            {/* DELETE START */}
-            {/* <NavLink href="/analytics" active={pathname === '/analytics'}>
-              <BarChart2 className="w-4 h-4 mr-2" />
-              Analytics
-            </NavLink> */}
-            {/* DELETE END */}
             
             <NavLink href="/linkedin-lookup" active={pathname === '/linkedin-lookup'}>
               <Linkedin className="w-4 h-4 mr-2" />

@@ -5,6 +5,28 @@ const UPLOAD_ENDPOINT = 'http://bore.pub:7777/test-upload';
 const STATUS_ENDPOINT = 'http://bore.pub:7777/test-upload-status';
 
 /**
+ * Normalize URL to ensure it has a proper protocol prefix
+ * @param url The URL to normalize
+ * @returns Normalized URL with proper protocol
+ */
+function normalizeUrl(url: string): string {
+  if (!url) return '';
+  
+  // Trim whitespace
+  url = url.trim();
+  
+  // Return empty string if URL is empty after trimming
+  if (!url) return '';
+  
+  // Add https:// if no protocol is specified
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    return `https://${url}`;
+  }
+  
+  return url;
+}
+
+/**
  * GET handler for checking auto-apply status
  * Proxies requests to the external API status endpoint
  */
@@ -54,7 +76,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     
     // Extract data from the request
-    const { pdfUrl, prompt, apiKey, jobData } = body;
+    const { pdfUrl, prompt, apiKey, jobData, url } = body;
     
     if (!pdfUrl) {
       return NextResponse.json(
@@ -83,7 +105,10 @@ export async function POST(request: NextRequest) {
       if (jobData) {
         const jobTitle = jobData.title || jobData.job_title || '';
         const company = jobData.company || jobData.company_name || '';
-        jobUrl = jobData.url || jobData.company_website || '';
+        
+        // Always use the provided company_website as the target_url if present
+        jobUrl = jobData.company_website || '';
+        jobUrl = normalizeUrl(jobUrl);
         
         // Create a more detailed prompt with job information
         enhancedPrompt = `Apply for the ${jobTitle} position at ${company}. ${
@@ -102,8 +127,14 @@ export async function POST(request: NextRequest) {
         formData.append('api_key', apiKey);
       }
       
+      // Always pass the company_website as target_url if present
       if (jobUrl) {
         formData.append('target_url', jobUrl);
+      }
+      
+      // Use the provided url directly for the form data
+      if (url) {
+        formData.append('url', normalizeUrl(url));
       }
       
       console.log('Sending request with prompt:', enhancedPrompt);

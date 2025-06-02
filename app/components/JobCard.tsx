@@ -398,7 +398,9 @@ export default function JobCard({
               <ActionButton
                 onClick={e => { 
                   e.stopPropagation();
-                  router.push(`/auto-apply?jobId=${encodeURIComponent(job.id)}`);
+                  // Pass full job data in URL parameter
+                  const jobDataParam = encodeURIComponent(JSON.stringify(job));
+                  router.push(`/auto-apply?jobId=${encodeURIComponent(job.id)}&jobData=${jobDataParam}`);
                 }}
                 className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg
                          border border-orange-600 dark:border-orange-500 bg-white dark:bg-gray-700
