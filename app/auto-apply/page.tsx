@@ -222,13 +222,7 @@ function AutoApplyContent(): React.ReactElement {
           // Pre-fill upload prompt with job URL if available
           if (parsedJobData.company_website) {
             setUploadPrompt(
-              `your goal is to navigate the the application form and fill out the form using the personal data and resume infomation sent in the prompt to apply for the ${parsedJobData.title} position at ${parsedJobData.company_name}. ` + 
-              `Step 1: Navigate to ${parsedJobData.company_website}. and find the application form.` +
-              `Step 2: find all of the required fields in the application form and fill them out with the personal information sent in the prompt. Make sure to scroll down after each field.` +
-              `Step 3: skip any fields that are not required(optional fields).` +
-              `Step 4: If a coverletter is required use the resume informaiton to generate one` +
-              `Step 5: for any questions the company asks, answer them with the resume information sent in the prompt.` +
-              `` 
+              `Resume and personal information needed for the application form.` 
             );
           } 
           setStep(2); // Move to job details step
@@ -533,8 +527,8 @@ function AutoApplyContent(): React.ReactElement {
       
       const fullPrompt = 
         `${uploadPrompt}\n\n` + 
-        `--- Personal Information JSON ---\n${personalInfoJson}\n--- End Personal Information JSON ---\n\n` + 
-        `--- Full Resume JSON ---\n${resumeJson}\n--- End Full Resume JSON ---`;
+        `\n--- Personal Information in JSON format ---\n${personalInfoJson}\n--- End Personal Information JSON ---\n\n` + 
+        `--- Full Resume in JSON format ---\n${resumeJson}\n--- End Full Resume JSON ---\n`;
 
       console.log("Starting auto-apply with full prompt:", fullPrompt);
       console.log("Generated PDF URL for auto-apply:", generatedPdfUrl);

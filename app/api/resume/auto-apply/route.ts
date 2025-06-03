@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 // External API endpoints
-const UPLOAD_ENDPOINT = 'http://bore.pub:7777/test-upload';
-const STATUS_ENDPOINT = 'http://bore.pub:7777/test-upload-status';
+const UPLOAD_ENDPOINT = 'http://bore.pub:7777/auto-apply';
+const STATUS_ENDPOINT = 'http://bore.pub:7777/auto-apply-status';
 
 /**
  * Normalize URL to ensure it has a proper protocol prefix
@@ -43,7 +43,10 @@ export async function GET(request: NextRequest) {
     }
     
     // Call the external API to check status
-    const response = await fetch(`${STATUS_ENDPOINT}/${taskId}`);
+    const response = await fetch(`${STATUS_ENDPOINT}/${taskId}`, {
+      // Add timeout to prevent hanging requests
+      signal: AbortSignal.timeout(15000)
+    });
     
     if (!response.ok) {
       const errorText = await response.text();
@@ -59,6 +62,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(statusData);
   } catch (error: any) {
     console.error('Error checking auto-apply status:', error);
+    
+    // Specific error for connection issues
+    if (error.name === 'AbortError' || error.code?.startsWith('UND_ERR_')) {
+      return NextResponse.json(
+        { error: 'Connection to auto-apply service failed. Please try again later.' },
+        { status: 503 }
+      );
+    }
+    
     return NextResponse.json(
       { error: error.message || 'Failed to check auto-apply status' },
       { status: 500 }
@@ -99,28 +111,28 @@ export async function POST(request: NextRequest) {
       const formData = new FormData();
       
       // Create an enhanced prompt that includes job details if available
-      let enhancedPrompt = prompt;
       let jobUrl = '';
+      let enhancedPrompt = prompt;
       
       if (jobData) {
         const jobTitle = jobData.title || jobData.job_title || '';
         const company = jobData.company || jobData.company_name || '';
         
+        // Enhance the prompt with job details if available
+        if (jobTitle && company) {
+          enhancedPrompt = `\n${prompt}\nJob Title: ${jobTitle}\nCompany: ${company}\nJob Descripton: ${jobData.description}\nLooking for skills in: ${jobData.skills}\n`;
+        }
+        
         // Always use the provided company_website as the target_url if present
         jobUrl = jobData.company_website || '';
         jobUrl = normalizeUrl(jobUrl);
-        
-        // Create a more detailed prompt with job information
-        enhancedPrompt = `Apply for the ${jobTitle} position at ${company}. ${
-          jobUrl ? `Navigate to ${jobUrl} and ` : ''
-        }complete the application form, upload the resume, and submit the application. ${prompt}`;
       }
-      
-      console.log('Enhanced prompt:', enhancedPrompt);
       
       // Instead of trying to convert the data URI to a blob here,
       // we'll pass the data URI directly to the backend using the file_url parameter
       formData.append('file_url', pdfUrl);
+      
+      // CRITICAL: Add the prompt parameter that was missing before
       formData.append('prompt', enhancedPrompt);
       
       if (apiKey) {
@@ -137,12 +149,12 @@ export async function POST(request: NextRequest) {
         formData.append('url', normalizeUrl(url));
       }
       
-      console.log('Sending request with prompt:', enhancedPrompt);
-      
-      // Call the external API to start the upload process
+      // Call the external API to start the upload process with timeout
       const response = await fetch(UPLOAD_ENDPOINT, {
         method: 'POST',
-        body: formData
+        body: formData,
+        // Add timeout to prevent hanging requests
+        signal: AbortSignal.timeout(30000)
       });
       
       if (!response.ok) {
@@ -159,6 +171,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(responseData);
     } catch (error: any) {
       console.error('Error processing PDF:', error);
+      
+      // Specific error handling for connection issues
+      if (error.name === 'AbortError' || error.code?.startsWith('UND_ERR_')) {
+        return NextResponse.json(
+          { error: 'Connection to auto-apply service failed. Please try again later.' },
+          { status: 503 }
+        );
+      }
+      
       return NextResponse.json(
         { error: `Failed to process PDF: ${error.message}` },
         { status: 500 }
