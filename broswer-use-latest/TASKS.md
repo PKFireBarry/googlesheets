@@ -1,0 +1,3 @@
+- [x] Support file_url as a data URL (base64) and ensure temp file is deleted after automation run 
+- [x] Enforce that the API always uses the provided API key and never falls back to the environment variable. 
+- [x] Add a step before the agent fills out the form to detect the resume input using BeautifulSoup and log or return the found element info. 
