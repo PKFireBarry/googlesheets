@@ -94,6 +94,7 @@ async def run_agent(
 			headless=False,
 			keep_alive=True,
 			executable_path='/usr/bin/google-chrome',
+			disable_security=False,
 		)
 		
 		browser_session = BrowserSession(browser_profile=browser_profile)
