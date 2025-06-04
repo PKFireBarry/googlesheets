@@ -1,6 +1,7 @@
 import asyncio
 import os
 import sys
+import random
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from fastapi.responses import JSONResponse
@@ -12,6 +13,8 @@ import re
 import base64
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
+import json
+import time
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -23,9 +26,30 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import SecretStr
 
 from browser_use import Agent
-from browser_use.browser import BrowserProfile, BrowserSession
+from browser_use.browser import BrowserProfile, BrowserSession, ColorScheme
 
 app = FastAPI()
+
+# Function to add random human-like delays
+async def human_delay(min_seconds=0.5, max_seconds=2.0):
+	"""Add a random delay to mimic human interaction timing"""
+	delay = random.uniform(min_seconds, max_seconds)
+	await asyncio.sleep(delay)
+	return delay
+
+# Function to save cookies for future use
+async def save_cookies(browser_context, cookies_file):
+	"""Save browser cookies to a file for reuse"""
+	try:
+		cookies = await browser_context.cookies()
+		os.makedirs(os.path.dirname(cookies_file), exist_ok=True)
+		with open(cookies_file, 'w') as f:
+			json.dump(cookies, f)
+		print(f"Saved {len(cookies)} cookies to {cookies_file}")
+		return True
+	except Exception as e:
+		print(f"Error saving cookies: {e}")
+		return False
 
 @app.post('/auto-apply')
 async def run_agent(
@@ -33,7 +57,9 @@ async def run_agent(
 	url: str = Form(...), ### This is the URL of the job posting.
 	api_key: str = Form(...), ### This is the API key for the Google Gemini API.
 	file: UploadFile = File(None), ### This is the file that will be used to apply for the job.
-	file_url: str = Form(None) ### This is the URL of the file that will be used to apply for the job.
+	file_url: str = Form(None), ### This is the URL of the file that will be used to apply for the job.
+	proxy_server: str = Form(None), ### Optional proxy server in format http://user:pass@host:port
+	use_proxy: bool = Form(False) ### Whether to use the proxy server
 ):
 	#Print incoming data for debugging
 	#print("--- Incoming API Call Data ---")
@@ -87,6 +113,22 @@ async def run_agent(
 		# Create a browser profile with unique user data dir to avoid conflicts
 		unique_user_data_dir = f"~/.config/browseruse/profiles/job_apply_{os.getpid()}"
 		
+		# Setup proxy if provided
+		proxy_settings = None
+		if use_proxy and proxy_server:
+			print(f"Using proxy server: {proxy_server}")
+			proxy_settings = {
+				"server": proxy_server
+			}
+			
+			# Extract username/password from proxy URL if present
+			if '@' in proxy_server:
+				auth_part = proxy_server.split('@')[0].replace('http://', '').replace('https://', '')
+				if ':' in auth_part:
+					username, password = auth_part.split(':')
+					proxy_settings["username"] = username
+					proxy_settings["password"] = password
+		
 		# Create a single browser session to be shared across all steps
 		browser_profile = BrowserProfile(
 			viewport_expansion=0,
@@ -95,12 +137,120 @@ async def run_agent(
 			keep_alive=True,
 			executable_path='/usr/bin/google-chrome',
 			disable_security=False,
+			# Add realistic user agent
+			user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+			# Add necessary browser fingerprinting protection
+			args=[
+				# Disable automation flags
+				"--disable-blink-features=AutomationControlled",
+				# Randomize canvas fingerprint
+				"--disable-reading-from-canvas",
+				# Mitigate Cloudflare WebGL fingerprinting
+				"--use-gl=swiftshader",
+				"--disable-gpu-driver-bug-workarounds",
+				"--disable-gpu-vsync",
+				# Disable WebRTC to prevent IP leaks
+				"--disable-webrtc-hw-encoding",
+				"--disable-webrtc-hw-decoding",
+				# Hide WebRTC indicators
+				"--disable-webrtc-apm-in-audio-service",
+				# Mask automation indicators
+				"--disable-features=IsolateOrigins,site-per-process",
+				# Improve browser stability
+				"--no-first-run",
+				"--no-default-browser-check",
+				"--no-sandbox",
+				"--disable-site-isolation-trials",
+				"--disable-web-security",
+				# Set proper hardware acceleration
+				"--ignore-gpu-blacklist"
+			],
+			# Add realistic browser behavior
+			locale="en-US",
+			timezone_id="America/New_York",
+			device_scale_factor=1.0,
+			color_scheme=ColorScheme.LIGHT,
+			viewport={"width": 1920, "height": 1080},
+			# Browser behavior settings
+			has_touch=False,
+			is_mobile=False,
+			java_script_enabled=True,
+			ignore_https_errors=True,
+			bypass_csp=True,
+			# Add proxy if provided
+			proxy=proxy_settings,
 		)
 		
 		browser_session = BrowserSession(browser_profile=browser_profile)
 		
 		# Initialize the browser session
 		await browser_session.start()
+		
+		# Add stealth JS to evade Cloudflare detection
+		stealth_js = """
+		// Override the navigator.webdriver property
+		Object.defineProperty(navigator, 'webdriver', {
+			get: () => false,
+			configurable: true
+		});
+
+		// Override navigator.plugins to appear like a normal browser
+		if (navigator.plugins.length === 0) {
+			Object.defineProperty(navigator, 'plugins', {
+				get: () => [1, 2, 3, 4, 5],
+				configurable: true
+			});
+		}
+
+		// Override the chrome object if it exists
+		if (window.chrome) {
+			window.chrome.runtime = {};
+		}
+
+		// Modify navigator.permissions behavior
+		const originalQuery = navigator.permissions.query;
+		navigator.permissions.query = (parameters) => {
+			if (parameters.name === 'notifications' || 
+				parameters.name === 'clipboard-read' || 
+				parameters.name === 'clipboard-write') {
+				return Promise.resolve({state: 'granted'});
+			}
+			return originalQuery(parameters);
+		};
+
+		// Add a fake mouse movement function to simulate user interaction
+		(function() {
+			const moveMouse = () => {
+				const event = new MouseEvent('mousemove', {
+					'view': window,
+					'bubbles': true,
+					'cancelable': true,
+					'clientX': Math.floor(Math.random() * window.innerWidth),
+					'clientY': Math.floor(Math.random() * window.innerHeight)
+				});
+				document.dispatchEvent(event);
+				setTimeout(moveMouse, Math.floor(Math.random() * 5000) + 1000);
+			};
+			moveMouse();
+		})();
+		"""
+		
+		# Get the current page
+		page = await browser_session.get_current_page()
+		
+		# Execute the stealth script on page load
+		await page.add_init_script(stealth_js)
+		
+		# Load any stored cookies if available
+		cookies_file = os.path.join(unique_user_data_dir, "cookies.json")
+		if os.path.exists(cookies_file):
+			try:
+				with open(cookies_file, 'r') as f:
+					cookies = json.load(f)
+					await page.context.add_cookies(cookies)
+				print("Loaded stored cookies successfully")
+			except Exception as e:
+				print(f"Error loading cookies: {e}")
 		
 		## Step 1: Finding the application form to submit an application 
 		## have an ai agent navigate the page till the application form is found
@@ -121,7 +271,24 @@ async def run_agent(
 		find_form_result = await form_finder_agent.run(max_steps=25)
 		
 		# Add a delay to ensure the page is fully loaded and stable
-		await asyncio.sleep(3)
+		print("Adding human-like delay after finding form...")
+		await human_delay(2.0, 4.0)
+		
+		# Interact with the page a bit to appear more human-like
+		page = await browser_session.get_current_page()
+		
+		# Scroll the page a bit
+		for _ in range(2):
+			scroll_amount = random.randint(100, 300)
+			await page.evaluate(f"window.scrollBy(0, {scroll_amount})")
+			await human_delay(0.8, 1.5)
+		
+		# Move mouse to random positions
+		for _ in range(3):
+			x = random.randint(100, 800)
+			y = random.randint(100, 600)
+			await page.mouse.move(x, y)
+			await human_delay(0.3, 0.8)
 		
 		## Step 2: Fetch the page HTML and parse for resume file input
 		## Use the browser session directly to get the page HTML and find the file input
@@ -137,7 +304,7 @@ async def run_agent(
 				current_url = find_form_result.get('final_url', url)
 				if current_url:
 					await browser_session.navigate_to(current_url)
-					await asyncio.sleep(2)
+					await human_delay(2.0, 3.0)
 			
 			# Get the HTML content
 			html = await browser_session.get_page_html()
@@ -184,6 +351,9 @@ async def run_agent(
 						# Get the current page from the browser session
 						page = await browser_session.get_current_page()
 						
+						# Add human-like delay before uploading
+						await human_delay(1.0, 2.0)
+						
 						# Find a selector for the file input
 						selector = None
 						if resume_input.get('id'):
@@ -202,6 +372,8 @@ async def run_agent(
 						
 						if selector:
 							print(f"Using selector {selector} to upload file {temp_file_path}")
+							
+							# Move mouse near the file input first
 							if selector.startswith('//'):
 								# XPath selector
 								file_input = await page.wait_for_selector(f"xpath={selector}", timeout=5000)
@@ -210,9 +382,16 @@ async def run_agent(
 								file_input = await page.wait_for_selector(selector, timeout=5000)
 							
 							if file_input:
+								# Get element position and move mouse near it
+								box = await file_input.bounding_box()
+								if box:
+									await page.mouse.move(box['x'] + 10, box['y'] + 10)
+									await human_delay(0.5, 1.0)
+								
+								# Now upload the file
 								await file_input.set_input_files(temp_file_path)
 								print("File uploaded successfully")
-								await asyncio.sleep(2)  # Wait for upload to complete
+								await human_delay(2.0, 3.0)  # Wait for upload to complete
 					except Exception as upload_error:
 						print(f"Error uploading resume file: {upload_error}")
 						print("Continuing without file upload")
@@ -243,6 +422,11 @@ async def run_agent(
 		
 		# Run the application filling agent
 		result = await apply_agent.run(max_steps=25)
+		
+		# Save cookies for future use
+		cookies_file = os.path.join(unique_user_data_dir, "cookies.json")
+		await save_cookies(browser_session.browser_context, cookies_file)
+		
 		return JSONResponse(content={"result": result})
 	except Exception as e:
 		print(f"Error in run_agent: {e}")
