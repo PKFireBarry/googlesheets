@@ -1,4 +1,10 @@
-import type { TaskStatusCallback } from './webhook';
+// Define the TaskStatusCallback type directly instead of importing it
+type TaskStatusCallback = (status: {
+  status: string;
+  progress: number;
+  elapsedTime: number;
+  message: string;
+}) => void;
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -122,6 +128,8 @@ export async function pollAutoApplyStatus(
   status: string;
   result?: any;
   error?: string;
+  progress?: number;
+  message?: string;
 }> {
   console.log(`Starting to poll for task ${taskId} status...`);
   

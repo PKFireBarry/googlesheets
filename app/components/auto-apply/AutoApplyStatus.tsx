@@ -6,6 +6,7 @@ interface AutoApplyStatusProps {
   status: string;
   result: any;
   error: string;
+  progress?: number;
 }
 
 /**
@@ -16,7 +17,8 @@ const AutoApplyStatus: React.FC<AutoApplyStatusProps> = ({
   isUploading,
   status,
   result,
-  error
+  error,
+  progress = 0
 }) => {
   if (!status && !error) {
     return null;
@@ -32,6 +34,19 @@ const AutoApplyStatus: React.FC<AutoApplyStatusProps> = ({
             <h4 className="font-semibold ml-2">{getStatusTitle(status)}</h4>
           </div>
           <p className="text-sm">{getStatusMessage(status, result)}</p>
+          
+          {/* Progress Bar - Show for in-progress states */}
+          {['starting', 'in_progress', 'processing', 'uploading'].includes(status) && (
+            <div className="mt-3">
+              <div className="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700">
+                <div 
+                  className="bg-blue-600 h-2.5 rounded-full transition-all duration-300 ease-in-out" 
+                  style={{ width: `${progress}%` }}
+                ></div>
+              </div>
+              <p className="text-xs text-right mt-1">{progress}%</p>
+            </div>
+          )}
         </div>
       )}
 

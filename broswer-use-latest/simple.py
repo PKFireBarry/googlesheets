@@ -2,6 +2,7 @@ import asyncio
 import os
 import sys
 import random
+import uuid
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from fastapi.responses import JSONResponse
@@ -29,6 +30,9 @@ from browser_use.browser import BrowserProfile, BrowserSession
 
 app = FastAPI()
 
+# In-memory task storage for status tracking
+tasks = {}
+
 # Common user agents for better stealth
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
@@ -49,6 +53,14 @@ async def human_like_delay():
     delay = random.uniform(0.5, 2.0)
     await asyncio.sleep(delay)
 
+@app.get('/auto-apply-status/{task_id}')
+async def get_task_status(task_id: str):
+    """Get the status of a task by its ID"""
+    if task_id not in tasks:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    return JSONResponse(content=tasks[task_id])
+
 @app.post('/auto-apply')
 async def run_agent(
 	prompt: str = Form(...), ### This is the information that will be used to apply for the job.
@@ -66,11 +78,38 @@ async def run_agent(
 	if not api_key or not api_key.strip():
 		raise HTTPException(status_code=400, detail="API key must be provided in the request. No fallback to environment variable is allowed.")
 
+	# Generate a unique task ID
+	task_id = str(uuid.uuid4())
+	
+	# Initialize task status
+	tasks[task_id] = {
+		"status": "starting",
+		"progress": 0,
+		"message": "Starting the auto-apply process"
+	}
+
+	temp_file_path = None
+	browser_session = None
+	patchright = None
+	
+	# Run the task in the background
+	asyncio.create_task(process_auto_apply(task_id, prompt, url, api_key, file, file_url))
+	
+	# Return task ID immediately for polling
+	return JSONResponse(content={"task_id": task_id, "status": "starting"})
+
+async def process_auto_apply(task_id, prompt, url, api_key, file, file_url):
+	"""Process the auto-apply task in the background"""
 	temp_file_path = None
 	browser_session = None
 	patchright = None
 	
 	try:
+		# Update task status
+		tasks[task_id]["status"] = "processing"
+		tasks[task_id]["message"] = "Processing file upload"
+		tasks[task_id]["progress"] = 10
+		
 		# Handle file upload
 		available_file_paths = []
 		if file is not None:
@@ -86,7 +125,9 @@ async def run_agent(
 				# Parse data URL (e.g., data:application/pdf;filename=generated.pdf;base64,...) 
 				match = re.match(r'data:(?P<mime>[^;]+);filename=(?P<filename>[^;]+);base64,(?P<data>.+)', file_url)
 				if not match:
-					raise HTTPException(status_code=400, detail='Invalid data URL format for file_url')
+					tasks[task_id]["status"] = "failed"
+					tasks[task_id]["error"] = "Invalid data URL format for file_url"
+					return
 				filename = match.group('filename')
 				suffix = os.path.splitext(filename)[-1]
 				file_data = base64.b64decode(match.group('data'))
@@ -103,6 +144,11 @@ async def run_agent(
 					tmp.write(r.content)
 					temp_file_path = tmp.name
 					available_file_paths.append(temp_file_path)
+
+		# Update task status
+		tasks[task_id]["status"] = "processing"
+		tasks[task_id]["message"] = "Initializing browser"
+		tasks[task_id]["progress"] = 20
 
 		# Always configure the LLM
 		llm = ChatGoogleGenerativeAI(model='gemini-2.5-flash-preview-05-20', api_key=api_key)
@@ -154,6 +200,11 @@ async def run_agent(
 		# Add initial human-like delay before navigation
 		await human_like_delay()
 		
+		# Update task status
+		tasks[task_id]["status"] = "in_progress"
+		tasks[task_id]["message"] = "Finding application form"
+		tasks[task_id]["progress"] = 30
+		
 		## Step 1: Finding the application form to submit an application 
 		## have an ai agent navigate the page till the application form is found
 		find_application_form = f"""go to this URL:{url},\n what your looking at a job application and need to navigate to the appliaciton form.\nif the form is already shown on the screen stop and consider the task completed.\nif the application form is not shown on the screen naviagate the webiste to find to form and then consider the task complete\n"""
@@ -174,6 +225,11 @@ async def run_agent(
 		
 		# Add a variable delay to ensure the page is fully loaded and stable
 		await asyncio.sleep(random.uniform(2, 4))
+		
+		# Update task status
+		tasks[task_id]["status"] = "in_progress"
+		tasks[task_id]["message"] = "Uploading resume"
+		tasks[task_id]["progress"] = 50
 		
 		## Step 2: Fetch the page HTML and parse for resume file input
 		## Use the browser session directly to get the page HTML and find the file input
@@ -316,6 +372,11 @@ async def run_agent(
 		# Add human-like delay before form filling
 		await human_like_delay()
 		
+		# Update task status
+		tasks[task_id]["status"] = "in_progress"
+		tasks[task_id]["message"] = "Filling application form"
+		tasks[task_id]["progress"] = 70
+		
 		## Step 3: Fill out and submit the application and return the result
 		## Compose the task to fillout the application
 		apply_task = f"""your goal is to use the following personal/resume data information for a job application\n Fill out the text inputs, textareas, and answer any questions using the information provided.\nIgnore any optional data and the resume or photo upload inputs and any other inputs that are not text inputs, textareas, questions, checkboxes, or radio buttons.\nOnce all the required fields are completed consider the task complete and return the results.\n\nIMPORTANT: Act like a human user. Type at a natural pace with brief pauses between fields. Don't fill out forms too quickly or in a robotic pattern. Occasionally make small typos and correct them. Navigate through fields in a natural order, sometimes using tab key and sometimes clicking directly.\n\n{prompt}"""
@@ -337,10 +398,19 @@ async def run_agent(
 		
 		# Run the application filling agent
 		result = await apply_agent.run(max_steps=25)
-		return JSONResponse(content={"result": result})
+		
+		# Update task status with success
+		tasks[task_id]["status"] = "completed"
+		tasks[task_id]["message"] = "Application submitted successfully"
+		tasks[task_id]["progress"] = 100
+		tasks[task_id]["result"] = result
+		
 	except Exception as e:
 		print(f"Error in run_agent: {e}")
-		raise HTTPException(status_code=500, detail=str(e))
+		# Update task status with error
+		tasks[task_id]["status"] = "failed"
+		tasks[task_id]["error"] = str(e)
+		tasks[task_id]["message"] = f"Error: {str(e)}"
 	finally:
 		# Clean up resources
 		try:

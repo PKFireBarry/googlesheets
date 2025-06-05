@@ -92,6 +92,7 @@ function AutoApplyContent(): React.ReactElement {
   const [taskId, setTaskId] = useState<string>('');
   const [generatedPdfUrl, setGeneratedPdfUrl] = useState<string>('');
   const [uploadPrompt, setUploadPrompt] = useState<string>('');
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
 
   // Format skills for display - helper function
   const formatSkills = (skills: string | string[] | undefined): string => {
@@ -501,71 +502,69 @@ function AutoApplyContent(): React.ReactElement {
 
   // Start auto-apply process
   const handleStartAutoApply = async () => {
-    if (!generatedPdfUrl) {
-      setError('Please generate a resume first');
+    if (!resumePdfData && !masterResume) {
+      toast.error('Please upload a resume first');
       return;
     }
-    
-    if (!uploadPrompt) {
-      setError('Please enter an upload prompt');
+
+    if (!selectedJob || !selectedJob.url) {
+      toast.error('Please enter job details with a valid URL');
       return;
     }
-    
-    // Ensure company_website is properly formatted and always included in the API payload
-    if (selectedJob && selectedJob.company_website) {
-      selectedJob.company_website = normalizeUrl(selectedJob.company_website);
-    }
-    
-    setIsUploading(true);
-    setUploadError('');
-    setUploadStatus('starting');
-    
+
     try {
-      // Construct the full prompt with personal info and resume JSON
-      const personalInfoJson = JSON.stringify(personalInfo);
-      const resumeJson = generatedResume ? JSON.stringify(generatedResume) : '{}';
-      
-      const fullPrompt = 
-        `${uploadPrompt}\n\n` + 
-        `\n--- Personal Information in JSON format ---\n${personalInfoJson}\n--- End Personal Information JSON ---\n\n` + 
-        `--- Full Resume in JSON format ---\n${resumeJson}\n--- End Full Resume JSON ---\n`;
+      setIsUploading(true);
+      setUploadStatus('starting');
+      setUploadError('');
+      setUploadResult(null);
 
-      console.log("Starting auto-apply with full prompt:", fullPrompt);
-      console.log("Generated PDF URL for auto-apply:", generatedPdfUrl);
-      console.log("Using company website URL:", selectedJob?.company_website);
+      // Prepare the prompt for auto-apply
+      const finalPrompt = uploadPrompt || `Apply to the job using my resume information. Fill out all required fields.`;
 
-      // Use our internal API endpoint instead of calling the external API directly
-      const res = await fetch('/api/resume/auto-apply', {
+      // Get the generated PDF URL if available, otherwise use the master resume
+      const pdfUrl = generatedPdfUrl || resumePdfData;
+
+      if (!pdfUrl) {
+        setUploadError('No resume PDF available');
+        setIsUploading(false);
+        setUploadStatus('failed');
+        return;
+      }
+
+      // Make the API call to start the auto-apply process
+      const response = await fetch('/api/resume/auto-apply', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          pdfUrl: generatedPdfUrl,
-          prompt: fullPrompt, // Send the combined prompt
-          apiKey: apiKey,
-          url: selectedJob?.company_website || '', // Pass company_website as top-level url
-          jobData: {
-            ...selectedJob,
-            // company_website is NOT needed here for the API call
-          },
+          pdfUrl,
+          prompt: finalPrompt,
+          apiKey,
+          jobData: selectedJob,
+          url: selectedJob.url
         }),
       });
-      
-      if (!res.ok) {
-        const errorData = await res.json();
+
+      if (!response.ok) {
+        const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to start auto-apply process');
       }
+
+      const data = await response.json();
       
-      const data = await res.json();
-      if (!data.task_id) {
-        throw new Error('Failed to start upload process');
+      // Check if we got a task ID for polling
+      if (data.task_id) {
+        setTaskId(data.task_id);
+        // Start polling for status
+        pollForStatus(data.task_id);
+      } else {
+        // Handle legacy response without polling
+        setUploadResult(data.result);
+        setUploadStatus('completed');
+        setIsUploading(false);
+        toast.success('Application submitted successfully!');
       }
-      
-      setTaskId(data.task_id);
-      
-      // Start polling for status using our utility function
-      pollForStatus(data.task_id);
     } catch (error: any) {
       console.error('Error starting auto-apply:', error);
       setUploadError(error.message || 'Failed to start auto-apply process');
@@ -586,9 +585,15 @@ function AutoApplyContent(): React.ReactElement {
           console.log('Auto apply status:', statusData);
           setUploadStatus(statusData.status);
           
+          if (typeof statusData.progress === 'number') {
+            // Update progress if available
+            setUploadProgress(statusData.progress);
+          }
+          
           if (statusData.status === 'completed') {
             setUploadResult(statusData.result);
             setIsUploading(false);
+            setUploadProgress(100); // Ensure 100% on completion
             toast.success('Application submitted successfully!');
             
             // Mark job as applied if we have job details
@@ -843,6 +848,7 @@ function AutoApplyContent(): React.ReactElement {
               status={uploadStatus}
               result={uploadResult}
               error={uploadError}
+              progress={uploadProgress}
             />
             
             {/* Completion Message */}
