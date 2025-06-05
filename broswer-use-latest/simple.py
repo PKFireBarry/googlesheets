@@ -3,6 +3,7 @@ import os
 import sys
 import random
 import uuid
+import json
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from fastapi.responses import JSONResponse
@@ -52,6 +53,26 @@ async def human_like_delay():
     """Add a random human-like delay between actions"""
     delay = random.uniform(0.5, 2.0)
     await asyncio.sleep(delay)
+
+# Helper function to validate and fix JSON responses
+def fix_json_response(response_str):
+    """Fix common JSON formatting issues in model responses"""
+    try:
+        # Try to parse as is first
+        return json.loads(response_str)
+    except json.JSONDecodeError:
+        try:
+            # Replace incorrectly escaped single quotes
+            fixed = response_str.replace("\\'", "'")
+            return json.loads(fixed)
+        except json.JSONDecodeError:
+            try:
+                # Replace incorrectly escaped double quotes
+                fixed = response_str.replace('\\"', '"')
+                return json.loads(fixed)
+            except json.JSONDecodeError:
+                # If all else fails, raise the original error
+                raise
 
 @app.get('/auto-apply-status/{task_id}')
 async def get_task_status(task_id: str):
@@ -228,6 +249,25 @@ async def process_auto_apply(task_id, prompt, url, api_key, file, file_url):
 		## Step 1: Finding the application form to submit an application 
 		## have an ai agent navigate the page till the application form is found
 		find_application_form = f"""go to this URL:{url},\n what your looking at a job application and need to navigate to the appliaciton form.\nif the form is already shown on the screen stop and consider the task completed.\nif the application form is not shown on the screen naviagate the webiste to find to form and then consider the task complete\n"""
+		
+		# Updated system message with clear JSON formatting instructions
+		json_system_message = """
+		Respond ONLY with valid JSON. Do not include any text before or after the JSON.
+		
+		IMPORTANT JSON FORMATTING RULES:
+		1. Use double quotes for all JSON keys and string values
+		2. NEVER use escaped single quotes (\\') in your JSON
+		3. NEVER use escaped double quotes (\\\") inside JSON strings
+		4. If you need to include quotes in a string value, use single quotes without escaping them
+		5. Ensure all JSON is properly nested and formatted
+		
+		Example of CORRECT format:
+		{"current_state": {"evaluation": "I clicked on 'Apply Now' button", "memory": "I am on the job application page"}, "action": [{"click": {"selector": "#apply-button"}}]}
+		
+		Example of INCORRECT format:
+		{"current_state": {"evaluation": "I clicked on \\'Apply Now\\' button", "memory": "I am on the job application page"}, "action": [{"click": {"selector": "#apply-button"}}]}
+		"""
+		
 		form_finder_agent = Agent(
 			task=find_application_form,
 			llm=llm,
@@ -237,7 +277,7 @@ async def process_auto_apply(task_id, prompt, url, api_key, file, file_url):
 			use_vision_for_planner=True,
 			max_failures=3,
 			retry_delay=15,
-			extend_system_message='Respond ONLY with valid JSON. Do not include any text before or after the JSON. Use double quotes for all strings. Do not escape single quotes. Do not include comments. Do not include markdown.',
+			extend_system_message=json_system_message,
 			enable_memory=True,
 			tool_calling_method='auto'
 		)
@@ -439,7 +479,7 @@ async def process_auto_apply(task_id, prompt, url, api_key, file, file_url):
 			use_vision_for_planner=True,
 			max_failures=3,
 			retry_delay=15,
-			extend_system_message='Respond ONLY with valid JSON. Do not include any text before or after the JSON. Use double quotes for all strings. Do not escape single quotes. Do not include comments. Do not include markdown.',
+			extend_system_message=json_system_message,
 			enable_memory=True,
 			tool_calling_method='auto'
 		)
