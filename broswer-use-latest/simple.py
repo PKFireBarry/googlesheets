@@ -164,6 +164,12 @@ async def run_agent(
 				print(f"Examining file input: {input_el}")
 				found_resume_field = False
 				
+				# Check accept attribute for resume-related file types
+				accept_attr = input_el.get('accept', '')
+				if accept_attr and any(ext in accept_attr.lower() for ext in ['.pdf', '.doc', '.docx', 'application/pdf']):
+					found_resume_field = True
+					print(f"Found resume input based on accept attribute: {input_el}")
+				
 				# Check all attributes for resume-related keywords
 				for attr, value in input_el.attrs.items():
 					if any(keyword in attr.lower() for keyword in ['resume', 'file', 'upload', 'document', 'cv']):
@@ -183,11 +189,10 @@ async def run_agent(
 				
 				if found_resume_field:
 					resume_input = input_el
+					print(f"Found resume input: {resume_input}")
 					break
 			
 			if resume_input:
-				print(f"Found resume input: {resume_input}\n")
-				
 				# Upload the resume file if available
 				if temp_file_path:
 					try:
@@ -204,25 +209,52 @@ async def run_agent(
 							class_names = ' '.join(resume_input['class'])
 							selector = f"input.{class_names.replace(' ', '.')}"
 						else:
-							# Use XPath as fallback
-							for i, el in enumerate(soup.find_all('input', {'type': 'file'})):
+							# Use XPath as fallback - find the index of this input among all file inputs
+							for i, el in enumerate(file_inputs):
 								if el == resume_input:
 									selector = f"//input[@type='file'][{i+1}]"
 									break
 						
 						if selector:
 							print(f"Using selector {selector} to upload file {temp_file_path}")
-							if selector.startswith('//'):
-								# XPath selector
-								file_input = await page.wait_for_selector(f"xpath={selector}", timeout=5000)
-							else:
-								# CSS selector
-								file_input = await page.wait_for_selector(selector, timeout=5000)
-							
-							if file_input:
-								await file_input.set_input_files(temp_file_path)
-								print("File uploaded successfully")
-								await asyncio.sleep(2)  # Wait for upload to complete
+							try:
+								if selector.startswith('//'):
+									# XPath selector
+									file_input = await page.wait_for_selector(f"xpath={selector}", timeout=5000)
+								else:
+									# CSS selector
+									file_input = await page.wait_for_selector(selector, timeout=5000)
+								
+								if file_input:
+									# Try to make the file input visible if it's hidden
+									await page.evaluate_handle("""(selector) => {
+										const el = document.querySelector(selector) || document.evaluate(selector, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+										if (el) {
+											el.style.display = 'block';
+											el.style.opacity = '1';
+											el.style.visibility = 'visible';
+											el.style.position = 'relative';
+										}
+									}""", selector)
+									
+									# Try direct upload
+									await file_input.set_input_files(temp_file_path)
+									print("File uploaded successfully")
+									await asyncio.sleep(2)  # Wait for upload to complete
+							except Exception as selector_error:
+								print(f"Error with selector {selector}: {selector_error}")
+								
+								# Try a more general approach if specific selector fails
+								try:
+									# Try to find and use any file input
+									all_file_inputs = await page.query_selector_all('input[type="file"]')
+									if all_file_inputs and len(all_file_inputs) > 0:
+										print(f"Trying direct upload to first file input of {len(all_file_inputs)} found")
+										await all_file_inputs[0].set_input_files(temp_file_path)
+										print("File uploaded successfully with fallback method")
+										await asyncio.sleep(2)
+								except Exception as fallback_error:
+									print(f"Fallback upload also failed: {fallback_error}")
 					except Exception as upload_error:
 						print(f"Error uploading resume file: {upload_error}")
 						print("Continuing without file upload")
