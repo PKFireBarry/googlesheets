@@ -338,7 +338,7 @@ async def process_auto_apply(task_id, prompt, url, api_key, file, file_url):
         apply_agent = Agent(
             task=apply_task,
             llm=llm,
-            max_actions_per_step=2,
+            max_actions_per_step=5,
             browser_session=browser_session,
             use_vision=True,
             use_vision_for_planner=True,
@@ -360,7 +360,7 @@ async def process_auto_apply(task_id, prompt, url, api_key, file, file_url):
             )
         except Exception as e:
             error_message = str(e)
-            if "Failed to parse model output" in error_message or "Invalid \escape" in error_message:
+            if "Failed to parse model output" in error_message or "Invalid \\escape" in error_message:
                 error_message = "The AI had trouble parsing the form. This often happens with complex forms or when special characters cause parsing issues."
             
             update_task_status(
@@ -395,4 +395,4 @@ async def process_auto_apply(task_id, prompt, url, api_key, file, file_url):
                 print(f"Error removing temp file: {e}")
 
 if __name__ == '__main__':
-    uvicorn.run("simple.py:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("simple:app", host="0.0.0.0", port=8000, reload=True)
