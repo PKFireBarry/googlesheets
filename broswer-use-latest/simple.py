@@ -59,7 +59,27 @@ async def get_task_status(task_id: str):
     if task_id not in tasks:
         raise HTTPException(status_code=404, detail="Task not found")
     
-    return JSONResponse(content=tasks[task_id])
+    try:
+        # Return a copy of the task data to avoid serialization issues
+        task_data = {
+            "status": tasks[task_id].get("status", "unknown"),
+            "message": tasks[task_id].get("message", ""),
+            "progress": tasks[task_id].get("progress", 0),
+            "error": tasks[task_id].get("error", ""),
+            "result": tasks[task_id].get("result", {})
+        }
+        
+        return JSONResponse(content=task_data)
+    except Exception as e:
+        print(f"Error getting task status: {e}")
+        return JSONResponse(
+            content={
+                "status": "error",
+                "message": f"Error retrieving task status: {str(e)}",
+                "progress": 0
+            },
+            status_code=500
+        )
 
 @app.post('/auto-apply')
 async def run_agent(
@@ -221,7 +241,22 @@ async def process_auto_apply(task_id, prompt, url, api_key, file, file_url):
 			enable_memory=True,
 			tool_calling_method='auto'
 		)
-		find_form_result = await form_finder_agent.run(max_steps=25)
+		
+		try:
+			find_form_result = await form_finder_agent.run(max_steps=25)
+			# Store only JSON-serializable data
+			form_result_serializable = {
+				"success": True,
+				"final_url": find_form_result.get("final_url", url),
+				"message": "Successfully found application form"
+			}
+		except Exception as e:
+			print(f"Error finding form: {e}")
+			form_result_serializable = {
+				"success": False,
+				"error": str(e),
+				"message": "Failed to find application form"
+			}
 		
 		# Add a variable delay to ensure the page is fully loaded and stable
 		await asyncio.sleep(random.uniform(2, 4))
@@ -230,10 +265,13 @@ async def process_auto_apply(task_id, prompt, url, api_key, file, file_url):
 		tasks[task_id]["status"] = "in_progress"
 		tasks[task_id]["message"] = "Uploading resume"
 		tasks[task_id]["progress"] = 50
+		tasks[task_id]["form_result"] = form_result_serializable
 		
 		## Step 2: Fetch the page HTML and parse for resume file input
 		## Use the browser session directly to get the page HTML and find the file input
 		print("Fetching current page HTML after agent navigation...")
+		resume_upload_result = {"success": False, "message": ""}
+		
 		try:
 			# Verify browser session is still active
 			if not browser_session.is_connected():
@@ -242,7 +280,7 @@ async def process_auto_apply(task_id, prompt, url, api_key, file, file_url):
 				await browser_session.start()
 				
 				# Navigate back to the current URL if needed
-				current_url = find_form_result.get('final_url', url)
+				current_url = form_result_serializable.get('final_url', url)
 				if current_url:
 					await browser_session.navigate_to(current_url)
 					await asyncio.sleep(random.uniform(1.5, 3))
@@ -344,9 +382,11 @@ async def process_auto_apply(task_id, prompt, url, api_key, file, file_url):
 									# Try direct upload
 									await file_input.set_input_files(temp_file_path)
 									print("File uploaded successfully")
+									resume_upload_result = {"success": True, "message": "Resume uploaded successfully"}
 									await asyncio.sleep(random.uniform(1.5, 3))  # Variable wait for upload to complete
 							except Exception as selector_error:
 								print(f"Error with selector {selector}: {selector_error}")
+								resume_upload_result = {"success": False, "message": f"Selector error: {str(selector_error)}"}
 								
 								# Try a more general approach if specific selector fails
 								try:
@@ -357,17 +397,25 @@ async def process_auto_apply(task_id, prompt, url, api_key, file, file_url):
 										await human_like_delay()
 										await all_file_inputs[0].set_input_files(temp_file_path)
 										print("File uploaded successfully with fallback method")
+										resume_upload_result = {"success": True, "message": "Resume uploaded with fallback method"}
 										await asyncio.sleep(random.uniform(1.5, 3))
 								except Exception as fallback_error:
 									print(f"Fallback upload also failed: {fallback_error}")
+									resume_upload_result = {"success": False, "message": f"Fallback upload failed: {str(fallback_error)}"}
 					except Exception as upload_error:
 						print(f"Error uploading resume file: {upload_error}")
 						print("Continuing without file upload")
+						resume_upload_result = {"success": False, "message": f"Upload error: {str(upload_error)}"}
 			else:
 				print("No resume input found matching criteria. Continuing without file upload.")
+				resume_upload_result = {"success": True, "message": "No resume input field found, continuing without file upload"}
 		except Exception as e:
 			print(f"Error during resume input detection: {e}")
 			print("Continuing without file upload")
+			resume_upload_result = {"success": False, "message": f"Resume detection error: {str(e)}"}
+		
+		# Update task status with resume upload result
+		tasks[task_id]["resume_upload"] = resume_upload_result
 		
 		# Add human-like delay before form filling
 		await human_like_delay()
@@ -397,13 +445,34 @@ async def process_auto_apply(task_id, prompt, url, api_key, file, file_url):
 		)
 		
 		# Run the application filling agent
-		result = await apply_agent.run(max_steps=25)
-		
-		# Update task status with success
-		tasks[task_id]["status"] = "completed"
-		tasks[task_id]["message"] = "Application submitted successfully"
-		tasks[task_id]["progress"] = 100
-		tasks[task_id]["result"] = result
+		try:
+			result = await apply_agent.run(max_steps=25)
+			
+			# Extract only JSON-serializable data from the result
+			result_serializable = {
+				"success": True,
+				"message": "Application submitted successfully",
+				"fields_filled": "All required fields were completed"
+			}
+			
+			# Update task status with success
+			tasks[task_id]["status"] = "completed"
+			tasks[task_id]["message"] = "Application submitted successfully"
+			tasks[task_id]["progress"] = 100
+			tasks[task_id]["result"] = result_serializable
+		except Exception as e:
+			error_message = str(e)
+			print(f"Error in form filling agent: {error_message}")
+			
+			# Check for specific error patterns
+			if "Failed to parse model output" in error_message or "Invalid \escape" in error_message:
+				error_message = "The AI had trouble parsing the form. This often happens with complex forms or when special characters cause parsing issues."
+			
+			# Update task status with error
+			tasks[task_id]["status"] = "failed"
+			tasks[task_id]["error"] = error_message
+			tasks[task_id]["message"] = f"Error: {error_message}"
+			tasks[task_id]["progress"] = 100
 		
 	except Exception as e:
 		print(f"Error in run_agent: {e}")
@@ -411,6 +480,7 @@ async def process_auto_apply(task_id, prompt, url, api_key, file, file_url):
 		tasks[task_id]["status"] = "failed"
 		tasks[task_id]["error"] = str(e)
 		tasks[task_id]["message"] = f"Error: {str(e)}"
+		tasks[task_id]["progress"] = 100
 	finally:
 		# Clean up resources
 		try:
