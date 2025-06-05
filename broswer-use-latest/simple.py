@@ -1,6 +1,7 @@
 import asyncio
 import os
 import sys
+import random
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from fastapi.responses import JSONResponse
@@ -27,6 +28,26 @@ from browser_use import Agent
 from browser_use.browser import BrowserProfile, BrowserSession
 
 app = FastAPI()
+
+# Common user agents for better stealth
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
+]
+
+# Common screen resolutions
+SCREEN_RESOLUTIONS = [
+    {"width": 1920, "height": 1080},
+    {"width": 1366, "height": 768},
+    {"width": 1440, "height": 900},
+    {"width": 1536, "height": 864}
+]
+
+async def human_like_delay():
+    """Add a random human-like delay between actions"""
+    delay = random.uniform(0.5, 2.0)
+    await asyncio.sleep(delay)
 
 @app.post('/auto-apply')
 async def run_agent(
@@ -86,6 +107,10 @@ async def run_agent(
 		# Always configure the LLM
 		llm = ChatGoogleGenerativeAI(model='gemini-2.5-flash-preview-05-20', api_key=api_key)
 		
+		# Select random user agent and screen resolution for better stealth
+		user_agent = random.choice(USER_AGENTS)
+		screen_resolution = random.choice(SCREEN_RESOLUTIONS)
+		
 		# Create a browser profile with unique user data dir to avoid conflicts
 		unique_user_data_dir = f"~/.config/browseruse/profiles/job_apply_{os.getpid()}"
 		
@@ -101,6 +126,20 @@ async def run_agent(
 			executable_path='/usr/bin/google-chrome',
 			disable_security=False,
 			deterministic_rendering=False,
+			screen=screen_resolution,
+			extra_http_headers={
+                "User-Agent": user_agent,
+                "Accept-Language": "en-US,en;q=0.9",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+                "sec-ch-ua": '"Google Chrome";v="123", "Not:A-Brand";v="99"',
+                "sec-ch-ua-mobile": "?0",
+                "sec-ch-ua-platform": '"Windows"'
+            },
+            locale="en-US",
+            timezone_id="America/New_York",
+            device_scale_factor=1.0,
+            is_mobile=False,
+            permissions=["geolocation"]
 		)
 		
 		# Use patchright with browser session for stealth capabilities
@@ -111,6 +150,9 @@ async def run_agent(
 		
 		# Initialize the browser session
 		await browser_session.start()
+		
+		# Add initial human-like delay before navigation
+		await human_like_delay()
 		
 		## Step 1: Finding the application form to submit an application 
 		## have an ai agent navigate the page till the application form is found
@@ -130,8 +172,8 @@ async def run_agent(
 		)
 		find_form_result = await form_finder_agent.run(max_steps=25)
 		
-		# Add a delay to ensure the page is fully loaded and stable
-		await asyncio.sleep(3)
+		# Add a variable delay to ensure the page is fully loaded and stable
+		await asyncio.sleep(random.uniform(2, 4))
 		
 		## Step 2: Fetch the page HTML and parse for resume file input
 		## Use the browser session directly to get the page HTML and find the file input
@@ -147,7 +189,7 @@ async def run_agent(
 				current_url = find_form_result.get('final_url', url)
 				if current_url:
 					await browser_session.navigate_to(current_url)
-					await asyncio.sleep(2)
+					await asyncio.sleep(random.uniform(1.5, 3))
 			
 			# Get the HTML content
 			html = await browser_session.get_page_html()
@@ -199,6 +241,9 @@ async def run_agent(
 						# Get the current page from the browser session
 						page = await browser_session.get_current_page()
 						
+						# Add human-like delay before file upload
+						await human_like_delay()
+						
 						# Find a selector for the file input
 						selector = None
 						if resume_input.get('id'):
@@ -237,10 +282,13 @@ async def run_agent(
 										}
 									}""", selector)
 									
+									# Add human-like delay before upload
+									await human_like_delay()
+									
 									# Try direct upload
 									await file_input.set_input_files(temp_file_path)
 									print("File uploaded successfully")
-									await asyncio.sleep(2)  # Wait for upload to complete
+									await asyncio.sleep(random.uniform(1.5, 3))  # Variable wait for upload to complete
 							except Exception as selector_error:
 								print(f"Error with selector {selector}: {selector_error}")
 								
@@ -250,9 +298,10 @@ async def run_agent(
 									all_file_inputs = await page.query_selector_all('input[type="file"]')
 									if all_file_inputs and len(all_file_inputs) > 0:
 										print(f"Trying direct upload to first file input of {len(all_file_inputs)} found")
+										await human_like_delay()
 										await all_file_inputs[0].set_input_files(temp_file_path)
 										print("File uploaded successfully with fallback method")
-										await asyncio.sleep(2)
+										await asyncio.sleep(random.uniform(1.5, 3))
 								except Exception as fallback_error:
 									print(f"Fallback upload also failed: {fallback_error}")
 					except Exception as upload_error:
@@ -264,9 +313,12 @@ async def run_agent(
 			print(f"Error during resume input detection: {e}")
 			print("Continuing without file upload")
 		
+		# Add human-like delay before form filling
+		await human_like_delay()
+		
 		## Step 3: Fill out and submit the application and return the result
 		## Compose the task to fillout the application
-		apply_task = f"""your goal is to use the following personal/resume data information for a job application\n Fill out the text inputs, textareas, and answer any questions using the information provided.\nIgnore any optional data and the resume or photo upload inputs and any other inputs that are not text inputs, textareas, questions, checkboxes, or radio buttons.\nOnce all the required fields are completed consider the task complete and return the results.\n{prompt}"""
+		apply_task = f"""your goal is to use the following personal/resume data information for a job application\n Fill out the text inputs, textareas, and answer any questions using the information provided.\nIgnore any optional data and the resume or photo upload inputs and any other inputs that are not text inputs, textareas, questions, checkboxes, or radio buttons.\nOnce all the required fields are completed consider the task complete and return the results.\n\nIMPORTANT: Act like a human user. Type at a natural pace with brief pauses between fields. Don't fill out forms too quickly or in a robotic pattern. Occasionally make small typos and correct them. Navigate through fields in a natural order, sometimes using tab key and sometimes clicking directly.\n\n{prompt}"""
 		
 		# Create a new agent for step 3, reusing the same browser session
 		apply_agent = Agent(
