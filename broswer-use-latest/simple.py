@@ -185,36 +185,61 @@ async def find_and_upload_resume(browser_session, temp_file_path):
         return {"success": True, "message": "No file to upload"}
         
     try:
+        # Verify browser session is still active
+        if not browser_session.is_connected():
+            print("Browser session disconnected, reconnecting...")
+            await browser_session.start()
+            await asyncio.sleep(random.uniform(1.5, 3))
+            
         # Get the HTML content
+        print("Fetching current page HTML for resume upload...")
         html = await browser_session.get_page_html()
         soup = BeautifulSoup(html, 'html.parser')
         file_inputs = soup.find_all('input', {'type': 'file'})
+        print(f"Found {len(file_inputs)} file input elements")
+        
+        # If no file inputs found via BeautifulSoup, try direct Playwright approach
+        if not file_inputs:
+            print("No file inputs found via BeautifulSoup, trying direct Playwright approach")
+            page = await browser_session.get_current_page()
+            all_file_inputs = await page.query_selector_all('input[type="file"]')
+            if all_file_inputs and len(all_file_inputs) > 0:
+                print(f"Found {len(all_file_inputs)} file inputs via Playwright")
+                await human_like_delay()
+                await all_file_inputs[0].set_input_files(temp_file_path)
+                await asyncio.sleep(random.uniform(1.5, 3))
+                return {"success": True, "message": "Resume uploaded with direct method"}
         
         # Find resume input field
         resume_input = None
         for input_el in file_inputs:
-            # Check for resume-related attributes
+            print(f"Examining file input: {input_el}")
+            found_resume_field = False
+            
+            # Check accept attribute for resume-related file types
             accept_attr = input_el.get('accept', '')
             if accept_attr and any(ext in accept_attr.lower() for ext in RESUME_FILE_TYPES):
-                resume_input = input_el
-                break
-                
-            # Check attributes and parent text for resume keywords
+                found_resume_field = True
+                print(f"Found resume input based on accept attribute: {input_el}")
+            
+            # Check all attributes for resume-related keywords
             for attr, value in input_el.attrs.items():
                 if any(keyword in attr.lower() for keyword in RESUME_KEYWORDS) or \
                    (isinstance(value, str) and any(keyword in value.lower() for keyword in RESUME_KEYWORDS)):
-                    resume_input = input_el
+                    found_resume_field = True
                     break
-                    
-            # Check parent elements
+                
+            # Check parent elements for resume-related text
             parent = input_el.parent
             for _ in range(3):
                 if parent and parent.get_text() and any(keyword in parent.get_text().lower() for keyword in RESUME_KEYWORDS):
-                    resume_input = input_el
+                    found_resume_field = True
                     break
                 parent = parent.parent if parent else None
-                
-            if resume_input:
+            
+            if found_resume_field:
+                resume_input = input_el
+                print(f"Found resume input: {resume_input}")
                 break
         
         if resume_input and temp_file_path:
@@ -237,39 +262,70 @@ async def find_and_upload_resume(browser_session, temp_file_path):
                         break
             
             if selector:
-                # Get file input element and make it visible
-                file_input = await page.wait_for_selector(
-                    f"xpath={selector}" if selector.startswith('//') else selector, 
-                    timeout=5000
-                )
-                
-                if file_input:
-                    # Make file input visible if hidden
-                    await page.evaluate_handle("""(selector) => {
-                        const el = document.querySelector(selector) || 
-                                  document.evaluate(selector, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-                        if (el) {
+                print(f"Using selector {selector} to upload file {temp_file_path}")
+                try:
+                    # Get file input element and make it visible
+                    file_input = await page.wait_for_selector(
+                        f"xpath={selector}" if selector.startswith('//') else selector, 
+                        timeout=5000
+                    )
+                    
+                    if file_input:
+                        # Make file input visible if hidden
+                        await page.evaluate_handle("""(selector) => {
+                            const el = document.querySelector(selector) || 
+                                      document.evaluate(selector, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+                            if (el) {
+                                el.style.display = 'block';
+                                el.style.opacity = '1';
+                                el.style.visibility = 'visible';
+                                el.style.position = 'relative';
+                                el.style.pointerEvents = 'auto';
+                                el.style.width = 'auto';
+                                el.style.height = 'auto';
+                            }
+                        }""", selector)
+                        
+                        await human_like_delay()
+                        await file_input.set_input_files(temp_file_path)
+                        print("File uploaded successfully")
+                        await asyncio.sleep(random.uniform(1.5, 3))
+                        return {"success": True, "message": "Resume uploaded successfully"}
+                except Exception as selector_error:
+                    print(f"Error with selector {selector}: {selector_error}")
+                    # Continue to fallback method
+            
+            # Fallback to any file input if specific selector fails
+            print("Trying fallback upload method with any file input")
+            all_file_inputs = await page.query_selector_all('input[type="file"]')
+            if all_file_inputs and len(all_file_inputs) > 0:
+                print(f"Trying direct upload to first file input of {len(all_file_inputs)} found")
+                try:
+                    # Try to make the file input visible if it's hidden
+                    await page.evaluate_handle("""() => {
+                        const fileInputs = document.querySelectorAll('input[type="file"]');
+                        for (const el of fileInputs) {
                             el.style.display = 'block';
                             el.style.opacity = '1';
                             el.style.visibility = 'visible';
                             el.style.position = 'relative';
+                            el.style.pointerEvents = 'auto';
+                            el.style.width = 'auto';
+                            el.style.height = 'auto';
                         }
-                    }""", selector)
+                    }""")
                     
                     await human_like_delay()
-                    await file_input.set_input_files(temp_file_path)
+                    await all_file_inputs[0].set_input_files(temp_file_path)
+                    print("File uploaded successfully with fallback method")
                     await asyncio.sleep(random.uniform(1.5, 3))
-                    return {"success": True, "message": "Resume uploaded successfully"}
-            
-            # Fallback to any file input if specific selector fails
-            all_file_inputs = await page.query_selector_all('input[type="file"]')
-            if all_file_inputs and len(all_file_inputs) > 0:
-                await human_like_delay()
-                await all_file_inputs[0].set_input_files(temp_file_path)
-                await asyncio.sleep(random.uniform(1.5, 3))
-                return {"success": True, "message": "Resume uploaded with fallback method"}
-                
-        return {"success": True, "message": "No resume input field found"}
+                    return {"success": True, "message": "Resume uploaded with fallback method"}
+                except Exception as fallback_error:
+                    print(f"Fallback upload also failed: {fallback_error}")
+        
+        # If we've reached here, no suitable file input was found or upload failed
+        print("No suitable resume input field found or upload failed")
+        return {"success": False, "message": "Could not find a suitable resume upload field"}
     except Exception as e:
         print(f"Error during resume upload: {e}")
         return {"success": False, "message": f"Resume upload error: {str(e)}"}
