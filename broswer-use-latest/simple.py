@@ -145,36 +145,6 @@ async def human_scroll(page, direction="down", distance=None, speed="medium"):
     if random.random() < 0.3:  # 30% chance
         await human_delay(0.5, 1.5)
 
-class HumanizedAgent(Agent):
-    """Extension of the Agent class with humanized behaviors"""
-    
-    async def humanized_action(self, action_type, **kwargs):
-        """Perform a humanized browser action"""
-        page = await self.browser_session.get_current_page()
-        
-        if action_type == "click":
-            selector = kwargs.get("selector")
-            if selector:
-                # Move mouse to element and click
-                await human_mouse_movement(page, end_selector=selector)
-                await human_delay(0.1, 0.3)
-                await page.click(selector, delay=random.uniform(50, 150))
-                return True
-        
-        elif action_type == "type":
-            selector = kwargs.get("selector")
-            text = kwargs.get("text")
-            if selector and text:
-                await human_typing(page, selector, text)
-                return True
-        
-        elif action_type == "scroll":
-            direction = kwargs.get("direction", "down")
-            await human_scroll(page, direction=direction)
-            return True
-        
-        return False
-
 @app.post('/auto-apply')
 async def run_agent(
 	prompt: str = Form(...), ### This is the information that will be used to apply for the job.
@@ -279,7 +249,7 @@ async def run_agent(
 		await page.goto("about:blank")  # Start with blank page
 		await human_delay(0.5, 1.5)
 		
-		# Type URL in address bar with human-like typing
+		# Navigate to the target URL
 		await page.goto(url)
 		
 		# Simulate initial page exploration
@@ -294,10 +264,12 @@ async def run_agent(
 		## Step 1: Finding the application form to submit an application 
 		## have an ai agent navigate the page till the application form is found
 		find_application_form = f"""go to this URL:{url},\n what your looking at a job application and need to navigate to the appliaciton form.\nif the form is already shown on the screen stop and consider the task completed.\nif the application form is not shown on the screen naviagate the webiste to find to form and then consider the task complete\n"""
-		form_finder_agent = HumanizedAgent(
+		
+		# Use the standard Agent class with slower parameters
+		form_finder_agent = Agent(
 			task=find_application_form,
 			llm=llm,
-			max_actions_per_step=10,  # Reduced from 15 to slow down
+			max_actions_per_step=3,  # Reduced to slow down
 			browser_session=browser_session,
 			use_vision=True,
 			use_vision_for_planner=True,
@@ -307,10 +279,19 @@ async def run_agent(
 			enable_memory=True,
 			tool_calling_method='auto'
 		)
+		
+		# After each agent action, we'll add human-like delays and behaviors
 		find_form_result = await form_finder_agent.run(max_steps=25)
 		
 		# Add a delay to ensure the page is fully loaded and stable
 		await human_delay(2.0, 4.0)
+		
+		# Perform additional human-like scrolling behavior after finding the form
+		page = await browser_session.get_current_page()
+		await human_scroll(page, direction="down", speed="slow")
+		await human_delay(1.0, 2.0)
+		await human_scroll(page, direction="up", speed="medium")
+		await human_delay(1.5, 2.5)
 		
 		## Step 2: Fetch the page HTML and parse for resume file input
 		## Use the browser session directly to get the page HTML and find the file input
@@ -524,10 +505,10 @@ async def run_agent(
 		apply_task = f"""your goal is to use the following personal/resume data information for a job application\n Fill out the text inputs, textareas, and answer any questions using the information provided.\nIgnore any optional data and the resume or photo upload inputs and any other inputs that are not text inputs, textareas, questions, checkboxes, or radio buttons.\nOnce all the required fields are completed consider the task complete and return the results.\n\nIMPORTANT: Take your time filling out the form. Act like a human by pausing between actions. Don't fill out the entire form too quickly.\n\n{prompt}"""
 		
 		# Create a new agent for step 3, reusing the same browser session
-		apply_agent = HumanizedAgent(
+		apply_agent = Agent(
 			task=apply_task,
 			llm=llm,
-			max_actions_per_step=8,  # Reduced from 15 to slow down
+			max_actions_per_step=1,  # Reduced to slow down
 			browser_session=browser_session,
 			use_vision=True,
 			use_vision_for_planner=True,
@@ -538,8 +519,34 @@ async def run_agent(
 			tool_calling_method='auto'
 		)
 		
-		# Run the application filling agent
-		result = await apply_agent.run(max_steps=25)
+		# Add human-like behavior between agent steps
+		async def run_with_human_behavior(agent, max_steps=25):
+			step_count = 0
+			while not agent.is_done and step_count < max_steps:
+				# Run one step of the agent
+				await agent.step()
+				step_count += 1
+				
+				# Add human-like behavior after each step
+				if not agent.is_done:
+					# Get the current page
+					page = await browser_session.get_current_page()
+					
+					# Random chance to scroll or move mouse
+					action_choice = random.random()
+					if action_choice < 0.3:  # 30% chance to scroll
+						direction = "down" if random.random() < 0.7 else "up"
+						await human_scroll(page, direction=direction, speed="medium")
+					elif action_choice < 0.6:  # 30% chance to move mouse
+						await human_mouse_movement(page)
+					
+					# Always add a delay between steps
+					await human_delay(1.0, 3.0)
+			
+			return agent.result
+		
+		# Run the application filling agent with human-like behavior
+		result = await run_with_human_behavior(apply_agent, max_steps=25)
 		
 		# Add final human-like interaction before completing
 		await human_delay(1.5, 3.0)
