@@ -1,8 +1,6 @@
 import asyncio
 import os
 import sys
-import random
-import time
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from fastapi.responses import JSONResponse
@@ -29,121 +27,6 @@ from browser_use import Agent
 from browser_use.browser import BrowserProfile, BrowserSession
 
 app = FastAPI()
-
-# Human-like behavior utilities
-async def human_delay(min_seconds=0.5, max_seconds=2.0):
-    """Add a random delay to simulate human thinking/reaction time"""
-    delay = random.uniform(min_seconds, max_seconds)
-    await asyncio.sleep(delay)
-    return delay
-
-async def human_typing(page, selector, text, min_delay=0.05, max_delay=0.15):
-    """Type text like a human with variable speed and occasional pauses"""
-    await page.click(selector)
-    await human_delay(0.2, 0.5)  # Small pause before typing
-    
-    for char in text:
-        await page.type(selector, char, delay=random.uniform(min_delay, max_delay) * 1000)
-        
-        # Occasionally pause while typing (simulating thinking)
-        if random.random() < 0.05:  # 5% chance of pause
-            await human_delay(0.3, 1.2)
-
-async def human_mouse_movement(page, start_x=None, start_y=None, end_selector=None, steps=10):
-    """Move mouse in a human-like way with slight randomness in path"""
-    viewport_size = await page.viewport_size()
-    width, height = viewport_size["width"], viewport_size["height"]
-    
-    # Default start position if not specified
-    if start_x is None or start_y is None:
-        start_x = random.randint(0, width)
-        start_y = random.randint(0, height)
-    
-    # Get end position
-    if end_selector:
-        element = await page.query_selector(end_selector)
-        if element:
-            bounding_box = await element.bounding_box()
-            if bounding_box:
-                end_x = bounding_box["x"] + bounding_box["width"] / 2
-                end_y = bounding_box["y"] + bounding_box["height"] / 2
-            else:
-                end_x = random.randint(0, width)
-                end_y = random.randint(0, height)
-        else:
-            end_x = random.randint(0, width)
-            end_y = random.randint(0, height)
-    else:
-        end_x = random.randint(0, width)
-        end_y = random.randint(0, height)
-    
-    # Calculate control points for a slightly curved path (Bezier-like)
-    control_x = (start_x + end_x) / 2 + random.uniform(-100, 100)
-    control_y = (start_y + end_y) / 2 + random.uniform(-100, 100)
-    
-    # Move mouse along the path
-    for i in range(steps + 1):
-        t = i / steps
-        # Quadratic Bezier curve calculation
-        x = (1-t)**2 * start_x + 2*(1-t)*t * control_x + t**2 * end_x
-        y = (1-t)**2 * start_y + 2*(1-t)*t * control_y + t**2 * end_y
-        
-        # Add slight randomness to the path
-        x += random.uniform(-5, 5)
-        y += random.uniform(-5, 5)
-        
-        # Keep within viewport bounds
-        x = max(0, min(width, x))
-        y = max(0, min(height, y))
-        
-        await page.mouse.move(x, y)
-        
-        # Variable speed (slower at beginning and end, faster in middle)
-        delay = 0.01
-        if i < steps * 0.2 or i > steps * 0.8:
-            delay = random.uniform(0.01, 0.03)  # Slower at start/end
-        else:
-            delay = random.uniform(0.005, 0.01)  # Faster in middle
-        
-        await asyncio.sleep(delay)
-    
-    return end_x, end_y
-
-async def human_scroll(page, direction="down", distance=None, speed="medium"):
-    """Scroll like a human with variable speed and occasional pauses"""
-    viewport_size = await page.viewport_size()
-    height = viewport_size["height"]
-    
-    if distance is None:
-        if direction == "down":
-            distance = random.randint(int(height * 0.3), int(height * 0.7))
-        else:
-            distance = -random.randint(int(height * 0.3), int(height * 0.7))
-    
-    # Determine scroll speed
-    if speed == "slow":
-        steps = random.randint(15, 25)
-    elif speed == "medium":
-        steps = random.randint(8, 14)
-    else:  # fast
-        steps = random.randint(4, 7)
-    
-    # Scroll in steps to simulate human behavior
-    step_size = distance / steps
-    for i in range(steps):
-        await page.mouse.wheel(0, step_size)
-        
-        # Variable delay between scroll steps
-        if i < 2 or i > steps - 3:
-            # Slower at beginning and end
-            await asyncio.sleep(random.uniform(0.04, 0.08))
-        else:
-            # Faster in the middle
-            await asyncio.sleep(random.uniform(0.02, 0.05))
-    
-    # Occasionally add a small pause after scrolling
-    if random.random() < 0.3:  # 30% chance
-        await human_delay(0.5, 1.5)
 
 @app.post('/auto-apply')
 async def run_agent(
@@ -229,47 +112,13 @@ async def run_agent(
 		# Initialize the browser session
 		await browser_session.start()
 		
-		# Add a random initial delay to simulate human startup behavior
-		await human_delay(1.5, 3.0)
-		
-		# Get the page and perform some initial human-like actions
-		page = await browser_session.get_current_page()
-		
-		# Set a more realistic user agent
-		realistic_user_agents = [
-			"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-			"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-			"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
-			"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0"
-		]
-		await page.evaluate(f"() => {{ Object.defineProperty(navigator, 'userAgent', {{ get: () => '{random.choice(realistic_user_agents)}' }}); }}")
-		
-		# Navigate to the URL with human-like behavior
-		print(f"Navigating to {url} with human-like behavior...")
-		await page.goto("about:blank")  # Start with blank page
-		await human_delay(0.5, 1.5)
-		
-		# Navigate to the target URL
-		await page.goto(url)
-		
-		# Simulate initial page exploration
-		await human_delay(1.0, 2.5)  # Initial pause to "read" the page
-		await human_scroll(page, direction="down", speed="medium")
-		await human_delay(1.0, 2.0)
-		await human_scroll(page, direction="down", speed="slow")
-		await human_delay(0.8, 1.5)
-		await human_scroll(page, direction="up", speed="medium")
-		await human_delay(1.2, 2.5)
-		
 		## Step 1: Finding the application form to submit an application 
 		## have an ai agent navigate the page till the application form is found
 		find_application_form = f"""go to this URL:{url},\n what your looking at a job application and need to navigate to the appliaciton form.\nif the form is already shown on the screen stop and consider the task completed.\nif the application form is not shown on the screen naviagate the webiste to find to form and then consider the task complete\n"""
-		
-		# Use the standard Agent class with slower parameters
 		form_finder_agent = Agent(
 			task=find_application_form,
 			llm=llm,
-			max_actions_per_step=3,  # Reduced to slow down
+			max_actions_per_step=15,
 			browser_session=browser_session,
 			use_vision=True,
 			use_vision_for_planner=True,
@@ -279,19 +128,10 @@ async def run_agent(
 			enable_memory=True,
 			tool_calling_method='auto'
 		)
-		
-		# After each agent action, we'll add human-like delays and behaviors
 		find_form_result = await form_finder_agent.run(max_steps=25)
 		
 		# Add a delay to ensure the page is fully loaded and stable
-		await human_delay(2.0, 4.0)
-		
-		# Perform additional human-like scrolling behavior after finding the form
-		page = await browser_session.get_current_page()
-		await human_scroll(page, direction="down", speed="slow")
-		await human_delay(1.0, 2.0)
-		await human_scroll(page, direction="up", speed="medium")
-		await human_delay(1.5, 2.5)
+		await asyncio.sleep(3)
 		
 		## Step 2: Fetch the page HTML and parse for resume file input
 		## Use the browser session directly to get the page HTML and find the file input
@@ -307,7 +147,7 @@ async def run_agent(
 				current_url = find_form_result.get('final_url', url)
 				if current_url:
 					await browser_session.navigate_to(current_url)
-					await human_delay(1.5, 3.0)
+					await asyncio.sleep(2)
 			
 			# Get the HTML content
 			html = await browser_session.get_page_html()
@@ -315,200 +155,92 @@ async def run_agent(
 			
 			# Parse HTML to find file inputs
 			soup = BeautifulSoup(html, 'html.parser')
+			resume_input = None
 			file_inputs = soup.find_all('input', {'type': 'file'})
 			print(f"Found {len(file_inputs)} file input elements")
 			
 			# Look for resume upload fields with expanded criteria
-			resume_inputs = []
-			
 			for input_el in file_inputs:
 				print(f"Examining file input: {input_el}")
-				resume_score = 0
+				found_resume_field = False
 				
 				# Check all attributes for resume-related keywords
 				for attr, value in input_el.attrs.items():
-					if isinstance(value, str):
-						if any(keyword in attr.lower() for keyword in ['resume', 'cv']):
-							resume_score += 3
-						elif any(keyword in attr.lower() for keyword in ['file', 'upload', 'document']):
-							resume_score += 1
-							
-						if any(keyword in value.lower() for keyword in ['resume', 'cv']):
-							resume_score += 3
-						elif any(keyword in value.lower() for keyword in ['file', 'upload', 'document']):
-							resume_score += 1
-							
-						# Check for document type acceptance
-						if attr == 'accept' and any(ext in value.lower() for ext in ['.pdf', '.doc', '.docx']):
-							resume_score += 2
+					if any(keyword in attr.lower() for keyword in ['resume', 'file', 'upload', 'document', 'cv']):
+						found_resume_field = True
+						break
+					if isinstance(value, str) and any(keyword in value.lower() for keyword in ['resume', 'file', 'upload', 'document', 'cv']):
+						found_resume_field = True
+						break
 				
 				# Check parent elements for resume-related text
 				parent = input_el.parent
 				for _ in range(3):  # Check up to 3 levels up
-					if parent and parent.get_text():
-						parent_text = parent.get_text().lower()
-						if any(keyword in parent_text for keyword in ['resume', 'cv']):
-							resume_score += 3
-						elif any(keyword in parent_text for keyword in ['upload', 'document', 'file']):
-							resume_score += 1
+					if parent and parent.get_text() and any(keyword in parent.get_text().lower() for keyword in ['resume', 'cv', 'upload', 'document']):
+						found_resume_field = True
+						break
 					parent = parent.parent if parent else None
 				
-				if resume_score > 0:
-					resume_inputs.append((input_el, resume_score))
+				if found_resume_field:
+					resume_input = input_el
+					break
 			
-			# Sort by score in descending order
-			resume_inputs.sort(key=lambda x: x[1], reverse=True)
-			
-			if resume_inputs:
-				# Get the current page from the browser session
-				page = await browser_session.get_current_page()
+			if resume_input:
+				print(f"Found resume input: {resume_input}\n")
 				
-				# Try to upload to each potential resume input until successful
-				upload_success = False
-				
-				for resume_input, score in resume_inputs:
-					print(f"Attempting upload to input with score {score}: {resume_input}")
-					
-					if temp_file_path:
-						try:
-							# Find a selector for the file input
-							selector = None
-							if resume_input.get('id'):
-								selector = f"#" + resume_input['id']
-							elif resume_input.get('name'):
-								selector = f"input[name='{resume_input['name']}']"
-							elif resume_input.get('class'):
-								class_names = ' '.join(resume_input['class'])
-								selector = f"input.{class_names.replace(' ', '.')}"
-							else:
-								# Use XPath as fallback
-								for i, el in enumerate(file_inputs):
-									if el == resume_input:
-										selector = f"//input[@type='file'][{i+1}]"
-										break
-							
-							if selector:
-								print(f"Using selector {selector} to upload file {temp_file_path}")
-								
-								try:
-									# First try to evaluate the selector to make sure it exists
-									if selector.startswith('//'):
-										elements = await page.query_selector_all(f"xpath={selector}")
-									else:
-										elements = await page.query_selector_all(selector)
-									
-									if not elements:
-										print(f"No elements found with selector {selector}")
-										continue
-									
-									# Look for any upload button near the file input
-									upload_button = None
-									if selector.startswith('//'):
-										# Try to find a nearby button if using XPath
-										upload_buttons = await page.query_selector_all("xpath=//button[contains(translate(., 'UPLOAD', 'upload'), 'upload') or contains(@class, 'upload') or contains(@id, 'upload')]")
-									else:
-										# Try CSS approach
-										upload_buttons = await page.query_selector_all("button:has-text('Upload'), button[class*='upload' i], button[id*='upload' i]")
-									
-									# Simulate human exploration before upload
-									await human_scroll(page, direction="down", speed="slow")
-									await human_delay(0.8, 1.5)
-									
-									# Force the file input to be visible if needed
-									if selector.startswith('//'):
-										await page.evaluate(f"""
-											(() => {{
-												const elements = document.evaluate('{selector}', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-												for (let i = 0; i < elements.snapshotLength; i++) {{
-													const el = elements.snapshotItem(i);
-													if (el) {{
-														el.style.opacity = '1';
-														el.style.display = 'block';
-														el.style.visibility = 'visible';
-														el.style.position = 'relative';
-													}}
-												}}
-											}})()
-										""")
-									else:
-										await page.evaluate(f"""
-											(() => {{
-												const elements = document.querySelectorAll('{selector}');
-												elements.forEach(el => {{
-													el.style.opacity = '1';
-													el.style.display = 'block';
-													el.style.visibility = 'visible';
-													el.style.position = 'relative';
-												}});
-											}})()
-										""")
-									
-									# Wait a moment for the style changes to take effect
-									await human_delay(0.8, 1.2)
-									
-									# Move mouse to the file input area before uploading
-									if not selector.startswith('//'):
-										await human_mouse_movement(page, end_selector=selector)
-									else:
-										# For XPath, move to a random position first
-										viewport_size = await page.viewport_size()
-										await human_mouse_movement(
-											page, 
-											random.randint(100, viewport_size["width"]-100),
-											random.randint(100, viewport_size["height"]-100)
-										)
-									
-									await human_delay(0.5, 1.0)
-									
-									# Try to set the file input directly
-									if selector.startswith('//'):
-										await page.set_input_files(f"xpath={selector}", temp_file_path)
-									else:
-										await page.set_input_files(selector, temp_file_path)
-									
-									print("File uploaded successfully")
-									upload_success = True
-									
-									# If there's an upload button, click it with human-like behavior
-									if upload_buttons and len(upload_buttons) > 0:
-										await human_delay(0.8, 1.5)
-										upload_button = upload_buttons[0]
-										await human_mouse_movement(page, end_selector="button:has-text('Upload')")
-										await human_delay(0.2, 0.5)
-										await upload_button.click(delay=random.uniform(50, 150))
-									
-									await human_delay(2.0, 3.5)  # Wait for upload to complete
+				# Upload the resume file if available
+				if temp_file_path:
+					try:
+						# Get the current page from the browser session
+						page = await browser_session.get_current_page()
+						
+						# Find a selector for the file input
+						selector = None
+						if resume_input.get('id'):
+							selector = f"#{resume_input['id']}"
+						elif resume_input.get('name'):
+							selector = f"input[name='{resume_input['name']}']"
+						elif resume_input.get('class'):
+							class_names = ' '.join(resume_input['class'])
+							selector = f"input.{class_names.replace(' ', '.')}"
+						else:
+							# Use XPath as fallback
+							for i, el in enumerate(soup.find_all('input', {'type': 'file'})):
+								if el == resume_input:
+									selector = f"//input[@type='file'][{i+1}]"
 									break
-								except Exception as upload_error:
-									print(f"Error uploading with selector {selector}: {upload_error}")
-									# Continue to try the next method if this one fails
-						except Exception as upload_error:
-							print(f"Error during upload attempt: {upload_error}")
-				
-				if not upload_success:
-					print("All upload attempts failed. Continuing without file upload.")
+						
+						if selector:
+							print(f"Using selector {selector} to upload file {temp_file_path}")
+							if selector.startswith('//'):
+								# XPath selector
+								file_input = await page.wait_for_selector(f"xpath={selector}", timeout=5000)
+							else:
+								# CSS selector
+								file_input = await page.wait_for_selector(selector, timeout=5000)
+							
+							if file_input:
+								await file_input.set_input_files(temp_file_path)
+								print("File uploaded successfully")
+								await asyncio.sleep(2)  # Wait for upload to complete
+					except Exception as upload_error:
+						print(f"Error uploading resume file: {upload_error}")
+						print("Continuing without file upload")
 			else:
 				print("No resume input found matching criteria. Continuing without file upload.")
 		except Exception as e:
 			print(f"Error during resume input detection: {e}")
 			print("Continuing without file upload")
 		
-		# Add some human-like page interaction before filling the form
-		await human_delay(1.0, 2.0)
-		await human_scroll(page, direction="up", speed="medium")
-		await human_delay(0.8, 1.5)
-		await human_scroll(page, direction="down", speed="slow")
-		await human_delay(1.2, 2.0)
-		
 		## Step 3: Fill out and submit the application and return the result
 		## Compose the task to fillout the application
-		apply_task = f"""your goal is to use the following personal/resume data information for a job application\n Fill out the text inputs, textareas, and answer any questions using the information provided.\nIgnore any optional data and the resume or photo upload inputs and any other inputs that are not text inputs, textareas, questions, checkboxes, or radio buttons.\nOnce all the required fields are completed consider the task complete and return the results.\n\nIMPORTANT: Take your time filling out the form. Act like a human by pausing between actions. Don't fill out the entire form too quickly.\n\n{prompt}"""
+		apply_task = f"""your goal is to use the following personal/resume data information for a job application\n Fill out the text inputs, textareas, and answer any questions using the information provided.\nIgnore any optional data and the resume or photo upload inputs and any other inputs that are not text inputs, textareas, questions, checkboxes, or radio buttons.\nOnce all the required fields are completed consider the task complete and return the results.\n{prompt}"""
 		
 		# Create a new agent for step 3, reusing the same browser session
 		apply_agent = Agent(
 			task=apply_task,
 			llm=llm,
-			max_actions_per_step=1,  # Reduced to slow down
+			max_actions_per_step=2,
 			browser_session=browser_session,
 			use_vision=True,
 			use_vision_for_planner=True,
@@ -519,40 +251,8 @@ async def run_agent(
 			tool_calling_method='auto'
 		)
 		
-		# Add human-like behavior between agent steps
-		async def run_with_human_behavior(agent, max_steps=25):
-			step_count = 0
-			while not agent.is_done and step_count < max_steps:
-				# Run one step of the agent
-				await agent.step()
-				step_count += 1
-				
-				# Add human-like behavior after each step
-				if not agent.is_done:
-					# Get the current page
-					page = await browser_session.get_current_page()
-					
-					# Random chance to scroll or move mouse
-					action_choice = random.random()
-					if action_choice < 0.3:  # 30% chance to scroll
-						direction = "down" if random.random() < 0.7 else "up"
-						await human_scroll(page, direction=direction, speed="medium")
-					elif action_choice < 0.6:  # 30% chance to move mouse
-						await human_mouse_movement(page)
-					
-					# Always add a delay between steps
-					await human_delay(1.0, 3.0)
-			
-			return agent.result
-		
-		# Run the application filling agent with human-like behavior
-		result = await run_with_human_behavior(apply_agent, max_steps=25)
-		
-		# Add final human-like interaction before completing
-		await human_delay(1.5, 3.0)
-		await human_scroll(page, direction="up", speed="slow")
-		await human_delay(1.0, 2.0)
-		
+		# Run the application filling agent
+		result = await apply_agent.run(max_steps=25)
 		return JSONResponse(content={"result": result})
 	except Exception as e:
 		print(f"Error in run_agent: {e}")

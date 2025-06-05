@@ -1,6 +1,7 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { ResumeData, PersonalInfo } from '../../types/resume';
 import { parseResumeFile } from '../../utils/resumeParser';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 
 interface ResumeUploadProps {
   onUploadResume?: (resumeData: ResumeData) => void;
@@ -10,6 +11,8 @@ interface ResumeUploadProps {
   personalInfo?: PersonalInfo;
   onPersonalInfoChange?: (info: PersonalInfo) => void;
 }
+
+type SectionName = 'basic' | 'salary' | 'workEligibility' | 'military' | 'disability' | 'eeo' | 'additional';
 
 /**
  * Resume Upload Component for Auto Apply
@@ -24,6 +27,22 @@ const ResumeUpload: React.FC<ResumeUploadProps> = ({
   onPersonalInfoChange
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [expandedSections, setExpandedSections] = useState({
+    basic: true,
+    salary: false,
+    workEligibility: false,
+    military: false,
+    disability: false,
+    eeo: false,
+    additional: false
+  });
+
+  const toggleSection = (section: SectionName) => {
+    setExpandedSections(prev => ({
+      ...prev,
+      [section]: !prev[section]
+    }));
+  };
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -59,15 +78,27 @@ const ResumeUpload: React.FC<ResumeUploadProps> = ({
     }
   };
 
-  const handlePersonalInfoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePersonalInfoChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     if (!personalInfo || !onPersonalInfoChange) return;
     
-    const { name, value } = e.target;
+    const { name, value, type } = e.target as HTMLInputElement;
+    const newValue = type === 'checkbox' ? (e.target as HTMLInputElement).checked : value;
+    
     onPersonalInfoChange({
       ...personalInfo,
-      [name]: value
+      [name]: newValue
     });
   };
+
+  const SectionHeader = ({ title, expanded, onClick }: { title: string; expanded: boolean; onClick: () => void }) => (
+    <div 
+      className="flex items-center justify-between py-2 px-1 border-b border-gray-200 dark:border-gray-700 cursor-pointer"
+      onClick={onClick}
+    >
+      <h4 className="font-medium">{title}</h4>
+      {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+    </div>
+  );
 
   return (
     <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6 mb-6">
@@ -123,87 +154,428 @@ const ResumeUpload: React.FC<ResumeUploadProps> = ({
         <div className="mt-6">
           <h4 className="font-medium mb-3">Personal Information</h4>
           <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-            This information will be used to customize your resume.
+            This information will be used for your job applications. Fields marked with * are commonly required.
           </p>
           
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Full Name
-              </label>
-              <input
-                type="text"
-                name="name"
-                value={personalInfo.name}
-                onChange={handlePersonalInfoChange}
-                className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-              />
-            </div>
+          {/* Basic Information */}
+          <div className="mb-6">
+            <SectionHeader 
+              title="Basic Information" 
+              expanded={expandedSections.basic} 
+              onClick={() => toggleSection('basic' as SectionName)} 
+            />
             
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Email
-              </label>
-              <input
-                type="email"
-                name="email"
-                value={personalInfo.email}
-                onChange={handlePersonalInfoChange}
-                className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-              />
-            </div>
+            {expandedSections.basic && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Full Name *
+                  </label>
+                  <input
+                    type="text"
+                    name="name"
+                    value={personalInfo.name || ''}
+                    onChange={handlePersonalInfoChange}
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Email *
+                  </label>
+                  <input
+                    type="email"
+                    name="email"
+                    value={personalInfo.email || ''}
+                    onChange={handlePersonalInfoChange}
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Phone *
+                  </label>
+                  <input
+                    type="tel"
+                    name="phone"
+                    value={personalInfo.phone || ''}
+                    onChange={handlePersonalInfoChange}
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Location *
+                  </label>
+                  <input
+                    type="text"
+                    name="location"
+                    value={personalInfo.location || ''}
+                    onChange={handlePersonalInfoChange}
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    LinkedIn
+                  </label>
+                  <input
+                    type="text"
+                    name="linkedin"
+                    value={personalInfo.linkedin || ''}
+                    onChange={handlePersonalInfoChange}
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Website
+                  </label>
+                  <input
+                    type="text"
+                    name="website"
+                    value={personalInfo.website || ''}
+                    onChange={handlePersonalInfoChange}
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {/* Salary Expectations */}
+          <div className="mb-6">
+            <SectionHeader 
+              title="Salary Expectations" 
+              expanded={expandedSections.salary} 
+              onClick={() => toggleSection('salary' as SectionName)} 
+            />
             
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Phone
-              </label>
-              <input
-                type="tel"
-                name="phone"
-                value={personalInfo.phone}
-                onChange={handlePersonalInfoChange}
-                className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-              />
-            </div>
+            {expandedSections.salary && (
+              <div className="mt-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Salary Expectations
+                  </label>
+                  <input
+                    type="text"
+                    name="salaryExpectations"
+                    value={personalInfo.salaryExpectations || ''}
+                    onChange={handlePersonalInfoChange}
+                    placeholder="e.g., $80,000 - $100,000 per year"
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Many applications ask for salary expectations. Providing a range is often recommended.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {/* Work Eligibility */}
+          <div className="mb-6">
+            <SectionHeader 
+              title="Work Eligibility" 
+              expanded={expandedSections.workEligibility} 
+              onClick={() => toggleSection('workEligibility' as SectionName)} 
+            />
             
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Location
-              </label>
-              <input
-                type="text"
-                name="location"
-                value={personalInfo.location}
-                onChange={handlePersonalInfoChange}
-                className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-              />
-            </div>
+            {expandedSections.workEligibility && (
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Work Authorization Status
+                  </label>
+                  <select
+                    name="workAuthorization"
+                    value={personalInfo.workAuthorization || ''}
+                    onChange={handlePersonalInfoChange}
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  >
+                    <option value="">Select an option</option>
+                    <option value="US Citizen">US Citizen</option>
+                    <option value="Permanent Resident">Permanent Resident (Green Card)</option>
+                    <option value="Work Visa">Work Visa Holder</option>
+                    <option value="EAD">Employment Authorization Document</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+                
+                <div className="flex items-center mt-6">
+                  <input
+                    type="checkbox"
+                    id="requireSponsorship"
+                    name="requireSponsorship"
+                    checked={personalInfo.requireSponsorship || false}
+                    onChange={handlePersonalInfoChange}
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  />
+                  <label htmlFor="requireSponsorship" className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
+                    Will you require sponsorship now or in the future?
+                  </label>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {/* Military Status */}
+          <div className="mb-6">
+            <SectionHeader 
+              title="Military Status" 
+              expanded={expandedSections.military} 
+              onClick={() => toggleSection('military' as SectionName)} 
+            />
             
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                LinkedIn
-              </label>
-              <input
-                type="text"
-                name="linkedin"
-                value={personalInfo.linkedin}
-                onChange={handlePersonalInfoChange}
-                className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-              />
-            </div>
+            {expandedSections.military && (
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Military Status
+                  </label>
+                  <select
+                    name="militaryStatus"
+                    value={personalInfo.militaryStatus || ''}
+                    onChange={handlePersonalInfoChange}
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  >
+                    <option value="">Select an option</option>
+                    <option value="None">No Military Service</option>
+                    <option value="Active">Active Duty</option>
+                    <option value="Reserve">Reserve</option>
+                    <option value="Veteran">Veteran</option>
+                    <option value="Retired">Retired Military</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Veteran Status
+                  </label>
+                  <select
+                    name="veteranStatus"
+                    value={personalInfo.veteranStatus || ''}
+                    onChange={handlePersonalInfoChange}
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  >
+                    <option value="">Select an option</option>
+                    <option value="Not a Veteran">Not a Veteran</option>
+                    <option value="Protected Veteran">Protected Veteran</option>
+                    <option value="Disabled Veteran">Disabled Veteran</option>
+                    <option value="Recently Separated Veteran">Recently Separated Veteran</option>
+                    <option value="Active Wartime Veteran">Active Wartime Veteran</option>
+                    <option value="Prefer Not to Answer">Prefer Not to Answer</option>
+                  </select>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {/* Disability Status */}
+          <div className="mb-6">
+            <SectionHeader 
+              title="Disability Status" 
+              expanded={expandedSections.disability} 
+              onClick={() => toggleSection('disability' as SectionName)} 
+            />
             
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Website
-              </label>
-              <input
-                type="text"
-                name="website"
-                value={personalInfo.website}
-                onChange={handlePersonalInfoChange}
-                className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-              />
-            </div>
+            {expandedSections.disability && (
+              <div className="mt-4 grid grid-cols-1 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Disability Status
+                  </label>
+                  <select
+                    name="disabilityStatus"
+                    value={personalInfo.disabilityStatus || ''}
+                    onChange={handlePersonalInfoChange}
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  >
+                    <option value="">Select an option</option>
+                    <option value="No">No, I don't have a disability</option>
+                    <option value="Yes">Yes, I have a disability</option>
+                    <option value="Prefer Not to Answer">Prefer Not to Answer</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Accommodations Needed
+                  </label>
+                  <textarea
+                    name="accommodationsNeeded"
+                    value={personalInfo.accommodationsNeeded || ''}
+                    onChange={handlePersonalInfoChange}
+                    placeholder="If you require any accommodations, please describe them here"
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    rows={3}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {/* Equal Opportunity Information */}
+          <div className="mb-6">
+            <SectionHeader 
+              title="Equal Opportunity Information" 
+              expanded={expandedSections.eeo} 
+              onClick={() => toggleSection('eeo' as SectionName)} 
+            />
+            
+            {expandedSections.eeo && (
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Gender
+                  </label>
+                  <select
+                    name="gender"
+                    value={personalInfo.gender || ''}
+                    onChange={handlePersonalInfoChange}
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  >
+                    <option value="">Select an option</option>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Non-binary">Non-binary</option>
+                    <option value="Self Identify">Self Identify</option>
+                    <option value="Prefer Not to Answer">Prefer Not to Answer</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Ethnicity
+                  </label>
+                  <select
+                    name="ethnicity"
+                    value={personalInfo.ethnicity || ''}
+                    onChange={handlePersonalInfoChange}
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  >
+                    <option value="">Select an option</option>
+                    <option value="White">White</option>
+                    <option value="Black or African American">Black or African American</option>
+                    <option value="Hispanic or Latino">Hispanic or Latino</option>
+                    <option value="Asian">Asian</option>
+                    <option value="American Indian or Alaska Native">American Indian or Alaska Native</option>
+                    <option value="Native Hawaiian or Other Pacific Islander">Native Hawaiian or Other Pacific Islander</option>
+                    <option value="Two or More Races">Two or More Races</option>
+                    <option value="Prefer Not to Answer">Prefer Not to Answer</option>
+                  </select>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {/* Additional Questions */}
+          <div className="mb-6">
+            <SectionHeader 
+              title="Additional Questions" 
+              expanded={expandedSections.additional} 
+              onClick={() => toggleSection('additional' as SectionName)} 
+            />
+            
+            {expandedSections.additional && (
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    id="willingToRelocate"
+                    name="willingToRelocate"
+                    checked={personalInfo.willingToRelocate || false}
+                    onChange={handlePersonalInfoChange}
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  />
+                  <label htmlFor="willingToRelocate" className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
+                    Willing to relocate?
+                  </label>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Remote Work Preference
+                  </label>
+                  <select
+                    name="remoteWorkPreference"
+                    value={personalInfo.remoteWorkPreference || ''}
+                    onChange={handlePersonalInfoChange}
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  >
+                    <option value="">Select an option</option>
+                    <option value="Fully Remote">Fully Remote</option>
+                    <option value="Hybrid">Hybrid</option>
+                    <option value="On-site">On-site</option>
+                    <option value="Flexible">Flexible</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Available Start Date
+                  </label>
+                  <input
+                    type="date"
+                    name="availableStartDate"
+                    value={personalInfo.availableStartDate || ''}
+                    onChange={handlePersonalInfoChange}
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Referral Source
+                  </label>
+                  <input
+                    type="text"
+                    name="referralSource"
+                    value={personalInfo.referralSource || ''}
+                    onChange={handlePersonalInfoChange}
+                    placeholder="How did you hear about this position?"
+                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  />
+                </div>
+                
+                <div className="sm:col-span-2">
+                  <div className="flex items-center mb-2">
+                    <input
+                      type="checkbox"
+                      id="previouslyEmployed"
+                      name="previouslyEmployed"
+                      checked={personalInfo.previouslyEmployed || false}
+                      onChange={handlePersonalInfoChange}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                    <label htmlFor="previouslyEmployed" className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
+                      Previously employed at this company?
+                    </label>
+                  </div>
+                  
+                  {personalInfo.previouslyEmployed && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Previous Employment Details
+                      </label>
+                      <textarea
+                        name="previousEmploymentDetails"
+                        value={personalInfo.previousEmploymentDetails || ''}
+                        onChange={handlePersonalInfoChange}
+                        placeholder="Please provide details about your previous employment with this company"
+                        className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                        rows={3}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

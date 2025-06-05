@@ -71,14 +71,43 @@ export interface ResumeData {
 
 /**
  * Personal information that can be edited by the user
+ * Includes commonly asked application questions
  */
 export interface PersonalInfo {
+  // Basic information
   name?: string;
   email?: string;
   phone?: string;
   location?: string;
   linkedin?: string;
   website?: string;
+  
+  // Salary expectations
+  salaryExpectations?: string;
+  
+  // Work eligibility
+  workAuthorization?: string;
+  requireSponsorship?: boolean;
+  
+  // Military status
+  militaryStatus?: string;
+  veteranStatus?: string;
+  
+  // Disability status
+  disabilityStatus?: string;
+  accommodationsNeeded?: string;
+  
+  // Equal opportunity information
+  gender?: string;
+  ethnicity?: string;
+  
+  // Additional questions
+  willingToRelocate?: boolean;
+  remoteWorkPreference?: string;
+  availableStartDate?: string;
+  referralSource?: string;
+  previouslyEmployed?: boolean;
+  previousEmploymentDetails?: string;
 }
 
 /**
