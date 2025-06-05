@@ -12,6 +12,7 @@ import re
 import base64
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
+from patchright.async_api import async_playwright as async_patchright
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -46,6 +47,7 @@ async def run_agent(
 
 	temp_file_path = None
 	browser_session = None
+	patchright = None
 	
 	try:
 		# Handle file upload
@@ -87,7 +89,10 @@ async def run_agent(
 		# Create a browser profile with unique user data dir to avoid conflicts
 		unique_user_data_dir = f"~/.config/browseruse/profiles/job_apply_{os.getpid()}"
 		
-		# Create a single browser session to be shared across all steps
+		# Initialize patchright for stealth capabilities
+		patchright = await async_patchright().start()
+		
+		# Create a single browser session to be shared across all steps with stealth
 		browser_profile = BrowserProfile(
 			viewport_expansion=0,
 			user_data_dir=unique_user_data_dir,
@@ -95,9 +100,14 @@ async def run_agent(
 			keep_alive=True,
 			executable_path='/usr/bin/google-chrome',
 			disable_security=False,
+			deterministic_rendering=False,
 		)
 		
-		browser_session = BrowserSession(browser_profile=browser_profile)
+		# Use patchright with browser session for stealth capabilities
+		browser_session = BrowserSession(
+			browser_profile=browser_profile,
+			playwright=patchright,
+		)
 		
 		# Initialize the browser session
 		await browser_session.start()
@@ -253,6 +263,8 @@ async def run_agent(
 			if browser_session:
 				print("Closing browser session...")
 				await browser_session.stop()
+			if patchright:
+				await patchright.stop()
 		except Exception as close_error:
 			print(f"Error closing browser session: {close_error}")
 		
