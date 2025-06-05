@@ -155,77 +155,142 @@ async def run_agent(
 			
 			# Parse HTML to find file inputs
 			soup = BeautifulSoup(html, 'html.parser')
-			resume_input = None
 			file_inputs = soup.find_all('input', {'type': 'file'})
 			print(f"Found {len(file_inputs)} file input elements")
 			
 			# Look for resume upload fields with expanded criteria
+			resume_inputs = []
+			
 			for input_el in file_inputs:
 				print(f"Examining file input: {input_el}")
-				found_resume_field = False
+				resume_score = 0
 				
 				# Check all attributes for resume-related keywords
 				for attr, value in input_el.attrs.items():
-					if any(keyword in attr.lower() for keyword in ['resume', 'file', 'upload', 'document', 'cv']):
-						found_resume_field = True
-						break
-					if isinstance(value, str) and any(keyword in value.lower() for keyword in ['resume', 'file', 'upload', 'document', 'cv']):
-						found_resume_field = True
-						break
+					if isinstance(value, str):
+						if any(keyword in attr.lower() for keyword in ['resume', 'cv']):
+							resume_score += 3
+						elif any(keyword in attr.lower() for keyword in ['file', 'upload', 'document']):
+							resume_score += 1
+							
+						if any(keyword in value.lower() for keyword in ['resume', 'cv']):
+							resume_score += 3
+						elif any(keyword in value.lower() for keyword in ['file', 'upload', 'document']):
+							resume_score += 1
+							
+						# Check for document type acceptance
+						if attr == 'accept' and any(ext in value.lower() for ext in ['.pdf', '.doc', '.docx']):
+							resume_score += 2
 				
 				# Check parent elements for resume-related text
 				parent = input_el.parent
 				for _ in range(3):  # Check up to 3 levels up
-					if parent and parent.get_text() and any(keyword in parent.get_text().lower() for keyword in ['resume', 'cv', 'upload', 'document']):
-						found_resume_field = True
-						break
+					if parent and parent.get_text():
+						parent_text = parent.get_text().lower()
+						if any(keyword in parent_text for keyword in ['resume', 'cv']):
+							resume_score += 3
+						elif any(keyword in parent_text for keyword in ['upload', 'document', 'file']):
+							resume_score += 1
 					parent = parent.parent if parent else None
 				
-				if found_resume_field:
-					resume_input = input_el
-					break
+				if resume_score > 0:
+					resume_inputs.append((input_el, resume_score))
 			
-			if resume_input:
-				print(f"Found resume input: {resume_input}\n")
+			# Sort by score in descending order
+			resume_inputs.sort(key=lambda x: x[1], reverse=True)
+			
+			if resume_inputs:
+				# Get the current page from the browser session
+				page = await browser_session.get_current_page()
 				
-				# Upload the resume file if available
-				if temp_file_path:
-					try:
-						# Get the current page from the browser session
-						page = await browser_session.get_current_page()
-						
-						# Find a selector for the file input
-						selector = None
-						if resume_input.get('id'):
-							selector = f"#{resume_input['id']}"
-						elif resume_input.get('name'):
-							selector = f"input[name='{resume_input['name']}']"
-						elif resume_input.get('class'):
-							class_names = ' '.join(resume_input['class'])
-							selector = f"input.{class_names.replace(' ', '.')}"
-						else:
-							# Use XPath as fallback
-							for i, el in enumerate(soup.find_all('input', {'type': 'file'})):
-								if el == resume_input:
-									selector = f"//input[@type='file'][{i+1}]"
-									break
-						
-						if selector:
-							print(f"Using selector {selector} to upload file {temp_file_path}")
-							if selector.startswith('//'):
-								# XPath selector
-								file_input = await page.wait_for_selector(f"xpath={selector}", timeout=5000)
+				# Try to upload to each potential resume input until successful
+				upload_success = False
+				
+				for resume_input, score in resume_inputs:
+					print(f"Attempting upload to input with score {score}: {resume_input}")
+					
+					if temp_file_path:
+						try:
+							# Find a selector for the file input
+							selector = None
+							if resume_input.get('id'):
+								selector = f"#" + resume_input['id']
+							elif resume_input.get('name'):
+								selector = f"input[name='{resume_input['name']}']"
+							elif resume_input.get('class'):
+								class_names = ' '.join(resume_input['class'])
+								selector = f"input.{class_names.replace(' ', '.')}"
 							else:
-								# CSS selector
-								file_input = await page.wait_for_selector(selector, timeout=5000)
+								# Use XPath as fallback
+								for i, el in enumerate(file_inputs):
+									if el == resume_input:
+										selector = f"//input[@type='file'][{i+1}]"
+										break
 							
-							if file_input:
-								await file_input.set_input_files(temp_file_path)
-								print("File uploaded successfully")
-								await asyncio.sleep(2)  # Wait for upload to complete
-					except Exception as upload_error:
-						print(f"Error uploading resume file: {upload_error}")
-						print("Continuing without file upload")
+							if selector:
+								print(f"Using selector {selector} to upload file {temp_file_path}")
+								
+								try:
+									# First try to evaluate the selector to make sure it exists
+									if selector.startswith('//'):
+										elements = await page.query_selector_all(f"xpath={selector}")
+									else:
+										elements = await page.query_selector_all(selector)
+									
+									if not elements:
+										print(f"No elements found with selector {selector}")
+										continue
+									
+									# Force the file input to be visible if needed
+									if selector.startswith('//'):
+										await page.evaluate(f"""
+											(() => {{
+												const elements = document.evaluate('{selector}', document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+												for (let i = 0; i < elements.snapshotLength; i++) {{
+													const el = elements.snapshotItem(i);
+													if (el) {{
+														el.style.opacity = '1';
+														el.style.display = 'block';
+														el.style.visibility = 'visible';
+														el.style.position = 'relative';
+													}}
+												}}
+											}})()
+										""")
+									else:
+										await page.evaluate(f"""
+											(() => {{
+												const elements = document.querySelectorAll('{selector}');
+												elements.forEach(el => {{
+													el.style.opacity = '1';
+													el.style.display = 'block';
+													el.style.visibility = 'visible';
+													el.style.position = 'relative';
+												}});
+											}})()
+										""")
+									
+									# Wait a moment for the style changes to take effect
+									await asyncio.sleep(1)
+									
+									# Try to set the file input directly without waiting for visibility
+									if selector.startswith('//'):
+										await page.set_input_files(f"xpath={selector}", temp_file_path)
+									else:
+										await page.set_input_files(selector, temp_file_path)
+									
+									print("File uploaded successfully")
+									upload_success = True
+									await asyncio.sleep(2)  # Wait for upload to complete
+									break
+								except Exception as upload_error:
+									print(f"Error uploading with selector {selector}: {upload_error}")
+									# Continue to try the next method if this one fails
+						except Exception as upload_error:
+							print(f"Error during upload attempt: {upload_error}")
+				
+				if not upload_success:
+					print("All upload attempts failed. Continuing without file upload.")
 			else:
 				print("No resume input found matching criteria. Continuing without file upload.")
 		except Exception as e:
