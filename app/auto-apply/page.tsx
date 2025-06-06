@@ -413,6 +413,21 @@ function AutoApplyContent(): React.ReactElement {
         setGeneratedResume(data);
         setTailoringNotes(data.tailoringNotes || '');
         
+        // Update personal info with the generated resume's contact information
+        setPersonalInfo({
+          name: data.name || '',
+          email: data.contact?.email || '',
+          phone: data.contact?.phone || '',
+          location: data.contact?.location || '',
+          linkedin: data.contact?.linkedin || '',
+          website: data.contact?.website || ''
+        });
+        console.log('Updated personal info from generated resume:', {
+          name: data.name,
+          email: data.contact?.email,
+          phone: data.contact?.phone
+        });
+        
         // Generate PDF for auto-apply
         console.log('Generating PDF...');
         const pdfResponse = await fetch('/api/resume/generate-pdf', {
@@ -439,6 +454,21 @@ function AutoApplyContent(): React.ReactElement {
         console.log('Legacy resume data format received (nested under resumeData)');
         setGeneratedResume(data.resumeData);
         setTailoringNotes(data.resumeData.tailoringNotes || '');
+        
+        // Update personal info with the generated resume's contact information
+        setPersonalInfo({
+          name: data.resumeData.name || '',
+          email: data.resumeData.contact?.email || '',
+          phone: data.resumeData.contact?.phone || '',
+          location: data.resumeData.contact?.location || '',
+          linkedin: data.resumeData.contact?.linkedin || '',
+          website: data.resumeData.contact?.website || ''
+        });
+        console.log('Updated personal info from generated resume (legacy format):', {
+          name: data.resumeData.name,
+          email: data.resumeData.contact?.email,
+          phone: data.resumeData.contact?.phone
+        });
         
         // Generate PDF for auto-apply
         console.log('Generating PDF with legacy format...');

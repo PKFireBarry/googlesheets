@@ -128,19 +128,40 @@ export async function POST(request: NextRequest) {
         jobUrl = normalizeUrl(jobUrl);
       }
 
-      // Add personal information to the prompt if available
-      if (personalInfo) {
-        // Format basic info
+      // Determine the best source for contact information (prioritize resumeData over personalInfo)
+      const contactInfo = resumeData ? {
+        name: resumeData.name || '',
+        email: resumeData.contact?.email || '',
+        phone: resumeData.contact?.phone || '',
+        location: resumeData.contact?.location || '',
+        linkedin: resumeData.contact?.linkedin || '',
+        website: resumeData.contact?.website || ''
+      } : personalInfo ? {
+        name: personalInfo.name || '',
+        email: personalInfo.email || '',
+        phone: personalInfo.phone || '',
+        location: personalInfo.location || '',
+        linkedin: personalInfo.linkedin || '',
+        website: personalInfo.website || ''
+      } : null;
+
+      // Add personal information to the prompt
+      if (contactInfo) {
         const basicInfo = `
 Personal Information:
-Name: ${personalInfo.name || ''}
-Email: ${personalInfo.email || ''}
-Phone: ${personalInfo.phone || ''}
-Location: ${personalInfo.location || ''}
-LinkedIn: ${personalInfo.linkedin || ''}
-Website: ${personalInfo.website || ''}`;
+Name: ${contactInfo.name}
+Email: ${contactInfo.email}
+Phone: ${contactInfo.phone}
+Location: ${contactInfo.location}
+LinkedIn: ${contactInfo.linkedin}
+Website: ${contactInfo.website}`;
 
-        // Format application-specific questions
+        enhancedPrompt += basicInfo;
+        console.log('Contact info added from:', resumeData ? 'resumeData' : 'personalInfo');
+      }
+
+      // Add application-specific questions if personalInfo is available
+      if (personalInfo) {
         const applicationQuestionsArray = [
           personalInfo.salaryExpectations ? `Salary Expectations: ${personalInfo.salaryExpectations}` : null,
           personalInfo.workAuthorization ? `Work Authorization: ${personalInfo.workAuthorization}` : null,
@@ -160,77 +181,61 @@ Website: ${personalInfo.website || ''}`;
         ].filter(item => item !== null);
         
         // Only add application questions section if there are actual questions to include
-        const applicationQuestions = applicationQuestionsArray.length > 0 
-          ? `\nApplication Questions:\n${applicationQuestionsArray.join('\n')}` 
-          : '';
-
-        // Add formatted personal info to the prompt
-        enhancedPrompt += `\n${basicInfo}${applicationQuestions}`;
+        if (applicationQuestionsArray.length > 0) {
+          enhancedPrompt += `\n\nApplication Questions:\n${applicationQuestionsArray.join('\n')}`;
+        }
         
-        // Store for logging
         console.log('Application questions included:', applicationQuestionsArray.length);
       } else {
         console.log('Application questions included: 0');
       }
 
-      // Add resume data to the prompt if available
+      // Add detailed resume information if available
       if (resumeData) {
-        // Skip contact information if personalInfo was already added
-        const contactInfo = !personalInfo && resumeData.contact ? 
-          `Name: ${resumeData.name || ''}
-Email: ${resumeData.contact.email || ''}
-Phone: ${resumeData.contact.phone || ''}
-Location: ${resumeData.contact.location || ''}
-LinkedIn: ${resumeData.contact.linkedin || ''}
-Website: ${resumeData.contact.website || ''}` : '';
-
-        // Format skills
-        const skills = Array.isArray(resumeData.skills) 
-          ? resumeData.skills.join(', ') 
-          : resumeData.skills || '';
-
-        // Format experience
-        const experience = resumeData.experience 
-          ? resumeData.experience.map((exp: { title: string; company: string; dates: string; highlights?: string[] }) => 
-              `${exp.title} at ${exp.company} (${exp.dates})
-${exp.highlights ? exp.highlights.join('\n') : ''}`
-            ).join('\n\n')
-          : '';
-
-        // Format education
-        const education = resumeData.education
-          ? resumeData.education.map((edu: { degree: string; institution: string; dates: string }) =>
-              `${edu.degree} from ${edu.institution} (${edu.dates})`
-            ).join('\n')
-          : '';
-
-        // Add formatted resume data to the prompt
-        enhancedPrompt += `\n\nResume Information:`;
-        
-        // Only add contact info if it wasn't already added via personalInfo
-        if (contactInfo) {
-          enhancedPrompt += `\n${contactInfo}`;
-        }
-        
-        // Add summary if available
+        // Add professional summary
         if (resumeData.summary) {
-          enhancedPrompt += `\n\nSummary:\n${resumeData.summary}`;
+          enhancedPrompt += `\n\nPROFESSIONAL SUMMARY:\n${resumeData.summary}`;
         }
-        
-        // Add skills if available
-        if (skills) {
-          enhancedPrompt += `\n\nSkills:\n${skills}`;
+
+        // Add skills
+        if (resumeData.skills) {
+          const skillsText = Array.isArray(resumeData.skills) ? resumeData.skills.join(', ') : resumeData.skills;
+          enhancedPrompt += `\n\nSKILLS:\n${skillsText}`;
         }
-        
-        // Add experience if available
-        if (experience) {
-          enhancedPrompt += `\n\nExperience:\n${experience}`;
+
+        // Add work experience
+        if (resumeData.experience && resumeData.experience.length > 0) {
+          const experienceInfo = resumeData.experience.map((exp: any, index: number) => 
+            `${index + 1}. ${exp.title} at ${exp.company} (${exp.dates})\n   Location: ${exp.location || 'Not specified'}\n   Highlights: ${exp.highlights?.join('; ') || 'None provided'}`
+          ).join('\n');
+          enhancedPrompt += `\n\nWORK EXPERIENCE:\n${experienceInfo}`;
         }
-        
-        // Add education if available
-        if (education) {
-          enhancedPrompt += `\n\nEducation:\n${education}`;
+
+        // Add education
+        if (resumeData.education && resumeData.education.length > 0) {
+          const educationInfo = resumeData.education.map((edu: any, index: number) => 
+            `${index + 1}. ${edu.degree} from ${edu.institution} (${edu.dates})\n   Location: ${edu.location || 'Not specified'}\n   Details: ${edu.details?.join('; ') || 'None provided'}`
+          ).join('\n');
+          enhancedPrompt += `\n\nEDUCATION:\n${educationInfo}`;
         }
+
+        // Add projects if available
+        if (resumeData.projects && resumeData.projects.length > 0) {
+          const projectsInfo = resumeData.projects.map((project: any, index: number) => 
+            `${index + 1}. ${project.name}\n   Description: ${project.description || 'Not provided'}\n   Technologies: ${project.technologies?.join(', ') || 'Not specified'}`
+          ).join('\n');
+          enhancedPrompt += `\n\nPROJECTS:\n${projectsInfo}`;
+        }
+      }
+
+      // Add instructions for form filling
+      if (resumeData || personalInfo || jobData) {
+        enhancedPrompt += `\n\nIMPORTANT INSTRUCTIONS FOR FORM FILLING:
+- Use the detailed resume information provided above to fill out all form fields accurately
+- Fill out contact information, work experience, education, skills, and any other relevant sections
+- Use the exact information provided in the resume data above
+- For application-specific questions, use the answers provided in the Application Questions section
+- Be thorough and complete when filling out forms`;
       }
       
       // Instead of trying to convert the data URI to a blob here,
@@ -244,6 +249,39 @@ ${exp.highlights ? exp.highlights.join('\n') : ''}`
       console.log('Enhanced prompt (first 200 chars):', enhancedPrompt.substring(0, 200) + '...');
       console.log('Prompt contains personal info:', !!personalInfo);
       console.log('Prompt contains resume data:', !!resumeData);
+      console.log('Form data fields being sent:', Array.from(formData.keys()));
+      
+      // Log a sample of the structured data being sent (for debugging)
+      if (resumeData) {
+        console.log('Resume data sample:', {
+          name: resumeData.name,
+          email: resumeData.contact?.email,
+          phone: resumeData.contact?.phone,
+          location: resumeData.contact?.location,
+          linkedin: resumeData.contact?.linkedin,
+          website: resumeData.contact?.website,
+          experienceCount: resumeData.experience?.length,
+          firstJobTitle: resumeData.experience?.[0]?.title,
+          skillsCount: Array.isArray(resumeData.skills) ? resumeData.skills.length : 0
+        });
+      } else {
+        console.log('No resume data received in request');
+      }
+      
+      // Log personal info sample for debugging
+      if (personalInfo) {
+        console.log('Personal info sample:', {
+          name: personalInfo.name,
+          email: personalInfo.email,
+          phone: personalInfo.phone,
+          location: personalInfo.location,
+          linkedin: personalInfo.linkedin,
+          website: personalInfo.website,
+          hasApplicationQuestions: !!(personalInfo.salaryExpectations || personalInfo.workAuthorization)
+        });
+      } else {
+        console.log('No personal info received in request');
+      }
       
       if (apiKey) {
         formData.append('api_key', apiKey);
