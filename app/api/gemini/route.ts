@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 // Gemini API Configuration
-const GEMINI_MODEL = 'gemini-2.0-flash';
+const GEMINI_MODEL = 'gemini-2.5-flash-preview-05-20';
 
 /**
  * Extracts JSON from a possibly markdown-formatted response
