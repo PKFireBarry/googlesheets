@@ -73,9 +73,68 @@ const TailoredResume: React.FC<TailoredResumeProps> = ({
             </div>
           ))}
         </div>
+
+        {generatedResume.education && generatedResume.education.length > 0 && (
+          <div className="mb-4">
+            <h4 className="font-semibold mb-2">Education</h4>
+            {generatedResume.education.map((edu, index) => (
+              <div key={index} className="mb-2">
+                <div className="font-medium">{edu.degree}</div>
+                <div className="text-sm text-gray-600 italic">{edu.institution}</div>
+                {edu.dates && <div className="text-sm text-gray-500">{edu.dates}</div>}
+                {edu.location && <div className="text-sm text-gray-500">{edu.location}</div>}
+                {edu.details && edu.details.length > 0 && (
+                  <ul className="list-disc list-inside text-sm text-gray-700 mt-1">
+                    {edu.details.map((detail, i) => (
+                      <li key={i}>{detail}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {generatedResume.projects && generatedResume.projects.length > 0 && (
+          <div className="mb-4">
+            <h4 className="font-semibold mb-2">Projects</h4>
+            {generatedResume.projects.map((project, index) => (
+              <div key={index} className="mb-3">
+                <div className="font-medium">{project.name}</div>
+                {project.technologies && project.technologies.length > 0 && (
+                  <div className="text-sm text-gray-600 italic">
+                    Technologies: {project.technologies.join(', ')}
+                  </div>
+                )}
+                {project.highlights && project.highlights.length > 0 && (
+                  <ul className="list-disc list-inside text-sm text-gray-700 mt-1">
+                    {project.highlights.map((highlight, i) => (
+                      <li key={i}>{highlight}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {generatedResume.certifications && generatedResume.certifications.length > 0 && (
+          <div className="mb-4">
+            <h4 className="font-semibold mb-2">Certifications</h4>
+            {generatedResume.certifications.map((cert, index) => (
+              <div key={index} className="mb-2">
+                <div className="flex justify-between items-start">
+                  <div className="font-medium">{cert.name}</div>
+                  <div className="text-sm text-gray-500">{cert.date}</div>
+                </div>
+                <div className="text-sm text-gray-600 italic">{cert.issuer}</div>
+              </div>
+            ))}
+          </div>
+        )}
         
         <div className="preview-truncated text-center py-4 border-t border-dashed">
-          <p className="text-gray-500">Resume preview is truncated. Download to see the full resume.</p>
+          <p className="text-gray-500">Full resume preview above. Download to get the formatted file.</p>
         </div>
       </div>
       

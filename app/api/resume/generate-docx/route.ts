@@ -100,16 +100,8 @@ async function generateDOCX(resumeData: ResumeData): Promise<string> {
           <h2>Education</h2>
           ${resumeData.education.map(edu => `
             <div class="job">
-              <div class="job-header">
-                <span class="job-title">${edu.degree}</span>
-                <span class="job-dates">${edu.dates}</span>
-              </div>
-              <div class="job-company">${edu.institution}${edu.location ? `, ${edu.location}` : ''}</div>
-              ${edu.details && edu.details.length > 0 ? `
-                <ul>
-                  ${edu.details.map(detail => `<li>${detail}</li>`).join('')}
-                </ul>
-              ` : ''}
+              <div class="job-title">${edu.degree || ''}</div>
+              <div class="job-company">${edu.institution || ''}</div>
             </div>
           `).join('')}
         </div>
@@ -121,7 +113,6 @@ async function generateDOCX(resumeData: ResumeData): Promise<string> {
           ${resumeData.projects.map(project => `
             <div class="job">
               <div class="job-title">${project.name}</div>
-              ${project.description ? `<p>${project.description}</p>` : ''}
               ${project.technologies && project.technologies.length > 0 ? `
                 <p><em>Technologies: ${project.technologies.join(', ')}</em></p>
               ` : ''}
@@ -130,6 +121,21 @@ async function generateDOCX(resumeData: ResumeData): Promise<string> {
                   ${project.highlights.map(highlight => `<li>${highlight}</li>`).join('')}
                 </ul>
               ` : ''}
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+      
+      ${resumeData.certifications && resumeData.certifications.length > 0 ? `
+        <div class="section">
+          <h2>Certifications</h2>
+          ${resumeData.certifications.map(cert => `
+            <div class="job">
+              <div class="job-header">
+                <span class="job-title">${cert.name}</span>
+                <span class="job-dates">${cert.date}</span>
+              </div>
+              ${cert.issuer ? `<div class="job-company">${cert.issuer}</div>` : ''}
             </div>
           `).join('')}
         </div>

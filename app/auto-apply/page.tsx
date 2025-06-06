@@ -19,33 +19,11 @@ import ActionButtons from '../components/auto-apply/ActionButtons';
 import ErrorDisplay from '../components/resume/ErrorDisplay';
 import AutoApplyStatus from '../components/auto-apply/AutoApplyStatus';
 import ActionButton from '../components/ActionButton';
+import ResumeEditor from '../components/resume/ResumeEditor';
+import ResumePreview from '../components/resume/ResumePreview';
 import { Download } from 'lucide-react';
 
-// Define the props for the components to fix type errors
-interface ProgressBarProps {
-  currentStep: number;
-  totalSteps: number;
-  steps?: string[];
-}
-
-interface ResumeUploadProps {
-  onUploadResume?: (resumeData: ResumeData) => void;
-  onUploadPdf?: (pdfData: string) => void;
-  onNext?: () => void;
-  hasExistingResume?: boolean;
-  personalInfo?: PersonalInfo;
-  onPersonalInfoChange?: (info: PersonalInfo) => void;
-}
-
-interface JobDetailsFormProps {
-  selectedJob: any;
-  onJobDataChange?: (jobData: any) => void;
-}
-
-interface ApiKeyConfigurationProps {
-  apiKey: string;
-  onChange?: (apiKey: string) => void;
-}
+// Component interfaces are defined in their respective component files
 
 function AutoApplyContent(): React.ReactElement {
   const searchParams = useSearchParams();
@@ -507,7 +485,7 @@ function AutoApplyContent(): React.ReactElement {
       return;
     }
 
-    if (!selectedJob || !selectedJob.url) {
+    if (!selectedJob || !selectedJob.company_website) {
       toast.error('Please enter job details with a valid URL');
       return;
     }
@@ -542,7 +520,11 @@ function AutoApplyContent(): React.ReactElement {
           prompt: finalPrompt,
           apiKey,
           jobData: selectedJob,
-          url: selectedJob.url
+          url: selectedJob.company_website,
+          // Include the generated resume data for the automation
+          resumeData: generatedResume || masterResume,
+          // Include personal info for the automation
+          personalInfo
         }),
       });
 
@@ -745,6 +727,12 @@ function AutoApplyContent(): React.ReactElement {
     }
   };
 
+  // Handle saving edited resume
+  const handleSaveEditedResume = (updatedResume: ResumeData) => {
+    setGeneratedResume(updatedResume);
+    toast.success('Resume changes saved successfully');
+  };
+
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
       <Toaster position="top-center" />
@@ -755,143 +743,243 @@ function AutoApplyContent(): React.ReactElement {
       {/* Progress Bar */}
       <ProgressBar 
         currentStep={step} 
-        totalSteps={3} 
-        steps={['Upload Resume', 'Job Details', 'Auto Apply']} 
+        totalSteps={4} 
+        stepTitles={['Upload Resume', 'Job Details', 'Edit Resume', 'Preview & Auto Apply']} 
       />
       
       {/* Error Display */}
       {error && <ErrorDisplay error={error} />}
       
-      {/* Step 1: Resume Upload */}
-      {step === 1 && (
-        <ResumeUpload
-          onUploadResume={setMasterResume}
-          onUploadPdf={setResumePdfData}
-          onNext={() => setStep(2)}
-          hasExistingResume={!!masterResume || !!resumePdfData}
-          personalInfo={personalInfo}
-          onPersonalInfoChange={setPersonalInfo}
-        />
-      )}
-      
-      {/* Step 2: Job Details */}
-      {step === 2 && (
-        <>
-          <JobDetailsForm
-            selectedJob={selectedJob}
-            onJobDataChange={setSelectedJob}
-          />
-          
-          <ApiKeyConfiguration
-            apiKey={apiKey}
-            onChange={handleApiKeyChange}
-          />
-          
-          <ActionButtons
-            onBack={() => setStep(1)}
-            onNext={handleGenerateResume}
-            nextLabel="Generate Resume"
-            isLoading={isLoading}
-          />
-        </>
-      )}
-      
-      {/* Step 3: Auto Apply */}
-      {step === 3 && generatedResume && (
-        <>
-          <TailoredResume
-            generatedResume={generatedResume}
-            tailoringNotes={tailoringNotes}
-            isLoading={isLoading}
-            formatSkills={formatSkills}
-            onDownload={handleDownload}
-          />
-          
-          <div className="flex flex-col sm:flex-row gap-4 justify-center mb-6">
-            <ActionButton 
-              onClick={() => handleDownload('pdf')} 
-              icon={Download} 
-              color="green" 
-              disabled={isLoading}
-            >
-              {isLoading ? 'Downloading...' : 'Download as PDF'}
-            </ActionButton>
-            <ActionButton 
-              onClick={() => handleDownload('docx')} 
-              icon={Download} 
-              color="blue" 
-              disabled={isLoading}
-            >
-              {isLoading ? 'Downloading...' : 'Download as DOCX'}
-            </ActionButton>
-          </div>
-          
-          <div className="mt-8 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
-            <h3 className="text-lg font-semibold mb-4">Auto-Apply to Job</h3>
-            
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Upload Prompt
-              </label>
-              <input
-                type="text"
-                value={uploadPrompt}
-                onChange={handlePromptChange}
-                placeholder="Upload this resume to apply for the position at..."
-                className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                disabled={isUploading || uploadStatus === 'completed'}
-              />
+      {/* Step Content */}
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 max-w-5xl mx-auto border border-gray-200 dark:border-gray-700 backdrop-blur-sm">
+        {/* Step 1: Resume Upload */}
+        {step === 1 && (
+          <>
+            <div className="mb-8">
+              <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">Step 1: Upload Resume</h2>
+              <p className="text-gray-600 dark:text-gray-400">Upload your resume to get started with the auto-apply process.</p>
             </div>
             
-            <AutoApplyStatus
-              isUploading={isUploading}
-              status={uploadStatus}
-              result={uploadResult}
-              error={uploadError}
-              progress={uploadProgress}
+            <ResumeUpload
+              onUploadResume={setMasterResume}
+              onUploadPdf={setResumePdfData}
+              onNext={() => setStep(2)}
+              hasExistingResume={!!masterResume || !!resumePdfData}
+              personalInfo={personalInfo}
+              onPersonalInfoChange={setPersonalInfo}
+            />
+          </>
+        )}
+        
+        {/* Step 2: Job Details */}
+        {step === 2 && (
+          <>
+            <div className="mb-8">
+              <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">Step 2: Job Details</h2>
+              <p className="text-gray-600 dark:text-gray-400">
+                Review the job details below and make sure they're correct before generating your tailored resume.
+              </p>
+            </div>
+            
+            <JobDetailsForm
+              selectedJob={selectedJob}
+              onJobDataChange={setSelectedJob}
             />
             
-            {/* Completion Message */}
-            {uploadStatus === 'completed' && (
-              <div className="mt-6 bg-green-50 dark:bg-green-900/20 p-4 rounded-md text-green-800 dark:text-green-300 text-sm">
-                <h4 className="font-medium mb-2">Application Submitted Successfully!</h4>
-                <p className="mb-3">
-                  Your application has been submitted. Here's what you can do next:
-                </p>
-                <ul className="list-disc pl-5 space-y-1">
-                  <li>Check your email for confirmation from the employer</li>
-                  <li>Prepare for potential interviews</li>
-                  <li>Continue applying to other jobs</li>
-                </ul>
-                <div className="mt-4 flex gap-3">
-                  <ActionButton
-                    onClick={() => window.location.href = '/'}
-                    className="inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-md bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-700"
-                  >
-                    Return to Job Listings
-                  </ActionButton>
-                  <ActionButton
-                    onClick={() => window.location.href = '/applied-jobs'}
-                    className="inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-md bg-blue-100 dark:bg-blue-800 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-700"
-                  >
-                    View Applied Jobs
-                  </ActionButton>
-                </div>
+            <div className="mb-6 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+              <h3 className="font-semibold text-blue-800 dark:text-blue-300 mb-2">Contact Information</h3>
+              <p className="text-blue-700 dark:text-blue-300">
+                Your contact information will be automatically extracted from your uploaded {resumePdfData ? 'PDF' : 'resume'}.
+                You don't need to enter it manually.
+              </p>
+            </div>
+            
+            {!apiKey && (
+              <ApiKeyConfiguration
+                apiKey={apiKey}
+                onChange={handleApiKeyChange}
+              />
+            )}
+            
+            <ActionButtons
+              onBack={() => setStep(1)}
+              onNext={handleGenerateResume}
+              nextLabel="Generate Tailored Resume"
+              isLoading={isLoading}
+            />
+          </>
+        )}
+        
+        {/* Step 3: Edit Resume */}
+        {step === 3 && (
+          <>
+            <div className="mb-8">
+              <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">Step 3: Edit Your Resume</h2>
+              <p className="text-gray-600 dark:text-gray-400">
+                Your tailored resume has been generated. Make any necessary edits before proceeding to the preview.
+              </p>
+            </div>
+            
+            {tailoringNotes && (
+              <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 mb-6">
+                <h3 className="font-semibold text-yellow-800 dark:text-yellow-300 mb-2">Tailoring Notes</h3>
+                <p className="text-yellow-700 dark:text-yellow-400 text-sm">{tailoringNotes}</p>
               </div>
             )}
             
-            <div className="mt-6 flex justify-between">
-              <ActionButtons
-                onBack={() => setStep(2)}
-                onNext={handleStartAutoApply}
-                nextLabel={isUploading ? "Applying..." : "Start Auto-Apply"}
-                isLoading={isUploading}
-                onStartOver={handleStartOver}
-              />
+            <ResumeEditor 
+              generatedResume={generatedResume}
+              onSaveChanges={handleSaveEditedResume}
+              isLoading={isLoading}
+            />
+            
+            <ActionButtons
+              onBack={() => setStep(2)}
+              onNext={() => setStep(4)}
+              nextLabel="Continue to Preview"
+              isLoading={isLoading}
+            />
+          </>
+        )}
+        
+        {/* Step 4: Preview & Auto Apply */}
+        {step === 4 && generatedResume && (
+          <>
+            <div className="mb-8">
+              <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">Step 4: Preview & Auto Apply</h2>
+              <p className="text-gray-600 dark:text-gray-400">
+                Your tailored resume is ready! Preview how it will look and start the auto-apply process.
+              </p>
             </div>
-          </div>
-        </>
-      )}
+            
+            <ResumePreview 
+              resumeData={generatedResume}
+              isLoading={isLoading}
+            />
+            
+            <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
+              <button
+                onClick={() => handleDownload('pdf')}
+                disabled={isLoading}
+                className={`${
+                  isLoading 
+                    ? 'bg-green-400 cursor-not-allowed' 
+                    : 'bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 shadow-lg hover:shadow-xl transform hover:scale-105'
+                } text-white px-6 py-4 border border-transparent rounded-xl text-base font-semibold transition-all duration-200 flex items-center justify-center focus:outline-none focus:ring-4 focus:ring-green-500/50 space-x-2`}
+              >
+                {isLoading ? (
+                  <>
+                    <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span>Downloading...</span>
+                  </>
+                ) : (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    <span>Download as PDF</span>
+                  </>
+                )}
+              </button>
+              
+              <button
+                onClick={() => handleDownload('docx')}
+                disabled={isLoading}
+                className={`${
+                  isLoading 
+                    ? 'bg-blue-400 cursor-not-allowed' 
+                    : 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 shadow-lg hover:shadow-xl transform hover:scale-105'
+                } text-white px-6 py-4 border border-transparent rounded-xl text-base font-semibold transition-all duration-200 flex items-center justify-center focus:outline-none focus:ring-4 focus:ring-blue-500/50 space-x-2`}
+              >
+                {isLoading ? (
+                  <>
+                    <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span>Downloading...</span>
+                  </>
+                ) : (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    <span>Download as DOCX</span>
+                  </>
+                )}
+              </button>
+            </div>
+            
+            <div className="mt-8 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
+              <h3 className="text-lg font-semibold mb-4">Auto-Apply to Job</h3>
+              
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Upload Prompt
+                </label>
+                <input
+                  type="text"
+                  value={uploadPrompt}
+                  onChange={handlePromptChange}
+                  placeholder="Upload this resume to apply for the position at..."
+                  className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  disabled={isUploading || uploadStatus === 'completed'}
+                />
+              </div>
+              
+              <AutoApplyStatus
+                isUploading={isUploading}
+                status={uploadStatus}
+                result={uploadResult}
+                error={uploadError}
+                progress={uploadProgress}
+              />
+              
+              {/* Completion Message */}
+              {uploadStatus === 'completed' && (
+                <div className="mt-6 bg-green-50 dark:bg-green-900/20 p-4 rounded-md text-green-800 dark:text-green-300 text-sm">
+                  <h4 className="font-medium mb-2">Application Submitted Successfully!</h4>
+                  <p className="mb-3">
+                    Your application has been submitted. Here's what you can do next:
+                  </p>
+                  <ul className="list-disc pl-5 space-y-1">
+                    <li>Check your email for confirmation from the employer</li>
+                    <li>Prepare for potential interviews</li>
+                    <li>Continue applying to other jobs</li>
+                  </ul>
+                  <div className="mt-4 flex gap-3">
+                    <ActionButton
+                      onClick={() => window.location.href = '/'}
+                      className="inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-md bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-700"
+                    >
+                      Return to Job Listings
+                    </ActionButton>
+                    <ActionButton
+                      onClick={() => window.location.href = '/applied-jobs'}
+                      className="inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-md bg-blue-100 dark:bg-blue-800 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-700"
+                    >
+                      View Applied Jobs
+                    </ActionButton>
+                  </div>
+                </div>
+              )}
+              
+              <div className="mt-6 flex justify-between">
+                <ActionButtons
+                  onBack={() => setStep(3)}
+                  onNext={handleStartAutoApply}
+                  nextLabel={isUploading ? "Applying..." : "Start Auto-Apply"}
+                  isLoading={isUploading}
+                  onStartOver={handleStartOver}
+                />
+              </div>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

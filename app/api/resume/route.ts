@@ -164,6 +164,15 @@ Website: ${personalInfo.website || 'Extract from resume or omit'}
     // Prepare the prompt for Gemini
     const instructionText = `I need you to create a tailored resume for a job application. I'll provide you with my resume ${resumePdfData ? 'as a PDF' : 'data'} and the job details. Please create a professional resume that highlights the most relevant skills, experiences, and qualifications that match the job requirements without adding any false information.
 
+CRITICAL REQUIREMENT: You MUST include an education section in every tailored resume you create. This is non-negotiable. Even if the education seems less relevant to the job, it must be preserved and included.
+
+STRATEGIC ANALYSIS PROCESS:
+1. First, carefully analyze the job posting to identify the TOP 5 most critical requirements/skills
+2. Then, review the candidate's experience to find specific examples that demonstrate those requirements
+3. Craft bullet points that explicitly connect the candidate's experience to each critical job requirement
+4. Use the exact terminology from the job posting when describing relevant experiences
+5. Ensure each role's bullet points collectively tell a story of increasing responsibility and relevant expertise
+
 Here are the job details:
 ${jobDetailsSection}
 
@@ -172,15 +181,63 @@ ${personalInfoSection}
 Tailoring Instructions:
 1. Focus on the most relevant skills and experiences that directly relate to the job description.
 2. Highlight keywords and terms from the job posting to improve ATS compatibility.
-3. Include at least one bullet point that addresses each key responsibility in the job description.
+3. Include at least one bullet point that addresses each key responsibility in the job description this should try to find the commonalities between the job description and the resume.
 4. Be concise and precise - every word should contribute to showcasing relevant qualifications.
 5. Maintain a clean, professional format suitable for the job position.
-6. The resume should not exceed 1-2 pages.
+6. The resume should not exceed 1 pages.
 7. Don't invent or fabricate any experiences or skills not mentioned in the original resume.
 8. IMPORTANT: Preserve the exact employment dates from the original resume - do not create gaps or change any start/end dates.
 9. If there are employment gaps in the original resume that appear concerning, address them positively in the summary rather than modifying dates.
 10. IMPORTANT: For job locations, DO NOT use placeholder text like "City, State". If a location is not known or is a placeholder, omit it entirely.
 11. Please summarize the job description and how you tailored the resume to fit it in the tailoringNotes field.
+
+CRITICAL BULLET POINT STRATEGY:
+12. Each bullet point must demonstrate IMPACT and VALUE, not just list responsibilities.
+13. Use the STAR method (Situation, Task, Action, Result) to create compelling bullet points that show measurable outcomes.
+14. Connect each bullet point to specific job requirements by using similar language and addressing the same challenges.
+15. Quantify achievements wherever possible (percentages, numbers, timeframes, scale).
+16. Start each bullet point with strong action verbs that match the job posting's language.
+17. Show progression and growth in responsibilities across different roles.
+18. Demonstrate problem-solving abilities and business impact relevant to the target role.
+19. Use industry-specific terminology and keywords from the job posting naturally within the bullet points.
+20. Each bullet point should answer: "How does this experience make me the ideal candidate for THIS specific role?"
+
+MANDATORY BASELINE REQUIREMENTS:
+21. ALWAYS include the experience section in every tailored resume - this section is required.
+22. ALWAYS include the skills section in every tailored resume - this section is required.
+23. ALWAYS include the education section in every tailored resume - this section is required. Even if the original resume has minimal education information, you MUST include whatever education data is available. If the original resume contains any degree, certification, or educational background, it MUST be preserved in the tailored resume.
+24. For each experience entry, provide AT LEAST 3 bullet points in the highlights array - never less than 3.
+25. For projects, do NOT include a description field - only use the highlights array with AT LEAST 2 bullet points per project there should be at least 2 projects.
+26. CRITICAL: If you find ANY educational background in the source resume (degrees, certifications, courses, training), you MUST include it in the education array. Do not omit education even if it seems less relevant to the job - education should always be preserved.
+
+BULLET POINT QUALITY REQUIREMENTS:
+27. Each bullet point must be 15-25 words and pack maximum impact into that space.
+28. Every bullet point must include at least ONE quantifiable metric (numbers, percentages, timeframes, scale).
+29. Use power words that directly mirror the job posting's language and requirements.
+30. Each bullet point should demonstrate a specific skill or requirement mentioned in the job posting.
+31. Avoid generic phrases like "responsible for" or "worked on" - use dynamic action verbs.
+32. Show clear cause-and-effect relationships between actions and business outcomes.
+33. Prioritize bullet points that address the most critical job requirements first.
+34. Use parallel structure and consistent tense throughout all bullet points.
+35. Order experiences and bullet points by relevance to the job - most relevant first.
+36. Within each role, lead with the bullet point that most directly addresses the primary job requirement.
+
+
+BULLET POINT EXAMPLES - Follow these patterns:
+
+BAD EXAMPLES (avoid these):
+❌ "Responsible for managing a team"
+❌ "Worked on various projects"
+❌ "Helped improve processes"
+❌ "Assisted with customer service"
+
+GOOD EXAMPLES (emulate these):
+✅ "Led cross-functional team of 8 engineers, delivering 3 major features ahead of schedule, increasing user engagement by 35%"
+✅ "Architected scalable microservices infrastructure supporting 50K+ concurrent users, reducing system downtime by 99.2%"
+✅ "Implemented automated testing pipeline, cutting deployment time from 4 hours to 15 minutes while achieving 95% code coverage"
+✅ "Optimized database queries and caching strategies, improving application response time by 60% for 100K+ daily active users"
+
+EDUCATION PRESERVATION REMINDER: Before generating the JSON, carefully review the source resume for ANY educational background (degrees, diplomas, certificates, training programs, courses) and ensure ALL of it is included in the education section of your response.
 
 Return the complete resume content in a structured JSON format:
 
@@ -193,7 +250,7 @@ Return the complete resume content in a structured JSON format:
     "linkedin": "linkedin.com/in/username",
     "website": "personalwebsite.com"
   },
-  "summary": "Professional summary paragraph",
+  "summary": "Compelling 3-4 sentence summary that positions the candidate as the ideal fit for THIS specific role, highlighting the most relevant qualifications and using key terms from the job posting",
   "skills": ["Skill 1", "Skill 2", "Skill 3", ...],
   "experience": [
     {
@@ -209,18 +266,17 @@ Return the complete resume content in a structured JSON format:
     {
       "degree": "Degree Name",
       "institution": "Institution Name",
-      "location": "City, State",
-      "dates": "Month Year - Month Year",
-      "details": ["Detail 1", "Detail 2", ...]
+      "location": "City, State (optional)",
+      "dates": "Year - Year (optional)",
+      "details": ["Relevant coursework or achievements (optional)"]
     },
     ...
   ],
   "projects": [
     {
       "name": "Project Name",
-      "description": "Brief description",
       "technologies": ["Tech 1", "Tech 2", ...],
-      "highlights": ["Highlight 1", "Highlight 2", ...]
+      "highlights": ["Highlight 1", "Highlight 2", "Highlight 3", ...]
     },
     ...
   ],
@@ -232,7 +288,7 @@ Return the complete resume content in a structured JSON format:
     },
     ...
   ],
-  "tailoringNotes": "Description of how this resume was tailored for this specific job"
+  "tailoringNotes": "Detailed analysis of: (1) Top 5 job requirements identified, (2) How each requirement was addressed through specific experiences, (3) Key terminology/keywords incorporated, (4) Strategic positioning decisions made"
 }
 
 IMPORTANT: Return ONLY the JSON object with no markdown formatting, no code blocks, and no extra text before or after the JSON.`;
@@ -263,6 +319,15 @@ IMPORTANT: Return ONLY the JSON object with no markdown formatting, no code bloc
     } else if (resumeData) {
       // Using JSON format (old way)
       console.log('Using JSON resume data for Gemini API');
+      console.log('📚 Source resume education data:', resumeData.education ? resumeData.education.length : 0, 'entries');
+      if (resumeData.education && resumeData.education.length > 0) {
+        resumeData.education.forEach((edu: any, index: number) => {
+          console.log(`  📖 Source Education ${index + 1}:`, edu.degree, 'from', edu.institution);
+        });
+      } else {
+        console.log('⚠️  WARNING: No education data found in source resume!');
+      }
+      
       const textPart = requestBody.contents[0].parts[0] as GeminiTextPart;
       textPart.text += `\n\nHere is my master resume data:\n${JSON.stringify(resumeData)}`;
     }
@@ -298,23 +363,97 @@ IMPORTANT: Return ONLY the JSON object with no markdown formatting, no code bloc
     // Extract the text from the Gemini response
     const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!rawText) {
+      console.error('❌ No response text received from Gemini API');
       return NextResponse.json(
         { error: 'No response text received from Gemini' },
         { status: 500 }
       );
     }
     
+    console.log('📝 Raw Gemini Response (first 500 chars):', rawText.substring(0, 500) + '...');
+    
     // Clean up the response text
     const cleanedText = extractJsonFromResponse(rawText);
+    console.log('🧹 Cleaned JSON text (first 500 chars):', cleanedText.substring(0, 500) + '...');
     
     // Parse the text as JSON
     try {
       // Try to parse the response as JSON
       const parsedData = JSON.parse(cleanedText);
-      console.log('Successfully parsed Gemini response as JSON structure');
+      console.log('✅ Successfully parsed Gemini response as JSON structure');
+      console.log('📊 Parsed Resume Data Structure:');
+      console.log('  - Name:', parsedData.name);
+      console.log('  - Contact:', parsedData.contact ? 'Present' : 'Missing');
+      console.log('  - Summary length:', parsedData.summary ? parsedData.summary.length : 0, 'characters');
+      console.log('  - Skills count:', Array.isArray(parsedData.skills) ? parsedData.skills.length : 0);
+      console.log('  - Experience entries:', Array.isArray(parsedData.experience) ? parsedData.experience.length : 0);
+      console.log('  - Education entries:', Array.isArray(parsedData.education) ? parsedData.education.length : 0);
+      console.log('  - Project entries:', Array.isArray(parsedData.projects) ? parsedData.projects.length : 0);
+      console.log('  - Certification entries:', Array.isArray(parsedData.certifications) ? parsedData.certifications.length : 0);
+      
+      // Log experience details
+      if (Array.isArray(parsedData.experience)) {
+        parsedData.experience.forEach((exp: any, index: number) => {
+          console.log(`  📋 Experience ${index + 1}:`, exp.title, 'at', exp.company);
+          console.log(`    - Highlights count:`, Array.isArray(exp.highlights) ? exp.highlights.length : 0);
+          
+          // Quality check for bullet points
+          if (Array.isArray(exp.highlights)) {
+            exp.highlights.forEach((highlight: string, i: number) => {
+              const wordCount = highlight.split(' ').length;
+              const hasNumbers = /\d/.test(highlight);
+              const hasWeakWords = /responsible for|worked on|helped|assisted/i.test(highlight);
+              
+              console.log(`    📝 Bullet ${i + 1} (${wordCount} words, numbers: ${hasNumbers}, weak words: ${hasWeakWords}):`, highlight.substring(0, 80) + '...');
+            });
+          }
+        });
+      }
+      
+      // Log education details
+      if (Array.isArray(parsedData.education)) {
+        parsedData.education.forEach((edu: any, index: number) => {
+          console.log(`  🎓 Education ${index + 1}:`, edu.degree, 'from', edu.institution);
+        });
+      } else {
+        console.log('🚨 CRITICAL WARNING: AI response is missing education section! This violates the mandatory requirements.');
+      }
+      
+      // Log project details
+      if (Array.isArray(parsedData.projects)) {
+        parsedData.projects.forEach((project: any, index: number) => {
+          console.log(`  🚀 Project ${index + 1}:`, project.name);
+          console.log(`    - Technologies:`, Array.isArray(project.technologies) ? project.technologies.length : 0);
+          console.log(`    - Highlights count:`, Array.isArray(project.highlights) ? project.highlights.length : 0);
+          
+          // Quality check for project bullet points
+          if (Array.isArray(project.highlights)) {
+            project.highlights.forEach((highlight: string, i: number) => {
+              const wordCount = highlight.split(' ').length;
+              const hasNumbers = /\d/.test(highlight);
+              const hasWeakWords = /responsible for|worked on|helped|assisted/i.test(highlight);
+              
+              console.log(`    📝 Project Bullet ${i + 1} (${wordCount} words, numbers: ${hasNumbers}, weak words: ${hasWeakWords}):`, highlight.substring(0, 80) + '...');
+            });
+          }
+        });
+      }
       
       // Clean any remaining placeholder locations
       const cleanedData = cleanPlaceholderLocations(parsedData);
+      console.log('🧽 Applied placeholder location cleaning');
+      
+      // EDUCATION FALLBACK: If AI didn't include education but source resume had it, preserve it
+      if ((!cleanedData.education || cleanedData.education.length === 0)) {
+        if (resumeData?.education && resumeData.education.length > 0) {
+          console.log('🔧 EDUCATION FALLBACK: AI omitted education, restoring from source resume');
+          cleanedData.education = resumeData.education;
+          console.log('✅ Restored', resumeData.education.length, 'education entries from source resume');
+        } else if (resumePdfData) {
+          console.log('⚠️  EDUCATION MISSING: AI omitted education from PDF resume. Cannot restore automatically.');
+          console.log('💡 SUGGESTION: The AI should have extracted education from the PDF. This may indicate an issue with the AI prompt or the PDF content.');
+        }
+      }
       
       // Return the resume data
       return NextResponse.json(cleanedData);

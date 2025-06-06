@@ -20,6 +20,8 @@ import TailoredResume from '../components/resume/TailoredResume';
 import ActionButtons from '../components/resume/ActionButtons';
 import DeleteConfirmDialog from '../components/resume/DeleteConfirmDialog';
 import ErrorDisplay from '../components/resume/ErrorDisplay';
+import ResumeEditor from '../components/resume/ResumeEditor';
+import ResumePreview from '../components/resume/ResumePreview';
 
 // Component for the Resume Builder page
 function ResumeBuilderContent(): React.ReactElement {
@@ -477,6 +479,14 @@ function ResumeBuilderContent(): React.ReactElement {
             company: manualJobData.company
           };
       
+      console.log('🚀 Starting resume generation...');
+      console.log('📋 Request payload:');
+      console.log('  - Master resume:', masterResume ? 'Present' : 'Missing');
+      console.log('  - PDF data:', resumePdfData ? 'Present' : 'Missing');
+      console.log('  - Job data:', jobData);
+      console.log('  - API key:', apiKey ? 'Present' : 'Missing');
+      console.log('  - Personal info:', personalInfo);
+
       // Call the resume API
       const response = await fetch('/api/resume', {
         method: 'POST',
@@ -493,18 +503,62 @@ function ResumeBuilderContent(): React.ReactElement {
         }),
       });
       
+      console.log('📡 API Response status:', response.status, response.statusText);
+      
       if (!response.ok) {
         const errorData = await response.json();
+        console.error('❌ API Error:', errorData);
         throw new Error(errorData.error || 'Failed to generate resume');
       }
       
       const data = await response.json();
+      console.log('✅ Received tailored resume data from API:');
+      console.log('📊 Response structure:');
+      console.log('  - Name:', data.name);
+      console.log('  - Contact:', data.contact ? 'Present' : 'Missing');
+      console.log('  - Summary length:', data.summary ? data.summary.length : 0, 'characters');
+      console.log('  - Skills count:', Array.isArray(data.skills) ? data.skills.length : 0);
+      console.log('  - Experience entries:', Array.isArray(data.experience) ? data.experience.length : 0);
+      console.log('  - Education entries:', Array.isArray(data.education) ? data.education.length : 0);
+      console.log('  - Project entries:', Array.isArray(data.projects) ? data.projects.length : 0);
+      console.log('  - Certification entries:', Array.isArray(data.certifications) ? data.certifications.length : 0);
+      console.log('  - Tailoring notes:', data.tailoringNotes ? 'Present' : 'Missing');
+      
+      // Log detailed structure
+      if (Array.isArray(data.experience)) {
+        data.experience.forEach((exp: any, index: number) => {
+          console.log(`  📋 Experience ${index + 1}:`, exp.title, 'at', exp.company);
+          console.log(`    - Dates:`, exp.dates);
+          console.log(`    - Location:`, exp.location);
+          console.log(`    - Highlights:`, Array.isArray(exp.highlights) ? exp.highlights.length : 0, 'items');
+        });
+      }
+      
+      if (Array.isArray(data.education)) {
+        data.education.forEach((edu: any, index: number) => {
+          console.log(`  🎓 Education ${index + 1}:`, edu.degree, 'from', edu.institution);
+          console.log(`    - Location:`, edu.location);
+          console.log(`    - Dates:`, edu.dates);
+          console.log(`    - Details:`, Array.isArray(edu.details) ? edu.details.length : 0, 'items');
+        });
+      }
+      
+      if (Array.isArray(data.projects)) {
+        data.projects.forEach((project: any, index: number) => {
+          console.log(`  🚀 Project ${index + 1}:`, project.name);
+          console.log(`    - Technologies:`, Array.isArray(project.technologies) ? project.technologies.length : 0, 'items');
+          console.log(`    - Highlights:`, Array.isArray(project.highlights) ? project.highlights.length : 0, 'items');
+          console.log(`    - Description:`, project.description ? 'Present' : 'Missing');
+        });
+      }
       
       // Store the tailoring notes and set the generated resume
       setTailoringNotes(data.tailoringNotes || '');
       setGeneratedResume(data);
       
-      // Move to the next step
+      console.log('💾 Stored resume data in state');
+      
+      // Move to the edit step (step 3)
       setStep(3);
     } catch (error) {
       console.error('Error generating resume:', error);
@@ -512,6 +566,14 @@ function ResumeBuilderContent(): React.ReactElement {
     } finally {
       setIsLoading(false);
     }
+  };
+  
+  // Handle saving edited resume
+  const handleSaveEditedResume = (updatedResume: ResumeData) => {
+    setGeneratedResume(updatedResume);
+    // Move to the preview and download step
+    setStep(4);
+    toast.success('Your changes have been saved');
   };
   
   // Handle downloading the resume
@@ -561,27 +623,32 @@ function ResumeBuilderContent(): React.ReactElement {
   
   // Render the resume builder
   return (
-    <div className="bg-gray-50 no-overflow mobile-container">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 no-overflow mobile-container">
       <Toaster position="top-right" />
-      <div className="max-w-6xl mx-auto">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Page Header */}
         <PageHeader />
         
         {/* Progress Bar */}
-        <ProgressBar 
-          currentStep={step} 
-          totalSteps={3} 
-          stepTitles={['Upload Resume', 'Job Details', 'Download']} 
-        />
+        <div className="mb-8">
+          <ProgressBar 
+            currentStep={step} 
+            totalSteps={4} 
+            stepTitles={['Upload Resume', 'Job Details', 'Edit Resume', 'Preview & Download']} 
+          />
+        </div>
         
         {/* Error Display */}
         <ErrorDisplay error={error} />
         
         {/* Step Content */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 max-w-4xl mx-auto border border-gray-100 dark:border-gray-700">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 max-w-5xl mx-auto border border-gray-200 dark:border-gray-700 backdrop-blur-sm">
           {step === 1 && (
             <>
-              <h2 className="text-2xl font-bold mb-4">Step 1: Upload or Create a Resume</h2>
+              <div className="mb-8">
+                <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">Step 1: Upload or Create a Resume</h2>
+                <p className="text-gray-600 dark:text-gray-400">Get started by uploading your existing resume or entering job details manually.</p>
+              </div>
               
               <div className="mb-6">
                 <ResumeUpload 
@@ -610,10 +677,12 @@ function ResumeBuilderContent(): React.ReactElement {
           
           {step === 2 && (
             <>
-              <h2 className="text-2xl font-bold mb-4">Step 2: Job Details</h2>
-              <p className="text-gray-600 dark:text-gray-300 mb-6 text-mobile-sm">
-                Review the job details below and make sure they're correct before generating your tailored resume.
-              </p>
+              <div className="mb-8">
+                <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">Step 2: Job Details</h2>
+                <p className="text-gray-600 dark:text-gray-400">
+                  Review the job details below and make sure they're correct before generating your tailored resume.
+                </p>
+              </div>
               
               <JobDetailsForm 
                 manualJobData={manualJobData}
@@ -652,22 +721,109 @@ function ResumeBuilderContent(): React.ReactElement {
           
           {step === 3 && (
             <>
-              <h2 className="text-2xl font-bold mb-4">Step 3: Your Tailored Resume</h2>
-              <p className="text-gray-600 dark:text-gray-300 mb-6 text-mobile-sm">
-                Your tailored resume is ready! Review the changes and download it in your preferred format.
-              </p>
+              <div className="mb-8">
+                <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">Step 3: Edit Your Resume</h2>
+                <p className="text-gray-600 dark:text-gray-400">
+                  Your tailored resume has been generated. Make any necessary edits before proceeding to the preview.
+                </p>
+              </div>
               
-              <TailoredResume 
+              {tailoringNotes && (
+                <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 mb-6">
+                  <h3 className="font-semibold text-yellow-800 dark:text-yellow-300 mb-2">Tailoring Notes</h3>
+                  <p className="text-yellow-700 dark:text-yellow-400 text-sm">{tailoringNotes}</p>
+                </div>
+              )}
+              
+              <ResumeEditor 
                 generatedResume={generatedResume}
-                tailoringNotes={tailoringNotes}
+                onSaveChanges={handleSaveEditedResume}
                 isLoading={isLoading}
-                formatSkills={formatSkills}
-                onDownload={handleDownloadResume}
               />
               
               <ActionButtons 
                 step={step}
                 onPrevious={() => setStep(2)}
+                onNext={() => setStep(4)}
+                nextLabel="Continue to Preview"
+                isLoading={isLoading}
+              />
+            </>
+          )}
+          
+          {step === 4 && (
+            <>
+              <div className="mb-8">
+                <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">Step 4: Preview & Download</h2>
+                <p className="text-gray-600 dark:text-gray-400">
+                  Your tailored resume is ready! Preview how it will look and download it in your preferred format.
+                </p>
+              </div>
+              
+              <ResumePreview 
+                resumeData={generatedResume}
+                isLoading={isLoading}
+              />
+              
+              <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
+                <button
+                  onClick={() => handleDownloadResume('pdf')}
+                  disabled={isLoading}
+                  className={`${
+                    isLoading 
+                      ? 'bg-green-400 cursor-not-allowed' 
+                      : 'bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 shadow-lg hover:shadow-xl transform hover:scale-105'
+                  } text-white px-6 py-4 border border-transparent rounded-xl text-base font-semibold transition-all duration-200 flex items-center justify-center focus:outline-none focus:ring-4 focus:ring-green-500/50 space-x-2`}
+                >
+                  {isLoading ? (
+                    <>
+                      <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      <span>Downloading...</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                      <span>Download as PDF</span>
+                    </>
+                  )}
+                </button>
+                
+                <button
+                  onClick={() => handleDownloadResume('docx')}
+                  disabled={isLoading}
+                  className={`${
+                    isLoading 
+                      ? 'bg-blue-400 cursor-not-allowed' 
+                      : 'bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 shadow-lg hover:shadow-xl transform hover:scale-105'
+                  } text-white px-6 py-4 border border-transparent rounded-xl text-base font-semibold transition-all duration-200 flex items-center justify-center focus:outline-none focus:ring-4 focus:ring-blue-500/50 space-x-2`}
+                >
+                  {isLoading ? (
+                    <>
+                      <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      <span>Downloading...</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                      <span>Download as DOCX</span>
+                    </>
+                  )}
+                </button>
+              </div>
+              
+              <ActionButtons 
+                step={step}
+                onPrevious={() => setStep(3)}
                 onStartOver={handleStartOver}
               />
             </>

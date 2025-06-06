@@ -110,8 +110,9 @@ export default function JobCard({
         console.error('Error saving job data to localStorage:', error);
       }
       
-      // Pass company name and job ID to the LinkedIn lookup page
-      router.push(`/linkedin-lookup?company=${encodeURIComponent(companyName)}&jobId=${encodeURIComponent(job.id)}`);
+      // Open LinkedIn lookup in a new tab
+      const url = `/linkedin-lookup?company=${encodeURIComponent(companyName)}&jobId=${encodeURIComponent(job.id)}`;
+      window.open(url, '_blank');
     }
   }
   
@@ -131,8 +132,9 @@ export default function JobCard({
       params.set('jobId', job.id);
     }
     
-    // Navigate to the resume builder with job data
-    window.location.href = `/resume-builder?${params.toString()}`;
+    // Open resume builder in a new tab
+    const url = `/resume-builder?${params.toString()}`;
+    window.open(url, '_blank');
   };
 
   const toggleDetails = () => setShowDetails(!showDetails);
@@ -385,7 +387,8 @@ export default function JobCard({
               <ActionButton
                 onClick={e => { 
                   e.stopPropagation();
-                  router.push(`/cover-letter?jobId=${encodeURIComponent(job.id)}`);
+                  const url = `/cover-letter?jobId=${encodeURIComponent(job.id)}`;
+                  window.open(url, '_blank');
                 }}
                 className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg
                          border border-purple-600 dark:border-purple-500 bg-white dark:bg-gray-700
@@ -400,7 +403,8 @@ export default function JobCard({
                   e.stopPropagation();
                   // Pass full job data in URL parameter
                   const jobDataParam = encodeURIComponent(JSON.stringify(job));
-                  router.push(`/auto-apply?jobId=${encodeURIComponent(job.id)}&jobData=${jobDataParam}`);
+                  const url = `/auto-apply?jobId=${encodeURIComponent(job.id)}&jobData=${jobDataParam}`;
+                  window.open(url, '_blank');
                 }}
                 className="inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg
                          border border-orange-600 dark:border-orange-500 bg-white dark:bg-gray-700

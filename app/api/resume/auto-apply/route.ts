@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     
     // Extract data from the request
-    const { pdfUrl, prompt, apiKey, jobData, url } = body;
+    const { pdfUrl, prompt, apiKey, jobData, url, resumeData, personalInfo } = body;
     
     if (!pdfUrl) {
       return NextResponse.json(
@@ -127,6 +127,111 @@ export async function POST(request: NextRequest) {
         jobUrl = jobData.company_website || '';
         jobUrl = normalizeUrl(jobUrl);
       }
+
+      // Add personal information to the prompt if available
+      if (personalInfo) {
+        // Format basic info
+        const basicInfo = `
+Personal Information:
+Name: ${personalInfo.name || ''}
+Email: ${personalInfo.email || ''}
+Phone: ${personalInfo.phone || ''}
+Location: ${personalInfo.location || ''}
+LinkedIn: ${personalInfo.linkedin || ''}
+Website: ${personalInfo.website || ''}`;
+
+        // Format application-specific questions
+        const applicationQuestionsArray = [
+          personalInfo.salaryExpectations ? `Salary Expectations: ${personalInfo.salaryExpectations}` : null,
+          personalInfo.workAuthorization ? `Work Authorization: ${personalInfo.workAuthorization}` : null,
+          personalInfo.requireSponsorship !== undefined ? `Requires Sponsorship: ${personalInfo.requireSponsorship ? 'Yes' : 'No'}` : null,
+          personalInfo.militaryStatus ? `Military Status: ${personalInfo.militaryStatus}` : null,
+          personalInfo.veteranStatus ? `Veteran Status: ${personalInfo.veteranStatus}` : null,
+          personalInfo.disabilityStatus ? `Disability Status: ${personalInfo.disabilityStatus}` : null,
+          personalInfo.accommodationsNeeded ? `Accommodations Needed: ${personalInfo.accommodationsNeeded}` : null,
+          personalInfo.gender ? `Gender: ${personalInfo.gender}` : null,
+          personalInfo.ethnicity ? `Ethnicity: ${personalInfo.ethnicity}` : null,
+          personalInfo.willingToRelocate !== undefined ? `Willing to Relocate: ${personalInfo.willingToRelocate ? 'Yes' : 'No'}` : null,
+          personalInfo.remoteWorkPreference ? `Remote Work Preference: ${personalInfo.remoteWorkPreference}` : null,
+          personalInfo.availableStartDate ? `Available Start Date: ${personalInfo.availableStartDate}` : null,
+          personalInfo.referralSource ? `Referral Source: ${personalInfo.referralSource}` : null,
+          personalInfo.previouslyEmployed !== undefined ? `Previously Employed: ${personalInfo.previouslyEmployed ? 'Yes' : 'No'}` : null,
+          personalInfo.previousEmploymentDetails ? `Previous Employment Details: ${personalInfo.previousEmploymentDetails}` : null
+        ].filter(item => item !== null);
+        
+        // Only add application questions section if there are actual questions to include
+        const applicationQuestions = applicationQuestionsArray.length > 0 
+          ? `\nApplication Questions:\n${applicationQuestionsArray.join('\n')}` 
+          : '';
+
+        // Add formatted personal info to the prompt
+        enhancedPrompt += `\n${basicInfo}${applicationQuestions}`;
+        
+        // Store for logging
+        console.log('Application questions included:', applicationQuestionsArray.length);
+      } else {
+        console.log('Application questions included: 0');
+      }
+
+      // Add resume data to the prompt if available
+      if (resumeData) {
+        // Skip contact information if personalInfo was already added
+        const contactInfo = !personalInfo && resumeData.contact ? 
+          `Name: ${resumeData.name || ''}
+Email: ${resumeData.contact.email || ''}
+Phone: ${resumeData.contact.phone || ''}
+Location: ${resumeData.contact.location || ''}
+LinkedIn: ${resumeData.contact.linkedin || ''}
+Website: ${resumeData.contact.website || ''}` : '';
+
+        // Format skills
+        const skills = Array.isArray(resumeData.skills) 
+          ? resumeData.skills.join(', ') 
+          : resumeData.skills || '';
+
+        // Format experience
+        const experience = resumeData.experience 
+          ? resumeData.experience.map((exp: { title: string; company: string; dates: string; highlights?: string[] }) => 
+              `${exp.title} at ${exp.company} (${exp.dates})
+${exp.highlights ? exp.highlights.join('\n') : ''}`
+            ).join('\n\n')
+          : '';
+
+        // Format education
+        const education = resumeData.education
+          ? resumeData.education.map((edu: { degree: string; institution: string; dates: string }) =>
+              `${edu.degree} from ${edu.institution} (${edu.dates})`
+            ).join('\n')
+          : '';
+
+        // Add formatted resume data to the prompt
+        enhancedPrompt += `\n\nResume Information:`;
+        
+        // Only add contact info if it wasn't already added via personalInfo
+        if (contactInfo) {
+          enhancedPrompt += `\n${contactInfo}`;
+        }
+        
+        // Add summary if available
+        if (resumeData.summary) {
+          enhancedPrompt += `\n\nSummary:\n${resumeData.summary}`;
+        }
+        
+        // Add skills if available
+        if (skills) {
+          enhancedPrompt += `\n\nSkills:\n${skills}`;
+        }
+        
+        // Add experience if available
+        if (experience) {
+          enhancedPrompt += `\n\nExperience:\n${experience}`;
+        }
+        
+        // Add education if available
+        if (education) {
+          enhancedPrompt += `\n\nEducation:\n${education}`;
+        }
+      }
       
       // Instead of trying to convert the data URI to a blob here,
       // we'll pass the data URI directly to the backend using the file_url parameter
@@ -134,6 +239,11 @@ export async function POST(request: NextRequest) {
       
       // CRITICAL: Add the prompt parameter that was missing before
       formData.append('prompt', enhancedPrompt);
+      
+      // Log the prompt for debugging (truncated to avoid excessive logging)
+      console.log('Enhanced prompt (first 200 chars):', enhancedPrompt.substring(0, 200) + '...');
+      console.log('Prompt contains personal info:', !!personalInfo);
+      console.log('Prompt contains resume data:', !!resumeData);
       
       if (apiKey) {
         formData.append('api_key', apiKey);

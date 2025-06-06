@@ -3,7 +3,7 @@ import React from 'react';
 interface ProgressBarProps {
   currentStep: number;
   totalSteps: number;
-  steps?: string[];
+  stepTitles?: string[];
 }
 
 /**
@@ -13,12 +13,12 @@ interface ProgressBarProps {
 const ProgressBar: React.FC<ProgressBarProps> = ({ 
   currentStep, 
   totalSteps, 
-  steps = ['Upload Resume', 'Job Details', 'Review & Download'] 
+  stepTitles = ['Upload Resume', 'Job Details', 'Edit Resume', 'Preview & Download'] 
 }) => {
   return (
     <div className="max-w-4xl mx-auto mb-8">
       <div className="flex justify-between mb-2">
-        {steps.map((stepTitle, index) => (
+        {stepTitles.map((stepTitle, index) => (
           <div
             key={index}
             className={`text-sm font-medium ${

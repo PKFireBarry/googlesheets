@@ -71,8 +71,12 @@ const ActionButton = ({
     transition: 'all 150ms ease',
   };
 
-  // Handle anchor props if using href
-  const anchorProps = href ? { href, target, rel } : {};
+  // Handle anchor props if using href - open in new tab by default
+  const anchorProps = href ? { 
+    href, 
+    target: target || "_blank", 
+    rel: rel || "noopener noreferrer" 
+  } : {};
 
   return (
     <FinalComponent
