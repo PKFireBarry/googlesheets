@@ -283,8 +283,8 @@ async def test_browser_stealth(
 		# Initialize the browser session
 		await browser_session.start()
 		
-		# Apply critical fingerprinting protections
-		await apply_stealth_protections(browser_session)
+		# Temporarily disable stealth protections to test baseline
+		# await apply_stealth_protections(browser_session)
 		
 		# Create and run agent
 		test_agent = Agent(
