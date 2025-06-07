@@ -53,6 +53,36 @@ async def human_like_delay():
     delay = random.uniform(0.5, 2.0)
     await asyncio.sleep(delay)
 
+async def apply_minimal_stealth_protections(browser_session):
+    """Apply only the safest stealth protections that won't trigger detection"""
+    try:
+        page = await browser_session.get_current_page()
+        
+        # Generate session-consistent but randomized values
+        session_hardware_cores = random.choice([4, 6, 8, 12])  # Common CPU core counts
+        session_device_memory = random.choice([4, 8, 16])  # Common RAM amounts in GB
+        
+        # ONLY: Hardware Fingerprinting Spoofing (safest protection)
+        hardware_protection_script = f"""
+        // Only spoof hardware - this is the safest protection
+        Object.defineProperty(navigator, 'hardwareConcurrency', {{
+            get: function() {{ return {session_hardware_cores}; }}
+        }});
+        
+        Object.defineProperty(navigator, 'deviceMemory', {{
+            get: function() {{ return {session_device_memory}; }}
+        }});
+        """
+        
+        print("Applying minimal hardware fingerprinting protection...")
+        await page.add_init_script(hardware_protection_script)
+        
+        print("✅ Minimal stealth protections applied successfully")
+        
+    except Exception as e:
+        print(f"⚠️  Error applying minimal stealth protections: {e}")
+        # Continue anyway - don't fail the entire process
+
 async def apply_stealth_protections(browser_session):
     """Apply critical fingerprinting protections to boost trust score from 65% to 85%+"""
     try:
@@ -283,8 +313,8 @@ async def test_browser_stealth(
 		# Initialize the browser session
 		await browser_session.start()
 		
-		# Temporarily disable stealth protections to test baseline
-		# await apply_stealth_protections(browser_session)
+		# Apply minimal stealth protections (conservative approach)
+		await apply_minimal_stealth_protections(browser_session)
 		
 		# Create and run agent
 		test_agent = Agent(
