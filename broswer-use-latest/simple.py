@@ -53,6 +53,55 @@ async def human_like_delay():
     delay = random.uniform(0.5, 2.0)
     await asyncio.sleep(delay)
 
+async def warm_browser_session(browser_session, target_url):
+    """Build browsing history and session data before agent takes over"""
+    try:
+        page = await browser_session.get_current_page()
+        
+        # Extract domain from target URL for related browsing
+        from urllib.parse import urlparse
+        parsed_url = urlparse(target_url)
+        domain = parsed_url.netloc
+        
+        print(f"Warming browser session for {domain}...")
+        
+        # 1. Visit Google first (common starting point)
+        await page.goto("https://www.google.com")
+        await asyncio.sleep(random.uniform(2, 4))
+        
+        # 2. Search for the company (if it's a company career page)
+        if any(keyword in domain.lower() for keyword in ['careers', 'jobs', 'workday', 'greenhouse']):
+            company_name = domain.split('.')[0]
+            search_box = await page.query_selector('textarea[name="q"], input[name="q"]')
+            if search_box:
+                await search_box.fill(f"{company_name} careers")
+                await search_box.press('Enter')
+                await asyncio.sleep(random.uniform(3, 5))
+        
+        # 3. Visit the main company website first
+        if 'careers' in domain or 'jobs' in domain:
+            main_domain = domain.replace('careers.', '').replace('jobs.', '')
+            try:
+                await page.goto(f"https://{main_domain}")
+                await asyncio.sleep(random.uniform(2, 4))
+            except:
+                pass  # If main site doesn't exist, continue
+        
+        # 4. Finally navigate to target URL
+        await page.goto(target_url)
+        await asyncio.sleep(random.uniform(2, 3))
+        
+        print("✅ Browser session warmed successfully")
+        
+    except Exception as e:
+        print(f"⚠️  Error warming browser session: {e}")
+        # Continue anyway - just go directly to target
+        try:
+            page = await browser_session.get_current_page()
+            await page.goto(target_url)
+        except:
+            pass
+
 async def apply_browser_level_stealth(browser_session):
     """Apply stealth at browser level without JavaScript modifications"""
     try:
@@ -340,20 +389,21 @@ async def test_browser_stealth(
 		# Initialize the browser session
 		await browser_session.start()
 		
-		# Apply browser-level stealth (no JavaScript modifications)
+		# Apply browser-level stealth and session warming
 		await apply_browser_level_stealth(browser_session)
+		await warm_browser_session(browser_session, url)
 		
-		# Create and run agent
+		# Create and run agent with human-like instructions
 		test_agent = Agent(
-			task=f"Navigate to {url} and {prompt}",
+			task=f"You are already on {url}. {prompt}. Take your time and act naturally - add pauses between actions, scroll to read content, and behave like a human user would.",
 			llm=llm,
-			max_actions_per_step=10,
+			max_actions_per_step=5,  # Slower, more deliberate actions
 			browser_session=browser_session,
 			use_vision=True,
 			use_vision_for_planner=True,
 			max_failures=3,
-			retry_delay=10,
-			extend_system_message='Respond ONLY with valid JSON. Do not include any text before or after the JSON. Use double quotes for all strings. Do not escape single quotes. Do not include comments. Do not include markdown.',
+			retry_delay=15,  # Longer delays between retries
+			extend_system_message='Act like a human user. Take pauses between actions. Scroll to read content. Add delays before clicking. Respond ONLY with valid JSON. Do not include any text before or after the JSON. Use double quotes for all strings.',
 			enable_memory=True,
 			tool_calling_method='auto'
 		)
