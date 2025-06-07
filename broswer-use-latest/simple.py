@@ -500,6 +500,124 @@ async def process_auto_apply(task_id, prompt, url, api_key, file, file_url):
 			except Exception as file_error:
 				print(f"Error removing temp file: {file_error}")
 
+@app.post('/test-browser')
+async def test_browser(
+    url: str = Form(...),  ### This is the URL to navigate to for testing
+    prompt: str = Form(...),  ### This is the task/prompt for the browser agent to execute
+    api_key: str = Form(...)  ### This is the API key for the Google Gemini API
+):
+    """Test browser stealth capabilities with the same configuration as auto-apply"""
+    
+    # Enforce that api_key is provided and non-empty
+    if not api_key or not api_key.strip():
+        raise HTTPException(status_code=400, detail="API key must be provided in the request. No fallback to environment variable is allowed.")
+
+    # Run the task directly
+    asyncio.create_task(process_browser_test(url, prompt, api_key))
+    
+    # Return simple confirmation
+    return JSONResponse(content={"message": "Browser test started", "url": url})
+
+async def process_browser_test(url, prompt, api_key):
+    """Process the browser test task in the background"""
+    browser_session = None
+    patchright = None
+    
+    try:
+        print("Starting browser test...")
+        
+        # Configure the LLM
+        llm = ChatGoogleGenerativeAI(model='gemini-2.5-pro-preview-06-05', api_key=api_key)
+        
+        # Select random user agent and screen resolution for better stealth
+        user_agent = random.choice(USER_AGENTS)
+        screen_resolution = random.choice(SCREEN_RESOLUTIONS)
+        
+        # Create a browser profile with unique user data dir to avoid conflicts
+        unique_user_data_dir = f"~/.config/browseruse/profiles/browser_test_{os.getpid()}"
+        
+        # Initialize patchright for stealth capabilities
+        patchright = await async_patchright().start()
+        
+        # Create a single browser session with stealth configuration
+        browser_profile = BrowserProfile(
+            viewport_expansion=0,
+            user_data_dir=unique_user_data_dir,
+            headless=False,
+            keep_alive=True,
+            executable_path='/usr/bin/google-chrome',
+            disable_security=False,
+            deterministic_rendering=False,
+            screen=screen_resolution,
+            extra_http_headers={
+                "User-Agent": user_agent,
+                "Accept-Language": "en-US,en;q=0.9",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+                "sec-ch-ua": '"Google Chrome";v="123", "Not:A-Brand";v="99"',
+                "sec-ch-ua-mobile": "?0",
+                "sec-ch-ua-platform": '"Windows"'
+            },
+            locale="en-US",
+            timezone_id="America/New_York",
+            device_scale_factor=1.0,
+            is_mobile=False,
+            permissions=["geolocation"]
+        )
+        
+        # Use patchright with browser session for stealth capabilities
+        browser_session = BrowserSession(
+            browser_profile=browser_profile,
+            playwright=patchright,
+        )
+        
+        # Initialize the browser session
+        await browser_session.start()
+        
+        # Add initial human-like delay before navigation
+        await human_like_delay()
+        
+        print("Browser initialized, starting agent...")
+        
+        # Create the browser test task
+        test_task = f"Go to this URL: {url}\n\n{prompt}"
+        
+        # Create the agent with the same configuration as auto-apply
+        test_agent = Agent(
+            task=test_task,
+            llm=llm,
+            max_actions_per_step=15,
+            browser_session=browser_session,
+            use_vision=True,
+            use_vision_for_planner=True,
+            max_failures=3,
+            retry_delay=15,
+            extend_system_message='Respond ONLY with valid JSON. Do not include any text before or after the JSON. Use double quotes for all strings. Do not escape single quotes. Do not include comments. Do not include markdown.',
+            enable_memory=True,
+            tool_calling_method='auto'
+        )
+        
+        # Run the test agent
+        try:
+            result = await test_agent.run(max_steps=25)
+            print("Browser test completed successfully!")
+            
+        except Exception as e:
+            error_message = str(e)
+            print(f"Error in browser test agent: {error_message}")
+            
+    except Exception as e:
+        print(f"Error in browser test: {e}")
+    finally:
+        # Clean up resources
+        try:
+            if browser_session:
+                print("Closing browser session...")
+                await browser_session.stop()
+            if patchright:
+                await patchright.stop()
+        except Exception as close_error:
+            print(f"Error closing browser session: {close_error}")
+
 # For local testing: python simple.py
 if __name__ == '__main__':
 	uvicorn.run("simple:app", host="0.0.0.0", port=8000, reload=True)
