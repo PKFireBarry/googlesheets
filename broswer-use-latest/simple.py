@@ -326,7 +326,7 @@ async def process_browser_test(task_id, url, prompt, api_key):
 		tasks[task_id]["progress"] = 20
 
 		# Configure the LLM
-		llm = ChatGoogleGenerativeAI(model='gemini-2.5-pro-preview-06-05', api_key=api_key)
+		llm = ChatGoogleGenerativeAI(model='gemini-2.5-flash-preview-05-20', api_key=api_key)
 		
 		# Select random user agent and screen resolution for testing
 		user_agent = random.choice(USER_AGENTS)
