@@ -63,64 +63,46 @@ async def apply_stealth_protections(browser_session):
         session_device_memory = random.choice([4, 8, 16])  # Common RAM amounts in GB
         session_canvas_noise = random.uniform(-0.0001, 0.0001)  # Subtle canvas noise
         
-        # 1. CRITICAL: Canvas Fingerprinting Protection (Biggest impact on trust score)
+        # 1. SUBTLE: Canvas Fingerprinting Protection (Much more subtle approach)
         canvas_protection_script = f"""
-        // Override canvas toDataURL and getImageData to add subtle noise
+        // Very subtle canvas noise - barely detectable
         const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
-        const originalGetImageData = CanvasRenderingContext2D.prototype.getImageData;
-        const canvasNoise = {session_canvas_noise};
+        const canvasNoise = {session_canvas_noise * 0.1}; // Much smaller noise
         
         HTMLCanvasElement.prototype.toDataURL = function(...args) {{
-            // Add subtle noise to break fingerprinting
-            const ctx = this.getContext('2d');
-            if (ctx) {{
-                const imageData = ctx.getImageData(0, 0, this.width, this.height);
-                for (let i = 0; i < imageData.data.length; i += 4) {{
-                    imageData.data[i] += Math.floor(canvasNoise * 255);     // Red
-                    imageData.data[i + 1] += Math.floor(canvasNoise * 255); // Green  
-                    imageData.data[i + 2] += Math.floor(canvasNoise * 255); // Blue
+            const result = originalToDataURL.apply(this, args);
+            // Only add noise occasionally and very subtly
+            if (Math.random() < 0.1) {{ // Only 10% of the time
+                // Just modify the last few characters slightly
+                const chars = result.split('');
+                if (chars.length > 10) {{
+                    const pos = chars.length - Math.floor(Math.random() * 5) - 1;
+                    if (chars[pos] && chars[pos].match(/[A-Za-z0-9]/)) {{
+                        chars[pos] = chars[pos] === 'A' ? 'B' : 'A';
+                    }}
                 }}
-                ctx.putImageData(imageData, 0, 0);
+                return chars.join('');
             }}
-            return originalToDataURL.apply(this, args);
-        }};
-        
-        CanvasRenderingContext2D.prototype.getImageData = function(...args) {{
-            const imageData = originalGetImageData.apply(this, args);
-            // Add noise to image data
-            for (let i = 0; i < imageData.data.length; i += 4) {{
-                imageData.data[i] += Math.floor(canvasNoise * 255);
-                imageData.data[i + 1] += Math.floor(canvasNoise * 255);
-                imageData.data[i + 2] += Math.floor(canvasNoise * 255);
-            }}
-            return imageData;
+            return result;
         }};
         """
         
-        # 2. CRITICAL: WebRTC IP Leak Prevention (Major trust score killer)
+        # 2. SUBTLE: WebRTC IP Leak Prevention (Less aggressive approach)
         webrtc_protection_script = """
-        // Block WebRTC to prevent IP leakage
+        // More subtle WebRTC protection - don't completely break it
         if (typeof RTCPeerConnection !== 'undefined') {
             const originalRTCPeerConnection = window.RTCPeerConnection;
             window.RTCPeerConnection = function(...args) {
-                throw new Error('WebRTC is disabled for privacy');
+                const pc = new originalRTCPeerConnection(...args);
+                // Override createDataChannel to limit functionality
+                const originalCreateDataChannel = pc.createDataChannel;
+                pc.createDataChannel = function() {
+                    return null; // Quietly fail instead of throwing
+                };
+                return pc;
             };
             window.webkitRTCPeerConnection = window.RTCPeerConnection;
             window.mozRTCPeerConnection = window.RTCPeerConnection;
-        }
-        
-        // Block getUserMedia to prevent media device enumeration
-        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-            navigator.mediaDevices.getUserMedia = function() {
-                return Promise.reject(new Error('Media access disabled'));
-            };
-        }
-        
-        // Block enumerateDevices
-        if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
-            navigator.mediaDevices.enumerateDevices = function() {
-                return Promise.resolve([]);
-            };
         }
         """
         
@@ -177,26 +159,10 @@ async def apply_stealth_protections(browser_session):
         }
         """
         
-        # 5. MEDIUM PRIORITY: Font Fingerprinting Protection
+        # 5. DISABLED: Font Fingerprinting Protection (Too aggressive)
         font_protection_script = """
-        // Limit available fonts to common system fonts
-        const commonFonts = [
-            'Arial', 'Helvetica', 'Times New Roman', 'Courier New', 'Verdana',
-            'Georgia', 'Palatino', 'Garamond', 'Bookman', 'Comic Sans MS',
-            'Trebuchet MS', 'Arial Black', 'Impact'
-        ];
-        
-        // Override font detection methods
-        if (document.fonts && document.fonts.check) {
-            const originalCheck = document.fonts.check;
-            document.fonts.check = function(font, text) {
-                const fontFamily = font.split(' ').pop().replace(/['"]/g, '');
-                if (commonFonts.includes(fontFamily)) {
-                    return originalCheck.call(this, font, text);
-                }
-                return false;
-            };
-        }
+        // Font protection disabled - was causing detection
+        console.log('Font protection disabled for better stealth');
         """
         
         # Apply all protections
@@ -301,21 +267,11 @@ async def test_browser_stealth(
             device_scale_factor=1.0,
             is_mobile=False,
             permissions=["geolocation"],
-            # Add critical anti-fingerprinting browser flags
+            # Minimal browser flags - less aggressive approach
             extra_chromium_args=[
-                "--disable-webrtc",
-                "--disable-webgl",
-                "--disable-canvas-aa",
-                "--disable-2d-canvas-clip-aa",
-                "--disable-gl-drawing-for-tests",
-                "--disable-dev-shm-usage",
                 "--no-first-run",
                 "--disable-default-apps",
-                "--disable-extensions-file-access-check",
-                "--disable-background-timer-throttling",
-                "--disable-renderer-backgrounding",
-                "--disable-backgrounding-occluded-windows",
-                "--disable-ipc-flooding-protection"
+                "--disable-dev-shm-usage"
             ]
 		)
 		
