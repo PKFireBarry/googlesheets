@@ -255,80 +255,20 @@ async def test_browser_stealth(
 	prompt: str = Form(...), ### What to look for on the page
 	api_key: str = Form(...) ### Google Gemini API key
 ):
-	"""Test browser stealth capabilities on fingerprinting sites like creepjs"""
+	"""Test browser stealth capabilities with direct response"""
 	
 	# Enforce that api_key is provided and non-empty
 	if not api_key or not api_key.strip():
 		raise HTTPException(status_code=400, detail="API key must be provided in the request.")
 
-	# Generate a unique task ID
-	task_id = str(uuid.uuid4())
-	
-	# Initialize task status
-	tasks[task_id] = {
-		"status": "starting",
-		"progress": 0,
-		"message": "Starting browser stealth test"
-	}
-	
-	# Run the task in the background
-	asyncio.create_task(process_browser_test(task_id, url, prompt, api_key))
-	
-	# Return task ID immediately for polling
-	return JSONResponse(content={"task_id": task_id, "status": "starting"})
-
-@app.post('/auto-apply')
-async def run_agent(
-	prompt: str = Form(...), ### This is the information that will be used to apply for the job.
-	url: str = Form(...), ### This is the URL of the job posting.
-	api_key: str = Form(...), ### This is the API key for the Google Gemini API.
-	file: UploadFile = File(None), ### This is the file that will be used to apply for the job.
-	file_url: str = Form(None) ### This is the URL of the file that will be used to apply for the job.
-):
-	#Print incoming data for debugging
-	#print("--- Incoming API Call Data ---")
-	##print(f"url: {url}")
-	##print("-----------------------------")
-
-	# Enforce that api_key is provided and non-empty
-	if not api_key or not api_key.strip():
-		raise HTTPException(status_code=400, detail="API key must be provided in the request. No fallback to environment variable is allowed.")
-
-	# Generate a unique task ID
-	task_id = str(uuid.uuid4())
-	
-	# Initialize task status
-	tasks[task_id] = {
-		"status": "starting",
-		"progress": 0,
-		"message": "Starting the auto-apply process"
-	}
-
-	temp_file_path = None
-	browser_session = None
-	patchright = None
-	
-	# Run the task in the background
-	asyncio.create_task(process_auto_apply(task_id, prompt, url, api_key, file, file_url))
-	
-	# Return task ID immediately for polling
-	return JSONResponse(content={"task_id": task_id, "status": "starting"})
-
-async def process_browser_test(task_id, url, prompt, api_key):
-	"""Process browser stealth testing in the background"""
 	browser_session = None
 	patchright = None
 	
 	try:
-		# Update task status
-		tasks[task_id]["status"] = "processing"
-		tasks[task_id]["message"] = "Initializing browser with stealth protections"
-		tasks[task_id]["progress"] = 20
-
 		# Configure the LLM
 		llm = ChatGoogleGenerativeAI(model='gemini-2.5-flash-preview-05-20', api_key=api_key)
 		
-		# Select random user agent and screen resolution for testing
+		# Select random user agent and screen resolution
 		user_agent = random.choice(USER_AGENTS)
 		screen_resolution = random.choice(SCREEN_RESOLUTIONS)
 		
@@ -390,16 +330,9 @@ async def process_browser_test(task_id, url, prompt, api_key):
 		# Apply critical fingerprinting protections
 		await apply_stealth_protections(browser_session)
 		
-		# Update task status
-		tasks[task_id]["status"] = "in_progress"
-		tasks[task_id]["message"] = "Navigating to test site"
-		tasks[task_id]["progress"] = 40
-		
-		# Create test agent
-		test_task = f"""Navigate to {url} and {prompt}. Wait for the page to fully load and analyze the results. Look specifically for trust scores, detection results, or any fingerprinting analysis."""
-		
+		# Create and run agent
 		test_agent = Agent(
-			task=test_task,
+			task=f"Navigate to {url} and {prompt}",
 			llm=llm,
 			max_actions_per_step=10,
 			browser_session=browser_session,
@@ -412,56 +345,73 @@ async def process_browser_test(task_id, url, prompt, api_key):
 			tool_calling_method='auto'
 		)
 		
-		# Update task status
-		tasks[task_id]["status"] = "in_progress"
-		tasks[task_id]["message"] = "Running stealth test"
-		tasks[task_id]["progress"] = 60
+		# Run the agent and get results
+		result = await test_agent.run(max_steps=15)
 		
-		# Run the test
-		try:
-			result = await test_agent.run(max_steps=15)
-			
-			# Extract results
-			result_serializable = {
-				"success": True,
-				"message": "Browser stealth test completed",
-				"test_results": "Test completed successfully",
-				"url_tested": url
-			}
-			
-			# Update task status with success
-			tasks[task_id]["status"] = "completed"
-			tasks[task_id]["message"] = "Stealth test completed successfully"
-			tasks[task_id]["progress"] = 100
-			tasks[task_id]["result"] = result_serializable
-			
-		except Exception as e:
-			error_message = str(e)
-			print(f"Error in stealth test agent: {error_message}")
-			
-			# Update task status with error
-			tasks[task_id]["status"] = "failed"
-			tasks[task_id]["error"] = error_message
-			tasks[task_id]["message"] = f"Test failed: {error_message}"
-			tasks[task_id]["progress"] = 100
+		return JSONResponse(content={
+			"success": True,
+			"message": "Browser stealth test completed",
+			"url_tested": url,
+			"result": result if result else "Test completed successfully"
+		})
 		
 	except Exception as e:
-		print(f"Error in browser test: {e}")
-		# Update task status with error
-		tasks[task_id]["status"] = "failed"
-		tasks[task_id]["error"] = str(e)
-		tasks[task_id]["message"] = f"Error: {str(e)}"
-		tasks[task_id]["progress"] = 100
+		return JSONResponse(
+			content={
+				"success": False,
+				"error": str(e),
+				"message": f"Test failed: {str(e)}"
+			},
+			status_code=500
+		)
 	finally:
 		# Clean up resources
 		try:
 			if browser_session:
-				print("Closing browser session...")
 				await browser_session.stop()
 			if patchright:
 				await patchright.stop()
 		except Exception as close_error:
 			print(f"Error closing browser session: {close_error}")
+
+@app.post('/auto-apply')
+async def run_agent(
+	prompt: str = Form(...), ### This is the information that will be used to apply for the job.
+	url: str = Form(...), ### This is the URL of the job posting.
+	api_key: str = Form(...), ### This is the API key for the Google Gemini API.
+	file: UploadFile = File(None), ### This is the file that will be used to apply for the job.
+	file_url: str = Form(None) ### This is the URL of the file that will be used to apply for the job.
+):
+	#Print incoming data for debugging
+	#print("--- Incoming API Call Data ---")
+	##print(f"url: {url}")
+	##print("-----------------------------")
+
+	# Enforce that api_key is provided and non-empty
+	if not api_key or not api_key.strip():
+		raise HTTPException(status_code=400, detail="API key must be provided in the request. No fallback to environment variable is allowed.")
+
+	# Generate a unique task ID
+	task_id = str(uuid.uuid4())
+	
+	# Initialize task status
+	tasks[task_id] = {
+		"status": "starting",
+		"progress": 0,
+		"message": "Starting the auto-apply process"
+	}
+
+	temp_file_path = None
+	browser_session = None
+	patchright = None
+	
+	# Run the task in the background
+	asyncio.create_task(process_auto_apply(task_id, prompt, url, api_key, file, file_url))
+	
+	# Return task ID immediately for polling
+	return JSONResponse(content={"task_id": task_id, "status": "starting"})
+
+
 
 async def process_auto_apply(task_id, prompt, url, api_key, file, file_url):
 	"""Process the auto-apply task in the background"""
