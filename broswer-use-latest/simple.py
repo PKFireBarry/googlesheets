@@ -53,6 +53,28 @@ async def human_like_delay():
     delay = random.uniform(0.5, 2.0)
     await asyncio.sleep(delay)
 
+async def apply_browser_level_stealth(browser_session):
+    """Apply stealth at browser level without JavaScript modifications"""
+    try:
+        page = await browser_session.get_current_page()
+        
+        # Remove automation indicators at browser level
+        await page.evaluate("""
+        // Remove webdriver property
+        delete navigator.__proto__.webdriver;
+        
+        // Remove automation flags
+        Object.defineProperty(navigator, 'webdriver', {
+            get: () => false,
+        });
+        """)
+        
+        print("✅ Browser-level stealth applied successfully")
+        
+    except Exception as e:
+        print(f"⚠️  Error applying browser-level stealth: {e}")
+        # Continue anyway
+
 async def apply_minimal_stealth_protections(browser_session):
     """Apply only the safest stealth protections that won't trigger detection"""
     try:
@@ -297,11 +319,16 @@ async def test_browser_stealth(
             device_scale_factor=1.0,
             is_mobile=False,
             permissions=["geolocation"],
-            # Minimal browser flags - less aggressive approach
+            # Browser-level stealth improvements (no JavaScript detection)
             extra_chromium_args=[
                 "--no-first-run",
-                "--disable-default-apps",
-                "--disable-dev-shm-usage"
+                "--disable-default-apps", 
+                "--disable-dev-shm-usage",
+                "--disable-blink-features=AutomationControlled",  # Hide automation
+                "--exclude-switches=enable-automation",  # Remove automation flags
+                "--disable-extensions-except",  # Reduce extension fingerprinting
+                "--disable-plugins-discovery",  # Reduce plugin detection
+                "--no-sandbox"  # Sometimes helps with detection
             ]
 		)
 		
@@ -313,8 +340,8 @@ async def test_browser_stealth(
 		# Initialize the browser session
 		await browser_session.start()
 		
-		# Apply minimal stealth protections (conservative approach)
-		await apply_minimal_stealth_protections(browser_session)
+		# Apply browser-level stealth (no JavaScript modifications)
+		await apply_browser_level_stealth(browser_session)
 		
 		# Create and run agent
 		test_agent = Agent(
