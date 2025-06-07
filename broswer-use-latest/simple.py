@@ -249,6 +249,34 @@ async def get_task_status(task_id: str):
             status_code=500
         )
 
+@app.post('/test-browser')
+async def test_browser_stealth(
+	url: str = Form(...), ### URL to test (e.g., creepjs)
+	prompt: str = Form(...), ### What to look for on the page
+	api_key: str = Form(...) ### Google Gemini API key
+):
+	"""Test browser stealth capabilities on fingerprinting sites like creepjs"""
+	
+	# Enforce that api_key is provided and non-empty
+	if not api_key or not api_key.strip():
+		raise HTTPException(status_code=400, detail="API key must be provided in the request.")
+
+	# Generate a unique task ID
+	task_id = str(uuid.uuid4())
+	
+	# Initialize task status
+	tasks[task_id] = {
+		"status": "starting",
+		"progress": 0,
+		"message": "Starting browser stealth test"
+	}
+	
+	# Run the task in the background
+	asyncio.create_task(process_browser_test(task_id, url, prompt, api_key))
+	
+	# Return task ID immediately for polling
+	return JSONResponse(content={"task_id": task_id, "status": "starting"})
+
 @app.post('/auto-apply')
 async def run_agent(
 	prompt: str = Form(...), ### This is the information that will be used to apply for the job.
@@ -285,6 +313,155 @@ async def run_agent(
 	
 	# Return task ID immediately for polling
 	return JSONResponse(content={"task_id": task_id, "status": "starting"})
+
+async def process_browser_test(task_id, url, prompt, api_key):
+	"""Process browser stealth testing in the background"""
+	browser_session = None
+	patchright = None
+	
+	try:
+		# Update task status
+		tasks[task_id]["status"] = "processing"
+		tasks[task_id]["message"] = "Initializing browser with stealth protections"
+		tasks[task_id]["progress"] = 20
+
+		# Configure the LLM
+		llm = ChatGoogleGenerativeAI(model='gemini-2.5-pro-preview-06-05', api_key=api_key)
+		
+		# Select random user agent and screen resolution for testing
+		user_agent = random.choice(USER_AGENTS)
+		screen_resolution = random.choice(SCREEN_RESOLUTIONS)
+		
+		# Create a browser profile for testing
+		unique_user_data_dir = f"~/.config/browseruse/profiles/stealth_test_{os.getpid()}"
+		
+		# Initialize patchright for stealth capabilities
+		patchright = await async_patchright().start()
+		
+		# Create browser session with stealth configuration
+		browser_profile = BrowserProfile(
+			viewport_expansion=0,
+			user_data_dir=unique_user_data_dir,
+			headless=False,
+			keep_alive=True,
+			executable_path='/usr/bin/google-chrome',
+			disable_security=False,
+			deterministic_rendering=False,
+			screen=screen_resolution,
+			extra_http_headers={
+                "User-Agent": user_agent,
+                "Accept-Language": "en-US,en;q=0.9",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+                "sec-ch-ua": '"Google Chrome";v="123", "Not:A-Brand";v="99"',
+                "sec-ch-ua-mobile": "?0",
+                "sec-ch-ua-platform": '"Windows"'
+            },
+            locale="en-US",
+            timezone_id="America/New_York",
+            device_scale_factor=1.0,
+            is_mobile=False,
+            permissions=["geolocation"],
+            # Add critical anti-fingerprinting browser flags
+            extra_chromium_args=[
+                "--disable-webrtc",
+                "--disable-webgl",
+                "--disable-canvas-aa",
+                "--disable-2d-canvas-clip-aa",
+                "--disable-gl-drawing-for-tests",
+                "--disable-dev-shm-usage",
+                "--no-first-run",
+                "--disable-default-apps",
+                "--disable-extensions-file-access-check",
+                "--disable-background-timer-throttling",
+                "--disable-renderer-backgrounding",
+                "--disable-backgrounding-occluded-windows",
+                "--disable-ipc-flooding-protection"
+            ]
+		)
+		
+		browser_session = BrowserSession(
+			browser_profile=browser_profile,
+			playwright=patchright,
+		)
+		
+		# Initialize the browser session
+		await browser_session.start()
+		
+		# Apply critical fingerprinting protections
+		await apply_stealth_protections(browser_session)
+		
+		# Update task status
+		tasks[task_id]["status"] = "in_progress"
+		tasks[task_id]["message"] = "Navigating to test site"
+		tasks[task_id]["progress"] = 40
+		
+		# Create test agent
+		test_task = f"""Navigate to {url} and {prompt}. Wait for the page to fully load and analyze the results. Look specifically for trust scores, detection results, or any fingerprinting analysis."""
+		
+		test_agent = Agent(
+			task=test_task,
+			llm=llm,
+			max_actions_per_step=10,
+			browser_session=browser_session,
+			use_vision=True,
+			use_vision_for_planner=True,
+			max_failures=3,
+			retry_delay=10,
+			extend_system_message='Respond ONLY with valid JSON. Do not include any text before or after the JSON. Use double quotes for all strings. Do not escape single quotes. Do not include comments. Do not include markdown.',
+			enable_memory=True,
+			tool_calling_method='auto'
+		)
+		
+		# Update task status
+		tasks[task_id]["status"] = "in_progress"
+		tasks[task_id]["message"] = "Running stealth test"
+		tasks[task_id]["progress"] = 60
+		
+		# Run the test
+		try:
+			result = await test_agent.run(max_steps=15)
+			
+			# Extract results
+			result_serializable = {
+				"success": True,
+				"message": "Browser stealth test completed",
+				"test_results": "Test completed successfully",
+				"url_tested": url
+			}
+			
+			# Update task status with success
+			tasks[task_id]["status"] = "completed"
+			tasks[task_id]["message"] = "Stealth test completed successfully"
+			tasks[task_id]["progress"] = 100
+			tasks[task_id]["result"] = result_serializable
+			
+		except Exception as e:
+			error_message = str(e)
+			print(f"Error in stealth test agent: {error_message}")
+			
+			# Update task status with error
+			tasks[task_id]["status"] = "failed"
+			tasks[task_id]["error"] = error_message
+			tasks[task_id]["message"] = f"Test failed: {error_message}"
+			tasks[task_id]["progress"] = 100
+		
+	except Exception as e:
+		print(f"Error in browser test: {e}")
+		# Update task status with error
+		tasks[task_id]["status"] = "failed"
+		tasks[task_id]["error"] = str(e)
+		tasks[task_id]["message"] = f"Error: {str(e)}"
+		tasks[task_id]["progress"] = 100
+	finally:
+		# Clean up resources
+		try:
+			if browser_session:
+				print("Closing browser session...")
+				await browser_session.stop()
+			if patchright:
+				await patchright.stop()
+		except Exception as close_error:
+			print(f"Error closing browser session: {close_error}")
 
 async def process_auto_apply(task_id, prompt, url, api_key, file, file_url):
 	"""Process the auto-apply task in the background"""
