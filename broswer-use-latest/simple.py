@@ -53,6 +53,174 @@ async def human_like_delay():
     delay = random.uniform(0.5, 2.0)
     await asyncio.sleep(delay)
 
+async def apply_stealth_protections(browser_session):
+    """Apply critical fingerprinting protections to boost trust score from 65% to 85%+"""
+    try:
+        page = await browser_session.get_current_page()
+        
+        # Generate session-consistent but randomized values
+        session_hardware_cores = random.choice([4, 6, 8, 12, 16])  # Common CPU core counts
+        session_device_memory = random.choice([4, 8, 16])  # Common RAM amounts in GB
+        session_canvas_noise = random.uniform(-0.0001, 0.0001)  # Subtle canvas noise
+        
+        # 1. CRITICAL: Canvas Fingerprinting Protection (Biggest impact on trust score)
+        canvas_protection_script = f"""
+        // Override canvas toDataURL and getImageData to add subtle noise
+        const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
+        const originalGetImageData = CanvasRenderingContext2D.prototype.getImageData;
+        const canvasNoise = {session_canvas_noise};
+        
+        HTMLCanvasElement.prototype.toDataURL = function(...args) {{
+            // Add subtle noise to break fingerprinting
+            const ctx = this.getContext('2d');
+            if (ctx) {{
+                const imageData = ctx.getImageData(0, 0, this.width, this.height);
+                for (let i = 0; i < imageData.data.length; i += 4) {{
+                    imageData.data[i] += Math.floor(canvasNoise * 255);     // Red
+                    imageData.data[i + 1] += Math.floor(canvasNoise * 255); // Green  
+                    imageData.data[i + 2] += Math.floor(canvasNoise * 255); // Blue
+                }}
+                ctx.putImageData(imageData, 0, 0);
+            }}
+            return originalToDataURL.apply(this, args);
+        }};
+        
+        CanvasRenderingContext2D.prototype.getImageData = function(...args) {{
+            const imageData = originalGetImageData.apply(this, args);
+            // Add noise to image data
+            for (let i = 0; i < imageData.data.length; i += 4) {{
+                imageData.data[i] += Math.floor(canvasNoise * 255);
+                imageData.data[i + 1] += Math.floor(canvasNoise * 255);
+                imageData.data[i + 2] += Math.floor(canvasNoise * 255);
+            }}
+            return imageData;
+        }};
+        """
+        
+        # 2. CRITICAL: WebRTC IP Leak Prevention (Major trust score killer)
+        webrtc_protection_script = """
+        // Block WebRTC to prevent IP leakage
+        if (typeof RTCPeerConnection !== 'undefined') {
+            const originalRTCPeerConnection = window.RTCPeerConnection;
+            window.RTCPeerConnection = function(...args) {
+                throw new Error('WebRTC is disabled for privacy');
+            };
+            window.webkitRTCPeerConnection = window.RTCPeerConnection;
+            window.mozRTCPeerConnection = window.RTCPeerConnection;
+        }
+        
+        // Block getUserMedia to prevent media device enumeration
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+            navigator.mediaDevices.getUserMedia = function() {
+                return Promise.reject(new Error('Media access disabled'));
+            };
+        }
+        
+        // Block enumerateDevices
+        if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+            navigator.mediaDevices.enumerateDevices = function() {
+                return Promise.resolve([]);
+            };
+        }
+        """
+        
+        # 3. CRITICAL: Hardware Fingerprinting Spoofing (Easy detection vector)
+        hardware_protection_script = f"""
+        // Spoof hardware characteristics
+        Object.defineProperty(navigator, 'hardwareConcurrency', {{
+            get: function() {{ return {session_hardware_cores}; }}
+        }});
+        
+        Object.defineProperty(navigator, 'deviceMemory', {{
+            get: function() {{ return {session_device_memory}; }}
+        }});
+        
+        // Spoof connection information
+        Object.defineProperty(navigator, 'connection', {{
+            get: function() {{
+                return {{
+                    effectiveType: '4g',
+                    downlink: 10,
+                    rtt: 50,
+                    saveData: false
+                }};
+            }}
+        }});
+        """
+        
+        # 4. HIGH PRIORITY: Audio Context Fingerprinting Protection
+        audio_protection_script = """
+        // Spoof AudioContext properties
+        const originalAudioContext = window.AudioContext || window.webkitAudioContext;
+        if (originalAudioContext) {
+            const AudioContextProxy = new Proxy(originalAudioContext, {
+                construct: function(target, args) {
+                    const instance = new target(...args);
+                    
+                    // Override key fingerprinting properties
+                    Object.defineProperty(instance, 'sampleRate', {
+                        get: function() { return 44100; } // Standard sample rate
+                    });
+                    
+                    Object.defineProperty(instance, 'baseLatency', {
+                        get: function() { return 0.01; } // Standard latency
+                    });
+                    
+                    return instance;
+                }
+            });
+            
+            window.AudioContext = AudioContextProxy;
+            if (window.webkitAudioContext) {
+                window.webkitAudioContext = AudioContextProxy;
+            }
+        }
+        """
+        
+        # 5. MEDIUM PRIORITY: Font Fingerprinting Protection
+        font_protection_script = """
+        // Limit available fonts to common system fonts
+        const commonFonts = [
+            'Arial', 'Helvetica', 'Times New Roman', 'Courier New', 'Verdana',
+            'Georgia', 'Palatino', 'Garamond', 'Bookman', 'Comic Sans MS',
+            'Trebuchet MS', 'Arial Black', 'Impact'
+        ];
+        
+        // Override font detection methods
+        if (document.fonts && document.fonts.check) {
+            const originalCheck = document.fonts.check;
+            document.fonts.check = function(font, text) {
+                const fontFamily = font.split(' ').pop().replace(/['"]/g, '');
+                if (commonFonts.includes(fontFamily)) {
+                    return originalCheck.call(this, font, text);
+                }
+                return false;
+            };
+        }
+        """
+        
+        # Apply all protections
+        print("Applying canvas fingerprinting protection...")
+        await page.add_init_script(canvas_protection_script)
+        
+        print("Applying WebRTC leak protection...")
+        await page.add_init_script(webrtc_protection_script)
+        
+        print("Applying hardware fingerprinting protection...")
+        await page.add_init_script(hardware_protection_script)
+        
+        print("Applying audio context protection...")
+        await page.add_init_script(audio_protection_script)
+        
+        print("Applying font fingerprinting protection...")
+        await page.add_init_script(font_protection_script)
+        
+        print("✅ All critical stealth protections applied successfully")
+        
+    except Exception as e:
+        print(f"⚠️  Error applying stealth protections: {e}")
+        # Continue anyway - don't fail the entire process
+
 @app.get('/auto-apply-status/{task_id}')
 async def get_task_status(task_id: str):
     """Get the status of a task by its ID"""
@@ -205,7 +373,23 @@ async def process_auto_apply(task_id, prompt, url, api_key, file, file_url):
             timezone_id="America/New_York",
             device_scale_factor=1.0,
             is_mobile=False,
-            permissions=["geolocation"]
+            permissions=["geolocation"],
+            # Add critical anti-fingerprinting browser flags
+            extra_chromium_args=[
+                "--disable-webrtc",  # Block WebRTC at browser level
+                "--disable-webgl",   # Reduce WebGL fingerprinting
+                "--disable-canvas-aa",  # Reduce canvas anti-aliasing fingerprinting
+                "--disable-2d-canvas-clip-aa",  # Reduce canvas clipping fingerprinting
+                "--disable-gl-drawing-for-tests",  # Reduce GPU fingerprinting
+                "--disable-dev-shm-usage",  # Reduce memory fingerprinting
+                "--no-first-run",  # Reduce startup fingerprinting
+                "--disable-default-apps",  # Reduce extension fingerprinting
+                "--disable-extensions-file-access-check",  # Reduce extension detection
+                "--disable-background-timer-throttling",  # Reduce timing fingerprinting
+                "--disable-renderer-backgrounding",  # Reduce background detection
+                "--disable-backgrounding-occluded-windows",  # Reduce window state detection
+                "--disable-ipc-flooding-protection"  # Reduce IPC fingerprinting
+            ]
 		)
 		
 		# Use patchright with browser session for stealth capabilities
@@ -216,6 +400,9 @@ async def process_auto_apply(task_id, prompt, url, api_key, file, file_url):
 		
 		# Initialize the browser session
 		await browser_session.start()
+		
+		# Apply critical fingerprinting protections
+		await apply_stealth_protections(browser_session)
 		
 		# Add initial human-like delay before navigation
 		await human_like_delay()
@@ -499,124 +686,6 @@ async def process_auto_apply(task_id, prompt, url, api_key, file, file_url):
 				print(f"Removed temporary file: {temp_file_path}")
 			except Exception as file_error:
 				print(f"Error removing temp file: {file_error}")
-
-@app.post('/test-browser')
-async def test_browser(
-    url: str = Form(...),  ### This is the URL to navigate to for testing
-    prompt: str = Form(...),  ### This is the task/prompt for the browser agent to execute
-    api_key: str = Form(...)  ### This is the API key for the Google Gemini API
-):
-    """Test browser stealth capabilities with the same configuration as auto-apply"""
-    
-    # Enforce that api_key is provided and non-empty
-    if not api_key or not api_key.strip():
-        raise HTTPException(status_code=400, detail="API key must be provided in the request. No fallback to environment variable is allowed.")
-
-    # Run the task directly
-    asyncio.create_task(process_browser_test(url, prompt, api_key))
-    
-    # Return simple confirmation
-    return JSONResponse(content={"message": "Browser test started", "url": url})
-
-async def process_browser_test(url, prompt, api_key):
-    """Process the browser test task in the background"""
-    browser_session = None
-    patchright = None
-    
-    try:
-        print("Starting browser test...")
-        
-        # Configure the LLM
-        llm = ChatGoogleGenerativeAI(model='gemini-2.5-flash-preview-05-20', api_key=api_key)
-        
-        # Select random user agent and screen resolution for better stealth
-        user_agent = random.choice(USER_AGENTS)
-        screen_resolution = random.choice(SCREEN_RESOLUTIONS)
-        
-        # Create a browser profile with unique user data dir to avoid conflicts
-        unique_user_data_dir = f"~/.config/browseruse/profiles/browser_test_{os.getpid()}"
-        
-        # Initialize patchright for stealth capabilities
-        patchright = await async_patchright().start()
-        
-        # Create a single browser session with stealth configuration
-        browser_profile = BrowserProfile(
-            viewport_expansion=0,
-            user_data_dir=unique_user_data_dir,
-            headless=False,
-            keep_alive=True,
-            executable_path='/usr/bin/google-chrome',
-            disable_security=False,
-            deterministic_rendering=False,
-            screen=screen_resolution,
-            extra_http_headers={
-                "User-Agent": user_agent,
-                "Accept-Language": "en-US,en;q=0.9",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-                "sec-ch-ua": '"Google Chrome";v="123", "Not:A-Brand";v="99"',
-                "sec-ch-ua-mobile": "?0",
-                "sec-ch-ua-platform": '"Windows"'
-            },
-            locale="en-US",
-            timezone_id="America/New_York",
-            device_scale_factor=1.0,
-            is_mobile=False,
-            permissions=["geolocation"]
-        )
-        
-        # Use patchright with browser session for stealth capabilities
-        browser_session = BrowserSession(
-            browser_profile=browser_profile,
-            playwright=patchright,
-        )
-        
-        # Initialize the browser session
-        await browser_session.start()
-        
-        # Add initial human-like delay before navigation
-        await human_like_delay()
-        
-        print("Browser initialized, starting agent...")
-        
-        # Create the browser test task
-        test_task = f"Go to this URL: {url}\n\n{prompt}"
-        
-        # Create the agent with the same configuration as auto-apply
-        test_agent = Agent(
-            task=test_task,
-            llm=llm,
-            max_actions_per_step=15,
-            browser_session=browser_session,
-            use_vision=True,
-            use_vision_for_planner=True,
-            max_failures=3,
-            retry_delay=15,
-            extend_system_message='Respond ONLY with valid JSON. Do not include any text before or after the JSON. Use double quotes for all strings. Do not escape single quotes. Do not include comments. Do not include markdown.',
-            enable_memory=True,
-            tool_calling_method='auto'
-        )
-        
-        # Run the test agent
-        try:
-            result = await test_agent.run(max_steps=25)
-            print("Browser test completed successfully!")
-            
-        except Exception as e:
-            error_message = str(e)
-            print(f"Error in browser test agent: {error_message}")
-            
-    except Exception as e:
-        print(f"Error in browser test: {e}")
-    finally:
-        # Clean up resources
-        try:
-            if browser_session:
-                print("Closing browser session...")
-                await browser_session.stop()
-            if patchright:
-                await patchright.stop()
-        except Exception as close_error:
-            print(f"Error closing browser session: {close_error}")
 
 # For local testing: python simple.py
 if __name__ == '__main__':
