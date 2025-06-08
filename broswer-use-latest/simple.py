@@ -622,7 +622,7 @@ async def process_auto_apply(task_id, prompt, url, api_key, file, file_url):
 		
 		## Step 1: Finding the application form to submit an application 
 		## have an ai agent navigate the page till the application form is found
-		find_application_form = f"""start by going to googe.com and search for the URL:{url},\n i want you to find this job posting and go to it. next what your looking at a job application and need to navigate to the appliaciton form.\nif the form is already shown on the screen stop and consider the task completed.\nif the application form is not shown on the screen naviagate the webiste to find to form and then consider the task complete\n"""
+		find_application_form = f"""go to this URL:{url},\n what your looking at a job application and need to navigate to the appliaciton form.\nif the form is already shown on the screen stop and consider the task completed.\nif the application form is not shown on the screen naviagate the webiste to find to form and then consider the task complete\n"""
 		form_finder_agent = Agent(
 			task=find_application_form,
 			llm=llm,
