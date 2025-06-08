@@ -1041,200 +1041,87 @@ class Agent(Generic[Context]):
 
 	@time_execution_async('--get_next_action (agent)')
 	async def get_next_action(self, input_messages: list[BaseMessage]) -> AgentOutput:
-		"""Get next action from LLM based on current state with enhanced parsing and retry logic"""
+		"""Get next action from LLM based on current state"""
 		input_messages = self._convert_input_messages(input_messages)
-		max_parse_retries = 2
-		
-		for attempt in range(max_parse_retries + 1):
+
+		if self.tool_calling_method == 'raw':
+			self._log_llm_call_info(input_messages, self.tool_calling_method)
 			try:
-				if self.tool_calling_method == 'raw':
-					self._log_llm_call_info(input_messages, self.tool_calling_method)
-					try:
-						output = self.llm.invoke(input_messages)
-						response = {'raw': output, 'parsed': None}
-					except Exception as e:
-						logger.error(f'Failed to invoke model: {str(e)}')
-						raise LLMException(401, 'LLM API call failed') from e
-					
-					# Remove think tags and clean content
-					output.content = self._remove_think_tags(str(output.content))
-					
-					try:
-						parsed_json = extract_json_from_model_output(output.content)
-						parsed = self.AgentOutput(**parsed_json)
-						response['parsed'] = parsed
-					except (ValueError, ValidationError) as e:
-						if attempt < max_parse_retries:
-							logger.warning(f'Parse attempt {attempt + 1} failed: {str(e)}. Retrying with clarification...')
-							# Add clarification message for retry
-							clarification = HumanMessage(
-								content='Your previous response could not be parsed as valid JSON. Please respond with a properly formatted JSON object that matches the expected schema. Ensure all quotes are properly escaped and the JSON structure is valid.'
-							)
-							input_messages = input_messages + [clarification]
-							continue
-						else:
-							logger.error(f'Failed to parse model output after {max_parse_retries + 1} attempts: {output.content[:200]}...')
-							raise ValueError('Could not parse response after multiple attempts.')
-
-				elif self.tool_calling_method is None:
-					structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True)
-					try:
-						response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
-						parsed: AgentOutput | None = response['parsed']
-
-					except Exception as e:
-						logger.error(f'Failed to invoke model: {str(e)}')
-						raise LLMException(401, 'LLM API call failed') from e
-
-				else:
-					self._log_llm_call_info(input_messages, self.tool_calling_method)
-					structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True, method=self.tool_calling_method)
-					response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
-
-				# Handle tool call responses with enhanced error recovery
-				if response.get('parsing_error') and 'raw' in response:
-					raw_msg = response['raw']
-					if hasattr(raw_msg, 'tool_calls') and raw_msg.tool_calls:
-						# Convert tool calls to AgentOutput format
-						tool_call = raw_msg.tool_calls[0]  # Take first tool call
-
-						# Create current state
-						tool_call_name = tool_call['name']
-						tool_call_args = tool_call['args']
-
-						current_state = {
-							'page_summary': 'Processing tool call',
-							'evaluation_previous_goal': 'Executing action',
-							'memory': 'Using tool call',
-							'next_goal': f'Execute {tool_call_name}',
-						}
-
-						# Create action from tool call
-						action = {tool_call_name: tool_call_args}
-
-						parsed = self.AgentOutput(current_state=current_state, action=[self.ActionModel(**action)])
-					else:
-						parsed = None
-				else:
-					parsed = response['parsed']
-
-				# Enhanced fallback parsing with better error handling
-				if not parsed:
-					try:
-						if 'raw' in response and hasattr(response['raw'], 'content'):
-							raw_content = response['raw'].content
-							# Clean and preprocess the content
-							cleaned_content = self._preprocess_raw_content(raw_content)
-							parsed_json = extract_json_from_model_output(cleaned_content)
-							parsed = self.AgentOutput(**parsed_json)
-						else:
-							raise ValueError('No raw content available for parsing')
-					except Exception as e:
-						if attempt < max_parse_retries:
-							logger.warning(f'Fallback parse attempt {attempt + 1} failed: {str(e)}. Retrying...')
-							# Add more specific clarification for structured output failures
-							clarification = HumanMessage(
-								content='Please provide your response in the exact JSON format required, with "current_state" and "action" fields. Make sure the JSON is valid and complete.'
-							)
-							input_messages = input_messages + [clarification]
-							continue
-						else:
-							logger.error(f'All parsing attempts failed. Raw content: {response.get("raw", {}).get("content", "No content")[:200]}...')
-							raise ValueError('Could not parse response after multiple attempts.')
-
-				# Validate and clean the parsed result
-				parsed = self._validate_and_clean_agent_output(parsed)
-				
-				# Cut the number of actions to max_actions_per_step if needed
-				if len(parsed.action) > self.settings.max_actions_per_step:
-					parsed.action = parsed.action[: self.settings.max_actions_per_step]
-
-				if not (hasattr(self.state, 'paused') and (self.state.paused or self.state.stopped)):
-					log_response(parsed, self.controller.registry.registry)
-
-				self._log_next_action_summary(parsed)
-				return parsed
-				
-			except (ValueError, ValidationError) as e:
-				if attempt < max_parse_retries:
-					logger.warning(f'Attempt {attempt + 1} failed with error: {str(e)}. Retrying...')
-					continue
-				else:
-					raise e
+				output = self.llm.invoke(input_messages)
+				response = {'raw': output, 'parsed': None}
 			except Exception as e:
-				# For non-parsing errors, don't retry
-				raise e
-		
-		# This should never be reached, but just in case
-		raise ValueError('Failed to get valid response after all retry attempts')
+				logger.error(f'Failed to invoke model: {str(e)}')
+				raise LLMException(401, 'LLM API call failed') from e
+			# TODO: currently invoke does not return reasoning_content, we should override invoke
+			output.content = self._remove_think_tags(str(output.content))
+			try:
+				parsed_json = extract_json_from_model_output(output.content)
+				parsed = self.AgentOutput(**parsed_json)
+				response['parsed'] = parsed
+			except (ValueError, ValidationError) as e:
+				logger.warning(f'Failed to parse model output: {output} {str(e)}')
+				raise ValueError('Could not parse response.')
 
-	def _preprocess_raw_content(self, content: str) -> str:
-		"""Preprocess raw content to improve parsing success"""
-		if not content:
-			return content
-			
-		# Remove common problematic patterns
-		content = re.sub(r'```json\s*', '', content)
-		content = re.sub(r'\s*```', '', content)
-		
-		# Fix common JSON issues
-		content = re.sub(r',\s*}', '}', content)  # Remove trailing commas
-		content = re.sub(r',\s*]', ']', content)  # Remove trailing commas in arrays
-		
-		# Ensure proper quote escaping
-		content = re.sub(r'(?<!\\)"(?=\w)', r'\"', content)  # Fix unescaped quotes
-		
-		return content.strip()
+		elif self.tool_calling_method is None:
+			structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True)
+			try:
+				response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
+				parsed: AgentOutput | None = response['parsed']
 
-	def _validate_and_clean_agent_output(self, parsed: AgentOutput) -> AgentOutput:
-		"""Validate and clean the agent output to ensure it's properly formatted"""
-		try:
-			# Ensure current_state has all required fields
-			if not hasattr(parsed.current_state, 'page_summary'):
-				parsed.current_state.page_summary = 'Unknown'
-			if not hasattr(parsed.current_state, 'evaluation_previous_goal'):
-				parsed.current_state.evaluation_previous_goal = 'Unknown'
-			if not hasattr(parsed.current_state, 'memory'):
-				parsed.current_state.memory = 'Unknown'
-			if not hasattr(parsed.current_state, 'next_goal'):
-				parsed.current_state.next_goal = 'Unknown'
-			
-			# Ensure action is a list and not empty
-			if not parsed.action:
-				# Create a safe default action
-				parsed.action = [self.ActionModel(done={'success': False, 'text': 'No action specified by LLM'})]
-			elif not isinstance(parsed.action, list):
-				parsed.action = [parsed.action]
-			
-			# Validate each action in the list
-			validated_actions = []
-			for action in parsed.action:
-				if action and action.model_dump(exclude_unset=True):
-					validated_actions.append(action)
-			
-			if not validated_actions:
-				# If no valid actions, create a safe default
-				validated_actions = [self.ActionModel(done={'success': False, 'text': 'No valid actions found'})]
-			
-			parsed.action = validated_actions
-			
-			return parsed
-			
-		except Exception as e:
-			logger.warning(f'Error validating agent output: {str(e)}. Creating safe default.')
-			# Create a completely safe default response
-			from browser_use.agent.views import AgentBrain
-			
-			safe_state = AgentBrain(
-				page_summary='Error in parsing',
-				evaluation_previous_goal='Failed to parse response',
-				memory='Parsing error occurred',
-				next_goal='Retry with valid format'
-			)
-			
-			safe_action = [self.ActionModel(done={'success': False, 'text': 'Parsing error - please retry'})]
-			
-			return self.AgentOutput(current_state=safe_state, action=safe_action)
+			except Exception as e:
+				logger.error(f'Failed to invoke model: {str(e)}')
+				raise LLMException(401, 'LLM API call failed') from e
+
+		else:
+			self._log_llm_call_info(input_messages, self.tool_calling_method)
+			structured_llm = self.llm.with_structured_output(self.AgentOutput, include_raw=True, method=self.tool_calling_method)
+			response: dict[str, Any] = await structured_llm.ainvoke(input_messages)  # type: ignore
+
+		# Handle tool call responses
+		if response.get('parsing_error') and 'raw' in response:
+			raw_msg = response['raw']
+			if hasattr(raw_msg, 'tool_calls') and raw_msg.tool_calls:
+				# Convert tool calls to AgentOutput format
+
+				tool_call = raw_msg.tool_calls[0]  # Take first tool call
+
+				# Create current state
+				tool_call_name = tool_call['name']
+				tool_call_args = tool_call['args']
+
+				current_state = {
+					'page_summary': 'Processing tool call',
+					'evaluation_previous_goal': 'Executing action',
+					'memory': 'Using tool call',
+					'next_goal': f'Execute {tool_call_name}',
+				}
+
+				# Create action from tool call
+				action = {tool_call_name: tool_call_args}
+
+				parsed = self.AgentOutput(current_state=current_state, action=[self.ActionModel(**action)])
+			else:
+				parsed = None
+		else:
+			parsed = response['parsed']
+
+		if not parsed:
+			try:
+				parsed_json = extract_json_from_model_output(response['raw'].content)
+				parsed = self.AgentOutput(**parsed_json)
+			except Exception as e:
+				logger.warning(f'Failed to parse model output: {response["raw"].content} {str(e)}')
+				raise ValueError('Could not parse response.')
+
+		# cut the number of actions to max_actions_per_step if needed
+		if len(parsed.action) > self.settings.max_actions_per_step:
+			parsed.action = parsed.action[: self.settings.max_actions_per_step]
+
+		if not (hasattr(self.state, 'paused') and (self.state.paused or self.state.stopped)):
+			log_response(parsed, self.controller.registry.registry)
+
+		self._log_next_action_summary(parsed)
+		return parsed
 
 	def _log_agent_run(self) -> None:
 		"""Log the agent run"""

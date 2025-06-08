@@ -28,201 +28,27 @@ def is_model_without_tool_support(model_name: str) -> bool:
 
 
 def extract_json_from_model_output(content: str) -> dict:
-	"""Extract JSON from model output with robust parsing and multiple fallback strategies."""
-	original_content = content
-	
+	"""Extract JSON from model output, handling both plain JSON and code-block-wrapped JSON."""
 	try:
-		# Strategy 1: Try direct JSON parsing first (fastest path)
-		try:
-			result_dict = json.loads(content.strip())
-			if isinstance(result_dict, dict):
-				return _validate_and_fix_result(result_dict)
-		except json.JSONDecodeError:
-			pass
-		
-		# Strategy 2: Extract from markdown code blocks
-		content = _extract_from_code_blocks(content)
-		if content != original_content:
-			try:
-				result_dict = json.loads(content.strip())
-				if isinstance(result_dict, dict):
-					return _validate_and_fix_result(result_dict)
-			except json.JSONDecodeError:
-				pass
-		
-		# Strategy 3: Find JSON object using regex patterns
-		content = _extract_json_with_regex(original_content)
-		if content:
-			try:
-				result_dict = json.loads(content)
-				if isinstance(result_dict, dict):
-					return _validate_and_fix_result(result_dict)
-			except json.JSONDecodeError:
-				pass
-		
-		# Strategy 4: Clean and fix common JSON formatting issues
-		content = _fix_common_json_issues(original_content)
-		if content:
-			try:
-				result_dict = json.loads(content)
-				if isinstance(result_dict, dict):
-					return _validate_and_fix_result(result_dict)
-			except json.JSONDecodeError:
-				pass
-		
-		# Strategy 5: Extract partial JSON and attempt reconstruction
-		content = _extract_partial_json(original_content)
-		if content:
-			try:
-				result_dict = json.loads(content)
-				if isinstance(result_dict, dict):
-					return _validate_and_fix_result(result_dict)
-			except json.JSONDecodeError:
-				pass
-		
-		# If all strategies fail, log the content and raise error
-		logger.warning(f'All JSON extraction strategies failed for content: {original_content[:200]}...')
+		# If content is wrapped in code blocks, extract just the JSON part
+		if '```' in content:
+			# Find the JSON content between code blocks
+			content = content.split('```')[1]
+			# Remove language identifier if present (e.g., 'json\n')
+			if '\n' in content:
+				content = content.split('\n', 1)[1]
+		# Parse the cleaned content
+		result_dict = json.loads(content)
+
+		# some models occasionally respond with a list containing one dict: https://github.com/browser-use/browser-use/issues/1458
+		if isinstance(result_dict, list) and len(result_dict) == 1 and isinstance(result_dict[0], dict):
+			result_dict = result_dict[0]
+
+		assert isinstance(result_dict, dict), f'Expected JSON dictionary in response, got JSON {type(result_dict)} instead'
+		return result_dict
+	except json.JSONDecodeError as e:
+		logger.warning(f'Failed to parse model output: {content} {str(e)}')
 		raise ValueError('Could not parse response.')
-		
-	except Exception as e:
-		logger.warning(f'Failed to parse model output: {original_content[:200]}... Error: {str(e)}')
-		raise ValueError('Could not parse response.')
-
-
-def _extract_from_code_blocks(content: str) -> str:
-	"""Extract JSON from markdown code blocks."""
-	# Pattern for ```json ... ``` or ``` ... ```
-	code_block_patterns = [
-		r'```(?:json)?\s*(.*?)\s*```',
-		r'`(.*?)`',  # Single backticks
-	]
-	
-	for pattern in code_block_patterns:
-		matches = re.findall(pattern, content, re.DOTALL | re.IGNORECASE)
-		if matches:
-			# Take the longest match (most likely to be complete JSON)
-			longest_match = max(matches, key=len)
-			if longest_match.strip():
-				return longest_match.strip()
-	
-	return content
-
-
-def _extract_json_with_regex(content: str) -> str | None:
-	"""Extract JSON using various regex patterns."""
-	# Pattern 1: Find complete JSON object from { to matching }
-	brace_pattern = r'\{(?:[^{}]|{(?:[^{}]|{[^{}]*})*})*\}'
-	matches = re.findall(brace_pattern, content, re.DOTALL)
-	
-	for match in matches:
-		# Validate that this looks like a proper JSON object
-		if _looks_like_json(match):
-			return match.strip()
-	
-	# Pattern 2: Find JSON between specific markers or text
-	json_markers = [
-		r'(?:response|result|output|json):\s*(\{.*?\})',
-		r'(\{[^{}]*"current_state"[^{}]*\})',  # Look for AgentOutput structure
-		r'(\{[^{}]*"action"[^{}]*\})',  # Look for action structure
-	]
-	
-	for pattern in json_markers:
-		matches = re.findall(pattern, content, re.DOTALL | re.IGNORECASE)
-		if matches:
-			for match in matches:
-				if _looks_like_json(match):
-					return match.strip()
-	
-	return None
-
-
-def _fix_common_json_issues(content: str) -> str | None:
-	"""Fix common JSON formatting issues."""
-	# Remove common prefixes/suffixes
-	content = re.sub(r'^[^{]*', '', content)  # Remove everything before first {
-	content = re.sub(r'[^}]*$', '', content)  # Remove everything after last }
-	
-	if not content.strip():
-		return None
-	
-	# Fix common issues
-	fixes = [
-		# Fix trailing commas
-		(r',(\s*[}\]])', r'\1'),
-		# Fix missing quotes around keys
-		(r'(\w+):', r'"\1":'),
-		# Fix single quotes to double quotes
-		(r"'([^']*)'", r'"\1"'),
-		# Fix escaped quotes issues
-		(r'\\"', '"'),
-		# Fix newlines in strings
-		(r'"\s*\n\s*"', ''),
-	]
-	
-	for pattern, replacement in fixes:
-		content = re.sub(pattern, replacement, content)
-	
-	return content.strip() if content.strip() else None
-
-
-def _extract_partial_json(content: str) -> str | None:
-	"""Extract and reconstruct partial JSON."""
-	# Look for key JSON components
-	current_state_match = re.search(r'"current_state"\s*:\s*\{[^{}]*\}', content, re.DOTALL)
-	action_match = re.search(r'"action"\s*:\s*\[[^\]]*\]', content, re.DOTALL)
-	
-	if current_state_match and action_match:
-		# Reconstruct basic JSON structure
-		reconstructed = f'{{{current_state_match.group()}, {action_match.group()}}}'
-		return reconstructed
-	
-	return None
-
-
-def _looks_like_json(text: str) -> bool:
-	"""Check if text looks like valid JSON structure."""
-	text = text.strip()
-	if not (text.startswith('{') and text.endswith('}')):
-		return False
-	
-	# Basic validation - should contain quotes and colons
-	if '"' not in text or ':' not in text:
-		return False
-	
-	# Check for balanced braces
-	brace_count = text.count('{') - text.count('}')
-	if brace_count != 0:
-		return False
-	
-	return True
-
-
-def _validate_and_fix_result(result_dict: dict) -> dict:
-	"""Validate and fix the extracted result dictionary."""
-	# Handle case where models return a list with one dict
-	if isinstance(result_dict, list) and len(result_dict) == 1 and isinstance(result_dict[0], dict):
-		result_dict = result_dict[0]
-	
-	if not isinstance(result_dict, dict):
-		raise ValueError(f'Expected JSON dictionary in response, got JSON {type(result_dict)} instead')
-	
-	# Ensure required fields exist with defaults if missing
-	if 'current_state' not in result_dict:
-		result_dict['current_state'] = {
-			'page_summary': 'Unknown',
-			'evaluation_previous_goal': 'Unknown',
-			'memory': 'Unknown',
-			'next_goal': 'Unknown'
-		}
-	
-	if 'action' not in result_dict:
-		result_dict['action'] = []
-	
-	# Ensure action is a list
-	if not isinstance(result_dict['action'], list):
-		result_dict['action'] = [result_dict['action']]
-	
-	return result_dict
 
 
 def convert_input_messages(input_messages: list[BaseMessage], model_name: str | None) -> list[BaseMessage]:
