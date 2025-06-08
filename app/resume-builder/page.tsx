@@ -87,9 +87,23 @@ function ResumeBuilderContent(): React.ReactElement {
   // Function to load the master resume
   const loadExistingResume = () => {
     try {
+      console.log('🔍 RESUME-BUILDER: Loading existing resume...');
       const { resumeData, resumePdfData: pdfData } = loadResume();
       
       if (resumeData) {
+        console.log('📋 RESUME-BUILDER: Found parsed resume data:');
+        console.log('  - Name:', resumeData.name);
+        console.log('  - Email:', resumeData.contact?.email);
+        console.log('  - Phone:', resumeData.contact?.phone);
+        console.log('  - Location:', resumeData.contact?.location);
+        
+        // Check for fake data
+        if (resumeData.name === 'John Doe') {
+          console.error('🚨 RESUME-BUILDER: FAKE "JOHN DOE" DATA DETECTED! Clearing it...');
+          localStorage.removeItem('masterResume_default');
+          throw new Error('Fake resume data detected and cleared');
+        }
+        
         // For parsed resume data
         setMasterResume(resumeData);
         
@@ -107,6 +121,8 @@ function ResumeBuilderContent(): React.ReactElement {
         setStep(2);
         toast.success('Your resume has been loaded from storage');
       } else if (pdfData) {
+        console.log('📄 RESUME-BUILDER: Found PDF data, length:', pdfData.length);
+        
         // For PDF data
         setResumePdfData(pdfData);
         
@@ -124,10 +140,11 @@ function ResumeBuilderContent(): React.ReactElement {
         setStep(2);
         toast.success('Your PDF resume has been loaded from storage');
       } else {
+        console.log('❌ RESUME-BUILDER: No resume data found in storage');
         throw new Error('No resume found in storage');
       }
     } catch (e) {
-      console.error('Error loading stored resume:', e);
+      console.error('❌ RESUME-BUILDER: Error loading stored resume:', e);
       setError('Failed to load your stored resume. Please upload it again.');
     }
   };
@@ -312,9 +329,28 @@ function ResumeBuilderContent(): React.ReactElement {
   
   // Dedicated useEffect for checking and loading existing resume
   useEffect(() => {
+    console.log('🧹 RESUME-BUILDER: Cleaning up any fake data on page load...');
+    
+    // Clean up any fake "John Doe" data from storage
+    const masterKey = 'masterResume_default';
+    const masterData = localStorage.getItem(masterKey);
+    if (masterData) {
+      try {
+        const parsed = JSON.parse(masterData);
+        if (parsed.data && parsed.data.name === 'John Doe') {
+          console.log('🧹 RESUME-BUILDER: CLEARING FAKE "JOHN DOE" DATA FROM STORAGE');
+          localStorage.removeItem(masterKey);
+        }
+      } catch (e) {
+        // Ignore parsing errors
+      }
+    }
+    
     // Check if resume exists
     const exists = resumeExists();
     setMasterResumeExists(exists);
+    
+    console.log('✅ RESUME-BUILDER: Resume exists check:', exists);
   }, []);
   
   // Handle resume file upload

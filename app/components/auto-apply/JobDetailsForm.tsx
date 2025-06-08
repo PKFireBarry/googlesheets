@@ -25,6 +25,8 @@ const JobDetailsForm: React.FC<JobDetailsFormProps> = ({
 
   // Initialize form with selected job data
   useEffect(() => {
+    console.log('JobDetailsForm - selectedJob received:', selectedJob);
+    
     if (selectedJob) {
       // Parse skills if they're in JSON string format
       let parsedSkills = selectedJob.skills;
@@ -139,8 +141,17 @@ const JobDetailsForm: React.FC<JobDetailsFormProps> = ({
         </div>
       ) : (
         <div className="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-md text-yellow-800 dark:text-yellow-300 text-sm">
-          <p className="font-medium">No job selected</p>
-          <p>Please go back to the job listings and select a job to apply for.</p>
+          <p className="font-medium">No job data found</p>
+          <p>The job data could not be loaded from the URL parameters.</p>
+          <p className="mt-2 text-xs">
+            This usually happens when:
+            <br />• The URL doesn't contain valid job data
+            <br />• The job data parameter is malformed
+            <br />• You navigated directly to this page without coming from a job listing
+          </p>
+          <p className="mt-2">
+            <strong>Solution:</strong> Please go back to the job listings and select a job to apply for.
+          </p>
         </div>
       )}
     </div>

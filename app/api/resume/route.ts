@@ -310,10 +310,25 @@ IMPORTANT: Return ONLY the JSON object with no markdown formatting, no code bloc
     // If we have PDF data, add it as a separate part
     if (resumePdfData) {
       console.log('Using PDF resume data for Gemini API');
+      console.log('PDF data format:', resumePdfData.substring(0, 50) + '...');
+      
+      // Extract base64 data from data URI if present
+      let base64Data = resumePdfData;
+      if (resumePdfData.startsWith('data:')) {
+        const base64Index = resumePdfData.indexOf('base64,');
+        if (base64Index !== -1) {
+          base64Data = resumePdfData.substring(base64Index + 7);
+          console.log('Extracted base64 data from data URI');
+          console.log('Base64 data length:', base64Data.length);
+        }
+      } else {
+        console.log('PDF data appears to be raw base64, length:', base64Data.length);
+      }
+      
       requestBody.contents[0].parts.push({
         inlineData: {
           mimeType: 'application/pdf',
-          data: resumePdfData
+          data: base64Data
         }
       });
     } else if (resumeData) {
@@ -340,6 +355,18 @@ IMPORTANT: Return ONLY the JSON object with no markdown formatting, no code bloc
       maxOutputTokens: 4096
     };
     
+    // Log the complete request being sent to Gemini for debugging
+    console.log('🚀 GEMINI REQUEST DEBUG:');
+    console.log('  - API URL:', apiUrl.substring(0, 100) + '...');
+    console.log('  - Request parts count:', requestBody.contents[0].parts.length);
+    console.log('  - Has PDF data:', requestBody.contents[0].parts.some(part => 'inlineData' in part));
+    console.log('  - Text instruction length:', (requestBody.contents[0].parts[0] as GeminiTextPart).text?.length || 0);
+    
+    if (resumePdfData) {
+      console.log('  - PDF data starts with:', resumePdfData.substring(0, 30));
+      console.log('  - PDF data total length:', resumePdfData.length);
+    }
+
     // Call the Gemini API
     const response = await fetch(apiUrl, {
       method: 'POST',
@@ -380,6 +407,20 @@ IMPORTANT: Return ONLY the JSON object with no markdown formatting, no code bloc
     try {
       // Try to parse the response as JSON
       const parsedData = JSON.parse(cleanedText);
+      
+      // CHECK FOR PLACEHOLDER DATA - REJECT IF FOUND (only for PDF data)
+      if ((parsedData.name === 'John Doe' || parsedData.contact?.email === 'john.doe@example.com') && resumePdfData && !resumeData) {
+        console.error('🚨 CRITICAL ERROR: Gemini returned placeholder "John Doe" data instead of actual resume information from PDF!');
+        console.error('This indicates that Gemini could not properly read the PDF.');
+        console.error('PDF data length:', resumePdfData.length);
+        console.error('PDF data format:', resumePdfData.substring(0, 50));
+        
+        return NextResponse.json({
+          error: 'AI failed to extract real information from your PDF resume. Please try uploading your resume again or use a different format.',
+          details: 'The AI returned placeholder data instead of your actual resume information from the PDF.'
+        }, { status: 500 });
+      }
+      
       console.log('✅ Successfully parsed Gemini response as JSON structure');
       console.log('📊 Parsed Resume Data Structure:');
       console.log('  - Name:', parsedData.name);

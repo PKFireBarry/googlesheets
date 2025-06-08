@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { toast, Toaster } from 'react-hot-toast';
 import Cookies from 'js-cookie';
 import { ResumeData, PersonalInfo } from '../types/resume';
-import { loadResume, saveResume } from '../utils/resumeStorage';
+import { loadResume, saveResume, getResumeStorageKey } from '../utils/resumeStorage';
 import { pollAutoApplyStatus } from '../utils/polling';
 
 // Import components
@@ -97,123 +97,88 @@ function AutoApplyContent(): React.ReactElement {
     return String(skills);
   };
 
-  // Debug function to list all localStorage keys and values related to resumes
-  const debugLocalStorage = () => {
-    console.log('===== DEBUG: Checking localStorage for resume data =====');
-    
-    // List all keys in localStorage
-    console.log('All localStorage keys:');
-    const allKeys = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key) allKeys.push(key);
-    }
-    console.log(allKeys);
-    
-    // Check for resume-related keys
-    console.log('Resume-related keys:');
-    const resumeKeys = allKeys.filter(key => 
-      key.startsWith('masterResume') || 
-      key.includes('resume') || 
-      key === 'resumeData'
-    );
-    console.log(resumeKeys);
-    
-    // Log the content of each resume-related key
-    resumeKeys.forEach(key => {
-      try {
-        const value = localStorage.getItem(key);
-        console.log(`Key: ${key}, Value preview:`, value ? value.substring(0, 50) + '...' : 'null');
-      } catch (e) {
-        console.error(`Error reading key ${key}:`, e);
-      }
-    });
-    
-    console.log('===== END DEBUG =====');
-  };
 
-  // Create a sample resume if none is found
-  const createSampleResume = () => {
-    console.log('Creating a sample resume for testing');
-    
-    // Create a basic sample resume
-    const sampleResume: ResumeData = {
-      name: 'John Doe',
-      contact: {
-        email: 'john.doe@example.com',
-        phone: '(123) 456-7890',
-        location: 'San Francisco, CA',
-        linkedin: 'linkedin.com/in/johndoe',
-        website: 'johndoe.com'
-      },
-      summary: 'Experienced software engineer with expertise in web development and cloud technologies.',
-      skills: ['JavaScript', 'TypeScript', 'React', 'Node.js', 'AWS', 'Docker'],
-      experience: [
-        {
-          title: 'Senior Software Engineer',
-          company: 'Tech Company',
-          location: 'San Francisco, CA',
-          dates: 'January 2020 - Present',
-          highlights: ['Led development of cloud-based applications using React and Node.js.']
-        },
-        {
-          title: 'Software Developer',
-          company: 'Startup Inc.',
-          location: 'San Francisco, CA',
-          dates: 'March 2018 - December 2019',
-          highlights: ['Developed and maintained web applications using modern JavaScript frameworks.']
-        }
-      ],
-      education: [
-        {
-          institution: 'University of Technology',
-          degree: 'Bachelor of Science in Computer Science',
-          location: 'San Francisco, CA',
-          dates: '2014 - 2018',
-          details: ['GPA: 3.8']
-        }
-      ]
-    };
-    
-    // Save the sample resume
-    saveResume(sampleResume, null);
-    console.log('Sample resume created and saved');
-    
-    return sampleResume;
-  };
 
-  // Load job data from URL parameters
+
+
+    // Load job data from URL parameters
   useEffect(() => {
-    if (jobId) {
-      // Check if we have full job data in URL parameters
-      const jobDataParam = searchParams.get('jobData');
-      
-      if (jobDataParam) {
+    const jobDataParam = searchParams.get('jobData');
+    
+    if (jobDataParam) {
+      try {
+        const decodedJobData = decodeURIComponent(jobDataParam);
+        
+        // Try to parse JSON, with fallback for malformed data
         try {
-          // Parse job data directly from URL parameter
-          const decodedJobData = decodeURIComponent(jobDataParam);
           const parsedJobData = JSON.parse(decodedJobData);
-          console.log('Job data loaded from URL parameter:', parsedJobData);
-          
-          // Set the job data directly
           setSelectedJob(parsedJobData);
           
-          // Pre-fill upload prompt with job URL if available
           if (parsedJobData.company_website) {
-            setUploadPrompt(
-              `Resume and personal information needed for the application form.` 
-            );
-          } 
-          setStep(2); // Move to job details step
-        } catch (error) {
-          console.error('Error parsing job data from URL:', error);
-
+            setUploadPrompt('Resume and personal information needed for the application form.');
+          }
+          setStep(2);
+        } catch (parseError) {
+          // Sanitize problematic fields (like company_image with bad escape sequences)
+          let sanitizedData = decodedJobData.replace(
+            /"company_image":"[^"]*(?:\\.[^"]*)*"/,
+            '"company_image":""'
+          );
+          
+          const parsedJobData = JSON.parse(sanitizedData);
+          setSelectedJob(parsedJobData);
+          
+          if (parsedJobData.company_website) {
+            setUploadPrompt('Resume and personal information needed for the application form.');
+          }
+          setStep(2);
         }
-      }  
+      } catch (error) {
+        console.error('Failed to parse job data from URL:', error);
+        
+        // Fallback: try individual parameters
+        if (jobId) {
+          const fallbackJobData = {
+            id: jobId,
+            title: searchParams.get('title') || searchParams.get('job_title') || '',
+            job_title: searchParams.get('title') || searchParams.get('job_title') || '',
+            company: searchParams.get('company') || searchParams.get('company_name') || '',
+            company_name: searchParams.get('company') || searchParams.get('company_name') || '',
+            description: searchParams.get('description') || searchParams.get('job_description') || '',
+            job_description: searchParams.get('description') || searchParams.get('job_description') || '',
+            skills: searchParams.get('skills') || '',
+            url: searchParams.get('url') || '',
+            company_website: searchParams.get('company_website') || searchParams.get('url') || '',
+            location: searchParams.get('location') || ''
+          };
+          
+          if (fallbackJobData.title || fallbackJobData.company) {
+            setSelectedJob(fallbackJobData);
+            setStep(2);
+          }
+        }
+      }
+    } else if (jobId) {
+      // No jobData parameter, try individual parameters
+      const individualJobData = {
+        id: jobId,
+        title: searchParams.get('title') || searchParams.get('job_title') || '',
+        job_title: searchParams.get('title') || searchParams.get('job_title') || '',
+        company: searchParams.get('company') || searchParams.get('company_name') || '',
+        company_name: searchParams.get('company') || searchParams.get('company_name') || '',
+        description: searchParams.get('description') || searchParams.get('job_description') || '',
+        job_description: searchParams.get('description') || searchParams.get('job_description') || '',
+        skills: searchParams.get('skills') || '',
+        url: searchParams.get('url') || '',
+        company_website: searchParams.get('company_website') || searchParams.get('url') || '',
+        location: searchParams.get('location') || ''
+      };
+      
+      if (individualJobData.title || individualJobData.company) {
+        setSelectedJob(individualJobData);
+        setStep(2);
+      }
     }
-    
-    // Debug localStorage
-    debugLocalStorage();
     
     // Load API key from cookies or localStorage
     const cookieApiKey = Cookies.get('geminiApiKey');
@@ -221,92 +186,137 @@ function AutoApplyContent(): React.ReactElement {
     
     if (cookieApiKey) {
       setApiKey(cookieApiKey);
-      console.log('API key loaded from cookie');
     } else if (localStorageApiKey) {
       setApiKey(localStorageApiKey);
-      console.log('API key loaded from localStorage');
       // Also save to cookie for cross-page consistency
       Cookies.set('geminiApiKey', localStorageApiKey, { expires: 30 });
     }
     
-    // Check for existing resume - improved implementation
+    // Check for existing resume
     try {
-      console.log('Loading resume from storage...');
+      console.log('🔍 LOADING RESUME FROM STORAGE - DEBUG START');
+      
+      // CRITICAL FIX: Clean up all job-specific storage keys (they should never exist)
+      console.log('🧹 CLEANING UP INVALID JOB-SPECIFIC STORAGE KEYS...');
+      
+      // Remove ALL job-specific keys - these should never exist
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith('masterResume_job_') || key.includes('_job_'))) {
+          keysToRemove.push(key);
+        }
+      }
+      
+      keysToRemove.forEach(key => {
+        console.log('🧹 REMOVING INVALID JOB-SPECIFIC KEY:', key);
+        localStorage.removeItem(key);
+      });
+      
+      // Also clear any fake "John Doe" data from the master resume
+      const masterKey = 'masterResume_default';
+      const masterData = localStorage.getItem(masterKey);
+      if (masterData) {
+        try {
+          const parsed = JSON.parse(masterData);
+          if (parsed.data && parsed.data.name === 'John Doe') {
+            console.log('🧹 CLEARING FAKE "JOHN DOE" DATA FROM MASTER RESUME');
+            localStorage.removeItem(masterKey);
+          }
+        } catch (e) {
+          // Ignore parsing errors
+        }
+      }
+      
       const { resumeData, resumePdfData: pdfData } = loadResume();
       
-      console.log('Resume data loaded:', resumeData ? 'Yes' : 'No');
-      console.log('PDF data loaded:', pdfData ? 'Yes' : 'No');
+      console.log('📊 STORAGE LOAD RESULTS:');
+      console.log('  - resumeData exists:', !!resumeData);
+      console.log('  - pdfData exists:', !!pdfData);
       
       if (resumeData) {
+        console.log('📋 LOADED RESUME DATA (JSON FORMAT):');
+        console.log('  - Name:', resumeData.name);
+        console.log('  - Email:', resumeData.contact?.email);
+        console.log('  - Phone:', resumeData.contact?.phone);
+        console.log('  - Location:', resumeData.contact?.location);
+        console.log('  - LinkedIn:', resumeData.contact?.linkedin);
+        console.log('  - Website:', resumeData.contact?.website);
+        console.log('  - Summary length:', resumeData.summary?.length || 0);
+        console.log('  - Skills count:', Array.isArray(resumeData.skills) ? resumeData.skills.length : 0);
+        console.log('  - Experience entries:', Array.isArray(resumeData.experience) ? resumeData.experience.length : 0);
+        console.log('  - Education entries:', Array.isArray(resumeData.education) ? resumeData.education.length : 0);
+        
         // For parsed resume data
         setMasterResume(resumeData);
         
         // Pre-fill personal info
-        setPersonalInfo({
+        const personalInfoFromResume = {
           name: resumeData.name || '',
           email: resumeData.contact?.email || '',
           phone: resumeData.contact?.phone || '',
           location: resumeData.contact?.location || '',
           linkedin: resumeData.contact?.linkedin || '',
           website: resumeData.contact?.website || ''
-        });
+        };
+        
+        console.log('👤 SETTING PERSONAL INFO FROM RESUME DATA:', personalInfoFromResume);
+        setPersonalInfo(personalInfoFromResume);
         
         toast.success('Your resume has been loaded from storage');
       } else if (pdfData) {
+        console.log('📄 LOADED PDF DATA:');
+        console.log('  - PDF data length:', pdfData.length);
+        console.log('  - PDF data starts with:', pdfData.substring(0, 50));
+        
         // For PDF data
         setResumePdfData(pdfData);
         
         // Pre-fill empty personal info (will be extracted during processing)
-        setPersonalInfo({
+        const emptyPersonalInfo = {
           name: '',
           email: '',
           phone: '',
           location: '',
           linkedin: '',
           website: ''
-        });
+        };
+        
+        console.log('👤 SETTING EMPTY PERSONAL INFO (PDF ONLY):', emptyPersonalInfo);
+        setPersonalInfo(emptyPersonalInfo);
         
         toast.success('Your PDF resume has been loaded from storage');
       } else {
-        // No resume found, create a sample one for testing
-        console.log('No resume found in storage, creating a sample resume');
-        const sampleResume = createSampleResume();
+        console.log('❌ NO RESUME DATA FOUND IN STORAGE');
+        // No resume found - user needs to upload one
+        const emptyPersonalInfo = {
+          name: '',
+          email: '',
+          phone: '',
+          location: '',
+          linkedin: '',
+          website: ''
+        };
         
-        // Set the sample resume as the master resume
-        setMasterResume(sampleResume);
-        
-        // Pre-fill personal info from the sample resume
-        setPersonalInfo({
-          name: sampleResume.name || '',
-          email: sampleResume.contact?.email || '',
-          phone: sampleResume.contact?.phone || '',
-          location: sampleResume.contact?.location || '',
-          linkedin: sampleResume.contact?.linkedin || '',
-          website: sampleResume.contact?.website || ''
-        });
-        
-        toast.success('A sample resume has been created for testing');
+        console.log('👤 SETTING EMPTY PERSONAL INFO (NO RESUME):', emptyPersonalInfo);
+        setPersonalInfo(emptyPersonalInfo);
       }
+      
+      console.log('🔍 LOADING RESUME FROM STORAGE - DEBUG END');
     } catch (e) {
-      console.error('Error loading stored resume:', e);
-      // Create a sample resume on error
-      console.log('Error occurred, creating a sample resume');
-      const sampleResume = createSampleResume();
+      console.error('❌ ERROR LOADING STORED RESUME:', e);
+      // Error loading resume - reset to empty state
+      const errorPersonalInfo = {
+        name: '',
+        email: '',
+        phone: '',
+        location: '',
+        linkedin: '',
+        website: ''
+      };
       
-      // Set the sample resume as the master resume
-      setMasterResume(sampleResume);
-      
-      // Pre-fill personal info from the sample resume
-      setPersonalInfo({
-        name: sampleResume.name || '',
-        email: sampleResume.contact?.email || '',
-        phone: sampleResume.contact?.phone || '',
-        location: sampleResume.contact?.location || '',
-        linkedin: sampleResume.contact?.linkedin || '',
-        website: sampleResume.contact?.website || ''
-      });
-      
-      toast.success('A sample resume has been created for testing');
+      console.log('👤 SETTING ERROR PERSONAL INFO:', errorPersonalInfo);
+      setPersonalInfo(errorPersonalInfo);
     }
   }, [jobId, searchParams]);
 
@@ -341,6 +351,8 @@ function AutoApplyContent(): React.ReactElement {
 
   // Generate tailored resume
   const handleGenerateResume = async () => {
+    console.log('🚀 GENERATE RESUME FUNCTION CALLED - DEBUG START');
+    
     if (!selectedJob) {
       setError('Please provide job details first');
       return;
@@ -360,6 +372,49 @@ function AutoApplyContent(): React.ReactElement {
     setError(null);
     
     try {
+      console.log('📊 CURRENT STATE BEFORE API CALL:');
+      console.log('  - masterResume exists:', !!masterResume);
+      console.log('  - resumePdfData exists:', !!resumePdfData);
+      console.log('  - personalInfo exists:', !!personalInfo);
+      
+      if (masterResume) {
+        console.log('📋 MASTER RESUME DATA TO BE SENT:');
+        console.log('  - Name:', masterResume.name);
+        console.log('  - Email:', masterResume.contact?.email);
+        console.log('  - Phone:', masterResume.contact?.phone);
+        console.log('  - Location:', masterResume.contact?.location);
+        console.log('  - LinkedIn:', masterResume.contact?.linkedin);
+        console.log('  - Website:', masterResume.contact?.website);
+        console.log('  - Summary length:', masterResume.summary?.length || 0);
+        console.log('  - Skills count:', Array.isArray(masterResume.skills) ? masterResume.skills.length : 0);
+        console.log('  - Experience entries:', Array.isArray(masterResume.experience) ? masterResume.experience.length : 0);
+        console.log('  - Education entries:', Array.isArray(masterResume.education) ? masterResume.education.length : 0);
+        
+        if (masterResume.experience && masterResume.experience.length > 0) {
+          console.log('  - First experience entry:', {
+            title: masterResume.experience[0].title,
+            company: masterResume.experience[0].company,
+            dates: masterResume.experience[0].dates
+          });
+        }
+        
+        if (masterResume.education && masterResume.education.length > 0) {
+          console.log('  - First education entry:', {
+            degree: masterResume.education[0].degree,
+            institution: masterResume.education[0].institution,
+            dates: masterResume.education[0].dates
+          });
+        }
+      }
+      
+      if (resumePdfData) {
+        console.log('📄 PDF DATA TO BE SENT:');
+        console.log('  - PDF data length:', resumePdfData.length);
+        console.log('  - PDF data starts with:', resumePdfData.substring(0, 50));
+      }
+      
+      console.log('👤 PERSONAL INFO TO BE SENT:', personalInfo);
+      
       // Parse skills if they're in JSON string format
       let parsedSkills = selectedJob.skills;
       if (typeof selectedJob.skills === 'string' && selectedJob.skills.trim().startsWith('[')) {
@@ -370,32 +425,44 @@ function AutoApplyContent(): React.ReactElement {
         }
       }
 
-      console.log('Sending resume generation request with:', {
-        hasMasterResume: !!masterResume,
-        hasResumePdfData: !!resumePdfData,
-        jobTitle: selectedJob.title || selectedJob.job_title,
-        jobCompany: selectedJob.company_name || selectedJob.company,
-        jobUrl: selectedJob.url || selectedJob.company_website || 'None',
-        jobSkills: parsedSkills || 'None',
-        hasPersonalInfo: !!personalInfo
+      console.log('🎯 JOB DATA TO BE SENT:', {
+        title: selectedJob.title || selectedJob.job_title,
+        company: selectedJob.company_name || selectedJob.company,
+        description: selectedJob.description || selectedJob.job_description,
+        skills: parsedSkills,
+        url: selectedJob.url || selectedJob.company_website
       });
+      
+      // Determine what data will actually be sent to API
+      const apiPayload = {
+        resumeData: masterResume,
+        resumePdfData: masterResume ? null : resumePdfData, // Only use PDF if no JSON data
+        jobData: {
+          ...selectedJob,
+          skills: parsedSkills
+        },
+        apiKey: apiKey,
+        personalInfo: personalInfo
+      };
+      
+      console.log('📤 FINAL API PAYLOAD SUMMARY:');
+      console.log('  - Will send resumeData (JSON):', !!apiPayload.resumeData);
+      console.log('  - Will send resumePdfData:', !!apiPayload.resumePdfData);
+      console.log('  - Will send personalInfo:', !!apiPayload.personalInfo);
+      console.log('  - API key provided:', !!apiPayload.apiKey);
       
       const response = await fetch('/api/resume', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          resumeData: masterResume,
-          resumePdfData: resumePdfData,
-          jobData: {
-            ...selectedJob,
-            skills: parsedSkills
-          },
-          apiKey: apiKey,
-          personalInfo: personalInfo
-        }),
+        body: JSON.stringify(apiPayload),
       });
+      
+      console.log('📡 API RESPONSE RECEIVED:');
+      console.log('  - Status:', response.status);
+      console.log('  - Status Text:', response.statusText);
+      console.log('  - OK:', response.ok);
       
       if (!response.ok) {
         const errorData = await response.json();
@@ -404,7 +471,33 @@ function AutoApplyContent(): React.ReactElement {
       }
       
       const data = await response.json();
-      console.log('Resume API response:', data);
+      console.log('📥 RESUME API RESPONSE DATA:');
+      console.log('  - Response type:', typeof data);
+      console.log('  - Has name:', !!data.name);
+      console.log('  - Has contact:', !!data.contact);
+      console.log('  - Has resumeData property:', !!data.resumeData);
+      console.log('  - Has error:', !!data.error);
+      
+      if (data.name) {
+        console.log('📋 DIRECT RESUME DATA RECEIVED:');
+        console.log('  - Name:', data.name);
+        console.log('  - Email:', data.contact?.email);
+        console.log('  - Phone:', data.contact?.phone);
+        console.log('  - Location:', data.contact?.location);
+      }
+      
+      if (data.resumeData) {
+        console.log('📋 NESTED RESUME DATA RECEIVED:');
+        console.log('  - Name:', data.resumeData.name);
+        console.log('  - Email:', data.resumeData.contact?.email);
+        console.log('  - Phone:', data.resumeData.contact?.phone);
+        console.log('  - Location:', data.resumeData.contact?.location);
+      }
+      
+      if (data.error) {
+        console.log('❌ API ERROR RECEIVED:', data.error);
+        console.log('  - Details:', data.details);
+      }
       
       // Check if we received valid data - the API returns the resume data directly
       if (data && data.name && data.contact) {
@@ -795,8 +888,7 @@ function AutoApplyContent(): React.ReactElement {
               onUploadPdf={setResumePdfData}
               onNext={() => setStep(2)}
               hasExistingResume={!!masterResume || !!resumePdfData}
-              personalInfo={personalInfo}
-              onPersonalInfoChange={setPersonalInfo}
+              onApplicationQuestionsChange={setPersonalInfo}
             />
           </>
         )}

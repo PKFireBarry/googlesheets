@@ -1,6 +1,5 @@
 import React, { useRef, useState } from 'react';
 import { ResumeData, PersonalInfo } from '../../types/resume';
-import { parseResumeFile } from '../../utils/resumeParser';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 
 interface ResumeUploadProps {
@@ -8,11 +7,10 @@ interface ResumeUploadProps {
   onUploadPdf?: (pdfData: string) => void;
   onNext?: () => void;
   hasExistingResume?: boolean;
-  personalInfo?: PersonalInfo;
-  onPersonalInfoChange?: (info: PersonalInfo) => void;
+  onApplicationQuestionsChange?: (personalInfo: PersonalInfo) => void;
 }
 
-type SectionName = 'basic' | 'salary' | 'workEligibility' | 'military' | 'disability' | 'eeo' | 'additional';
+type SectionName = 'salary' | 'workEligibility' | 'military' | 'disability' | 'eeo' | 'additional';
 
 /**
  * Resume Upload Component for Auto Apply
@@ -23,18 +21,26 @@ const ResumeUpload: React.FC<ResumeUploadProps> = ({
   onUploadPdf,
   onNext,
   hasExistingResume,
-  personalInfo,
-  onPersonalInfoChange
+  onApplicationQuestionsChange
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [expandedSections, setExpandedSections] = useState({
-    basic: true,
     salary: false,
     workEligibility: false,
     military: false,
     disability: false,
     eeo: false,
     additional: false
+  });
+  
+  // Local state for application-specific questions
+  const [personalInfo, setPersonalInfo] = useState<PersonalInfo>({
+    name: '',
+    email: '',
+    phone: '',
+    location: '',
+    linkedin: '',
+    website: ''
   });
 
   const toggleSection = (section: SectionName) => {
@@ -49,24 +55,16 @@ const ResumeUpload: React.FC<ResumeUploadProps> = ({
     if (!file) return;
 
     try {
-      // Process the file based on its type
-      if (file.type === 'application/pdf') {
-        // Handle PDF file
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const pdfData = e.target?.result as string;
-          if (onUploadPdf) {
-            onUploadPdf(pdfData);
-          }
-        };
-        reader.readAsDataURL(file);
-      } else {
-        // Parse resume data from DOCX or other formats
-        const resumeData = await parseResumeFile(file);
-        if (onUploadResume) {
-          onUploadResume(resumeData);
+      // Convert all files (PDF and DOCX) to data URL for backend processing
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const fileData = e.target?.result as string;
+        if (onUploadPdf) {
+          // Use onUploadPdf for all file types since the backend handles parsing
+          onUploadPdf(fileData);
         }
-      }
+      };
+      reader.readAsDataURL(file);
 
       // Move to next step if provided
       if (onNext) {
@@ -79,15 +77,20 @@ const ResumeUpload: React.FC<ResumeUploadProps> = ({
   };
 
   const handlePersonalInfoChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    if (!personalInfo || !onPersonalInfoChange) return;
-    
     const { name, value, type } = e.target as HTMLInputElement;
     const newValue = type === 'checkbox' ? (e.target as HTMLInputElement).checked : value;
     
-    onPersonalInfoChange({
+    const updatedPersonalInfo = {
       ...personalInfo,
       [name]: newValue
-    });
+    };
+    
+    setPersonalInfo(updatedPersonalInfo);
+    
+    // Notify parent component of changes
+    if (onApplicationQuestionsChange) {
+      onApplicationQuestionsChange(updatedPersonalInfo);
+    }
   };
 
   const SectionHeader = ({ title, expanded, onClick }: { title: string; expanded: boolean; onClick: () => void }) => (
@@ -149,104 +152,14 @@ const ResumeUpload: React.FC<ResumeUploadProps> = ({
         </div>
       )}
       
-      {/* Personal Information Section */}
-      {personalInfo && onPersonalInfoChange && (
-        <div className="mt-6">
-          <h4 className="font-medium mb-3">Personal Information</h4>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-            This information will be used for your job applications. Fields marked with * are commonly required.
-          </p>
+      {/* Application Questions Section */}
+      <div className="mt-6">
+        <h4 className="font-medium mb-3">Application Questions</h4>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+          These questions are commonly asked during job applications. Fill them out once and they'll be used for all applications.
+        </p>
           
-          {/* Basic Information */}
-          <div className="mb-6">
-            <SectionHeader 
-              title="Basic Information" 
-              expanded={expandedSections.basic} 
-              onClick={() => toggleSection('basic' as SectionName)} 
-            />
-            
-            {expandedSections.basic && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Full Name *
-                  </label>
-                  <input
-                    type="text"
-                    name="name"
-                    value={personalInfo.name || ''}
-                    onChange={handlePersonalInfoChange}
-                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Email *
-                  </label>
-                  <input
-                    type="email"
-                    name="email"
-                    value={personalInfo.email || ''}
-                    onChange={handlePersonalInfoChange}
-                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Phone *
-                  </label>
-                  <input
-                    type="tel"
-                    name="phone"
-                    value={personalInfo.phone || ''}
-                    onChange={handlePersonalInfoChange}
-                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Location *
-                  </label>
-                  <input
-                    type="text"
-                    name="location"
-                    value={personalInfo.location || ''}
-                    onChange={handlePersonalInfoChange}
-                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    LinkedIn
-                  </label>
-                  <input
-                    type="text"
-                    name="linkedin"
-                    value={personalInfo.linkedin || ''}
-                    onChange={handlePersonalInfoChange}
-                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Website
-                  </label>
-                  <input
-                    type="text"
-                    name="website"
-                    value={personalInfo.website || ''}
-                    onChange={handlePersonalInfoChange}
-                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                  />
-                </div>
-              </div>
-            )}
-          </div>
+
           
           {/* Salary Expectations */}
           <div className="mb-6">
@@ -578,7 +491,6 @@ const ResumeUpload: React.FC<ResumeUploadProps> = ({
             )}
           </div>
         </div>
-      )}
       
       {/* Next Button */}
       {onNext && (

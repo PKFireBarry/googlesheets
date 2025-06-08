@@ -832,8 +832,8 @@ async def process_auto_apply(task_id, prompt, url, api_key, file, file_url):
 			browser_session=browser_session,
 			use_vision=True,
 			use_vision_for_planner=True,
-			max_failures=3,
-			retry_delay=15,
+			max_failures=7,
+			retry_delay=30,
 			extend_system_message='Respond ONLY with valid JSON. Do not include any text before or after the JSON. Use double quotes for all strings. Do not escape single quotes. Do not include comments. Do not include markdown.',
 			enable_memory=True,
 			tool_calling_method='auto'
