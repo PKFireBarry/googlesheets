@@ -403,7 +403,7 @@ async def test_browser_stealth(
 			use_vision_for_planner=True,
 			max_failures=3,
 			retry_delay=15,  # Longer delays between retries
-			extend_system_message='Act like a human user. Take pauses between actions. Scroll to read content. Add delays before clicking. Respond ONLY with valid JSON. Do not include any text before or after the JSON. Use double quotes for all strings.',
+			extend_system_message='Act like a human user. Take pauses between actions. Scroll to read content. Add delays before clicking. When providing responses, return ONLY clean, valid JSON without any special characters, emojis, markdown formatting, or escape sequences. Do not include ActionResult objects, backticks, code blocks, or any non-JSON text. Use simple double quotes for all strings and avoid any characters that could cause parsing errors like \\n, \\t, or unicode symbols.',
 			enable_memory=True,
 			tool_calling_method='auto'
 		)
@@ -419,12 +419,14 @@ async def test_browser_stealth(
 				if hasattr(result, 'history') and result.history:
 					# Get the last action's result if available
 					last_action = result.history[-1] if result.history else None
-					if last_action and hasattr(last_action, 'result'):
-						serializable_result = str(last_action.result)
+					if last_action and hasattr(last_action, 'extracted_content'):
+						serializable_result = clean_agent_response(last_action.extracted_content)
+					elif last_action and hasattr(last_action, 'result'):
+						serializable_result = clean_agent_response(str(last_action.result))
 					else:
 						serializable_result = f"Agent completed {len(result.history)} actions"
 				else:
-					serializable_result = str(result)
+					serializable_result = clean_agent_response(str(result))
 			except Exception as e:
 				print(f"Error extracting result: {e}")
 				serializable_result = "Test completed but result extraction failed"
@@ -596,7 +598,12 @@ async def process_auto_apply(task_id, prompt, url, api_key, file, file_url):
                 "--disable-background-timer-throttling",  # Reduce timing fingerprinting
                 "--disable-renderer-backgrounding",  # Reduce background detection
                 "--disable-backgrounding-occluded-windows",  # Reduce window state detection
-                "--disable-ipc-flooding-protection"  # Reduce IPC fingerprinting
+                "--disable-ipc-flooding-protection",  # Reduce IPC fingerprinting
+				"--disable-blink-features=AutomationControlled",  # Hide automation
+                "--exclude-switches=enable-automation",  # Remove automation flags
+                "--disable-extensions-except",  # Reduce extension fingerprinting
+                "--disable-plugins-discovery",  # Reduce plugin detection
+                "--no-sandbox"  # Sometimes helps with detection
             ]
 		)
 		
@@ -632,7 +639,7 @@ async def process_auto_apply(task_id, prompt, url, api_key, file, file_url):
 			use_vision_for_planner=True,
 			max_failures=3,
 			retry_delay=15,
-			extend_system_message='Respond ONLY with valid JSON. Do not include any text before or after the JSON. Use double quotes for all strings. Do not escape single quotes. Do not include comments. Do not include markdown.',
+			extend_system_message='When providing responses, return ONLY clean, valid JSON without any special characters, emojis, markdown formatting, or escape sequences. Do not include ActionResult objects, backticks, code blocks, or any non-JSON text. Use simple double quotes for all strings and avoid any characters that could cause parsing errors like \\n, \\t, unicode symbols, or raw object representations. Strip all formatting and return plain JSON only.',
 			enable_memory=True,
 			tool_calling_method='auto'
 		)
@@ -834,7 +841,7 @@ async def process_auto_apply(task_id, prompt, url, api_key, file, file_url):
 			use_vision_for_planner=True,
 			max_failures=7,
 			retry_delay=30,
-			extend_system_message='Respond ONLY with valid JSON. Do not include any text before or after the JSON. Use double quotes for all strings. Do not escape single quotes. Do not include comments. Do not include markdown.',
+			extend_system_message='When providing responses, return ONLY clean, valid JSON without any special characters, emojis, markdown formatting, or escape sequences. Do not include ActionResult objects, backticks, code blocks, or any non-JSON text. Use simple double quotes for all strings and avoid any characters that could cause parsing errors like \\n, \\t, unicode symbols, or raw object representations. Strip all formatting and return plain JSON only. Act naturally like a human when filling forms.',
 			enable_memory=True,
 			tool_calling_method='auto'
 		)
