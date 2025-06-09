@@ -155,98 +155,210 @@ async def apply_minimal_stealth_protections(browser_session):
         # Continue anyway - don't fail the entire process
 
 async def apply_stealth_protections(browser_session):
-    """Apply critical fingerprinting protections to boost trust score from 65% to 85%+"""
+    """Apply advanced fingerprinting protections to boost trust score to 85%+"""
     try:
         page = await browser_session.get_current_page()
         
         # Generate session-consistent but randomized values
-        session_hardware_cores = random.choice([4, 6, 8, 12, 16])  # Common CPU core counts
-        session_device_memory = random.choice([4, 8, 16])  # Common RAM amounts in GB
-        session_canvas_noise = random.uniform(-0.0001, 0.0001)  # Subtle canvas noise
+        session_hardware_cores = random.choice([4, 8, 12])  # Most common CPU core counts
+        session_device_memory = random.choice([8, 16])  # Most common RAM amounts in GB
+        session_canvas_noise = random.uniform(-0.00001, 0.00001)  # Very subtle canvas noise
         
-        # 1. SUBTLE: Canvas Fingerprinting Protection (Much more subtle approach)
+        # 1. CRITICAL: JavaScript Engine Fingerprinting Protection (Addresses math_v8 and error_v8 detection)
+        js_engine_protection_script = """
+        // Override Math object methods to reduce V8 engine fingerprinting
+        const originalMathRandom = Math.random;
+        Math.random = function() {
+            // Add slight variation to make it less predictable
+            const base = originalMathRandom.call(this);
+            return (base + Math.sin(Date.now() * 0.0001) * 0.0000001) % 1;
+        };
+        
+        // Override Error stack traces to reduce V8 detection
+        const originalError = Error;
+        window.Error = function(...args) {
+            const error = new originalError(...args);
+            // Normalize stack trace format
+            if (error.stack) {
+                error.stack = error.stack.replace(/chrome-extension:\\/\\/[^\\s]+/g, 'chrome-extension://redacted');
+                error.stack = error.stack.replace(/moz-extension:\\/\\/[^\\s]+/g, 'moz-extension://redacted');
+            }
+            return error;
+        };
+        window.Error.prototype = originalError.prototype;
+        
+        // Override console methods to prevent detection through error handling
+        const originalConsoleError = console.error;
+        console.error = function(...args) {
+            // Filter out automation-related errors
+            const message = args.join(' ');
+            if (!message.includes('webdriver') && !message.includes('automation')) {
+                originalConsoleError.apply(this, args);
+            }
+        };
+        """
+        
+        # 2. CRITICAL: HTML Element Detection Protection (Addresses html_element detection)
+        html_element_protection_script = """
+        // Override HTMLElement properties that reveal automation
+        const originalGetAttribute = Element.prototype.getAttribute;
+        Element.prototype.getAttribute = function(name) {
+            const result = originalGetAttribute.call(this, name);
+            // Hide automation-related attributes
+            if (name === 'webdriver' || name === 'automation') {
+                return null;
+            }
+            return result;
+        };
+        
+        // Override document properties
+        Object.defineProperty(document, 'webdriver', {
+            get: () => undefined
+        });
+        
+        // Hide automation indicators in window object
+        delete window.webdriver;
+        delete window._phantom;
+        delete window.__nightmare;
+        delete window.callPhantom;
+        
+        // Override window.chrome to look more natural
+        if (!window.chrome) {
+            window.chrome = {
+                runtime: {
+                    onConnect: null,
+                    onMessage: null
+                },
+                app: {
+                    isInstalled: false
+                }
+            };
+        }
+        """
+        
+        # 3. ENHANCED: Canvas Fingerprinting Protection (More sophisticated)
         canvas_protection_script = f"""
-        // Very subtle canvas noise - barely detectable
+        // Advanced canvas fingerprinting protection
         const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
-        const canvasNoise = {session_canvas_noise * 0.1}; // Much smaller noise
+        const originalGetImageData = CanvasRenderingContext2D.prototype.getImageData;
+        const canvasNoise = {session_canvas_noise};
         
         HTMLCanvasElement.prototype.toDataURL = function(...args) {{
             const result = originalToDataURL.apply(this, args);
-            // Only add noise occasionally and very subtly
-            if (Math.random() < 0.1) {{ // Only 10% of the time
-                // Just modify the last few characters slightly
+            // Add consistent but subtle noise
+            if (result.length > 100) {{
                 const chars = result.split('');
-                if (chars.length > 10) {{
-                    const pos = chars.length - Math.floor(Math.random() * 5) - 1;
-                    if (chars[pos] && chars[pos].match(/[A-Za-z0-9]/)) {{
-                        chars[pos] = chars[pos] === 'A' ? 'B' : 'A';
-                    }}
+                const pos = Math.floor(chars.length * 0.8); // Modify near the end
+                if (chars[pos] && /[A-Za-z0-9]/.test(chars[pos])) {{
+                    chars[pos] = chars[pos] === 'A' ? 'B' : 'A';
                 }}
                 return chars.join('');
             }}
             return result;
         }};
+        
+        CanvasRenderingContext2D.prototype.getImageData = function(...args) {{
+            const result = originalGetImageData.apply(this, args);
+            // Add minimal noise to image data
+            if (result.data && result.data.length > 0) {{
+                for (let i = 0; i < result.data.length; i += 100) {{
+                    if (result.data[i] !== undefined) {{
+                        result.data[i] = Math.max(0, Math.min(255, result.data[i] + canvasNoise));
+                    }}
+                }}
+            }}
+            return result;
+        }};
         """
         
-        # 2. SUBTLE: WebRTC IP Leak Prevention (Less aggressive approach)
-        webrtc_protection_script = """
-        // More subtle WebRTC protection - don't completely break it
-        if (typeof RTCPeerConnection !== 'undefined') {
-            const originalRTCPeerConnection = window.RTCPeerConnection;
-            window.RTCPeerConnection = function(...args) {
-                const pc = new originalRTCPeerConnection(...args);
-                // Override createDataChannel to limit functionality
-                const originalCreateDataChannel = pc.createDataChannel;
-                pc.createDataChannel = function() {
-                    return null; // Quietly fail instead of throwing
+        # 4. CRITICAL: WebGL Fingerprinting Protection
+        webgl_protection_script = """
+        // WebGL fingerprinting protection
+        const originalGetContext = HTMLCanvasElement.prototype.getContext;
+        HTMLCanvasElement.prototype.getContext = function(contextType, ...args) {
+            const context = originalGetContext.apply(this, [contextType, ...args]);
+            
+            if (contextType === 'webgl' || contextType === 'webgl2') {
+                // Override WebGL parameters that are commonly fingerprinted
+                const originalGetParameter = context.getParameter;
+                context.getParameter = function(parameter) {
+                    // Return common/safe values for fingerprinting parameters
+                    switch (parameter) {
+                        case context.VENDOR:
+                            return 'Google Inc. (Intel)';
+                        case context.RENDERER:
+                            return 'ANGLE (Intel, Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_5_0, D3D11)';
+                        case context.VERSION:
+                            return 'WebGL 1.0 (OpenGL ES 2.0 Chromium)';
+                        case context.SHADING_LANGUAGE_VERSION:
+                            return 'WebGL GLSL ES 1.0 (OpenGL ES GLSL ES 1.0 Chromium)';
+                        default:
+                            return originalGetParameter.call(this, parameter);
+                    }
                 };
-                return pc;
-            };
-            window.webkitRTCPeerConnection = window.RTCPeerConnection;
-            window.mozRTCPeerConnection = window.RTCPeerConnection;
-        }
+            }
+            
+            return context;
+        };
         """
         
-        # 3. CRITICAL: Hardware Fingerprinting Spoofing (Easy detection vector)
+        # 5. ENHANCED: Hardware Fingerprinting Protection
         hardware_protection_script = f"""
-        // Spoof hardware characteristics
+        // Enhanced hardware fingerprinting protection
         Object.defineProperty(navigator, 'hardwareConcurrency', {{
-            get: function() {{ return {session_hardware_cores}; }}
+            get: function() {{ return {session_hardware_cores}; }},
+            configurable: true
         }});
         
         Object.defineProperty(navigator, 'deviceMemory', {{
-            get: function() {{ return {session_device_memory}; }}
+            get: function() {{ return {session_device_memory}; }},
+            configurable: true
         }});
         
-        // Spoof connection information
+        // Override platform information
+        Object.defineProperty(navigator, 'platform', {{
+            get: function() {{ return 'Win32'; }},
+            configurable: true
+        }});
+        
+        // Spoof connection information with realistic values
         Object.defineProperty(navigator, 'connection', {{
             get: function() {{
                 return {{
                     effectiveType: '4g',
                     downlink: 10,
                     rtt: 50,
-                    saveData: false
+                    saveData: false,
+                    type: 'wifi'
                 }};
-            }}
+            }},
+            configurable: true
         }});
         """
         
-        # 4. HIGH PRIORITY: Audio Context Fingerprinting Protection
+        # 6. CRITICAL: Audio Context Fingerprinting Protection (Enhanced)
         audio_protection_script = """
-        // Spoof AudioContext properties
+        // Enhanced audio context fingerprinting protection
         const originalAudioContext = window.AudioContext || window.webkitAudioContext;
         if (originalAudioContext) {
             const AudioContextProxy = new Proxy(originalAudioContext, {
                 construct: function(target, args) {
                     const instance = new target(...args);
                     
-                    // Override key fingerprinting properties
+                    // Override key fingerprinting properties with common values
                     Object.defineProperty(instance, 'sampleRate', {
-                        get: function() { return 44100; } // Standard sample rate
+                        get: function() { return 44100; },
+                        configurable: true
                     });
                     
                     Object.defineProperty(instance, 'baseLatency', {
-                        get: function() { return 0.01; } // Standard latency
+                        get: function() { return 0.01; },
+                        configurable: true
+                    });
+                    
+                    Object.defineProperty(instance, 'outputLatency', {
+                        get: function() { return 0.02; },
+                        configurable: true
                     });
                     
                     return instance;
@@ -260,29 +372,77 @@ async def apply_stealth_protections(browser_session):
         }
         """
         
-        # 5. DISABLED: Font Fingerprinting Protection (Too aggressive)
-        font_protection_script = """
-        // Font protection disabled - was causing detection
-        console.log('Font protection disabled for better stealth');
+        # 7. NEW: Screen and Viewport Fingerprinting Protection
+        screen_protection_script = """
+        // Screen fingerprinting protection
+        const screenWidth = screen.width;
+        const screenHeight = screen.height;
+        
+        Object.defineProperty(screen, 'availWidth', {
+            get: function() { return screenWidth; },
+            configurable: true
+        });
+        
+        Object.defineProperty(screen, 'availHeight', {
+            get: function() { return screenHeight - 40; }, // Account for taskbar
+            configurable: true
+        });
+        
+        Object.defineProperty(screen, 'colorDepth', {
+            get: function() { return 24; },
+            configurable: true
+        });
+        
+        Object.defineProperty(screen, 'pixelDepth', {
+            get: function() { return 24; },
+            configurable: true
+        });
         """
         
-        # Apply all protections
-        print("Applying canvas fingerprinting protection...")
+        # 8. NEW: Timezone and Locale Consistency
+        timezone_protection_script = """
+        // Ensure timezone consistency
+        const originalGetTimezoneOffset = Date.prototype.getTimezoneOffset;
+        Date.prototype.getTimezoneOffset = function() {
+            return 300; // EST timezone offset
+        };
+        
+        // Override Intl.DateTimeFormat to be consistent
+        const originalDateTimeFormat = Intl.DateTimeFormat;
+        Intl.DateTimeFormat = function(...args) {
+            if (args.length === 0) {
+                args = ['en-US'];
+            }
+            return new originalDateTimeFormat(...args);
+        };
+        """
+        
+        # Apply all protections in order of importance
+        print("Applying JavaScript engine protection...")
+        await page.add_init_script(js_engine_protection_script)
+        
+        print("Applying HTML element protection...")
+        await page.add_init_script(html_element_protection_script)
+        
+        print("Applying enhanced canvas protection...")
         await page.add_init_script(canvas_protection_script)
         
-        print("Applying WebRTC leak protection...")
-        await page.add_init_script(webrtc_protection_script)
+        print("Applying WebGL protection...")
+        await page.add_init_script(webgl_protection_script)
         
-        print("Applying hardware fingerprinting protection...")
+        print("Applying enhanced hardware protection...")
         await page.add_init_script(hardware_protection_script)
         
-        print("Applying audio context protection...")
+        print("Applying enhanced audio protection...")
         await page.add_init_script(audio_protection_script)
         
-        print("Applying font fingerprinting protection...")
-        await page.add_init_script(font_protection_script)
+        print("Applying screen protection...")
+        await page.add_init_script(screen_protection_script)
         
-        print("✅ All critical stealth protections applied successfully")
+        print("Applying timezone protection...")
+        await page.add_init_script(timezone_protection_script)
+        
+        print("✅ All advanced stealth protections applied successfully")
         
     except Exception as e:
         print(f"⚠️  Error applying stealth protections: {e}")
@@ -345,7 +505,7 @@ async def test_browser_stealth(
 		# Initialize patchright for stealth capabilities
 		patchright = await async_patchright().start()
 		
-		# Create browser session with stealth configuration
+		# Create browser session with advanced stealth configuration
 		browser_profile = BrowserProfile(
 			viewport_expansion=0,
 			user_data_dir=unique_user_data_dir,
@@ -359,25 +519,81 @@ async def test_browser_stealth(
                 "User-Agent": user_agent,
                 "Accept-Language": "en-US,en;q=0.9",
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-                "sec-ch-ua": '"Google Chrome";v="137", "Not:A-Brand";v="99"',
+                "Accept-Encoding": "gzip, deflate, br",
+                "sec-ch-ua": '"Google Chrome";v="123", "Not:A-Brand";v="99", "Chromium";v="123"',
                 "sec-ch-ua-mobile": "?0",
-                "sec-ch-ua-platform": '"Windows"'
+                "sec-ch-ua-platform": '"Windows"',
+                "sec-fetch-dest": "document",
+                "sec-fetch-mode": "navigate",
+                "sec-fetch-site": "none",
+                "sec-fetch-user": "?1",
+                "upgrade-insecure-requests": "1"
             },
             locale="en-US",
             timezone_id="America/New_York",
             device_scale_factor=1.0,
             is_mobile=False,
-            permissions=["geolocation"],
-            # Browser-level stealth improvements (no JavaScript detection)
+            permissions=["geolocation", "notifications"],
+            # Advanced browser-level stealth configuration
             extra_chromium_args=[
-                "--no-first-run",
-                "--disable-default-apps", 
+                # Core automation hiding
+                "--disable-blink-features=AutomationControlled",
+                "--exclude-switches=enable-automation",
+                "--disable-automation",
+                "--disable-extensions-file-access-check",
+                "--disable-extensions-http-throttling",
+                
+                # Reduce fingerprinting vectors
+                "--disable-webgl",
+                "--disable-webgl2",
+                "--disable-canvas-aa",
+                "--disable-2d-canvas-clip-aa",
+                "--disable-gl-drawing-for-tests",
+                "--disable-accelerated-2d-canvas",
+                "--disable-accelerated-jpeg-decoding",
+                "--disable-accelerated-mjpeg-decode",
+                "--disable-accelerated-video-decode",
+                
+                # Memory and performance fingerprinting
                 "--disable-dev-shm-usage",
-                "--disable-blink-features=AutomationControlled",  # Hide automation
-                "--exclude-switches=enable-automation",  # Remove automation flags
-                "--disable-extensions-except",  # Reduce extension fingerprinting
-                "--disable-plugins-discovery",  # Reduce plugin detection
-                "--no-sandbox"  # Sometimes helps with detection
+                "--disable-background-timer-throttling",
+                "--disable-renderer-backgrounding",
+                "--disable-backgrounding-occluded-windows",
+                "--disable-ipc-flooding-protection",
+                
+                # Plugin and extension fingerprinting
+                "--disable-plugins",
+                "--disable-plugins-discovery",
+                "--disable-default-apps",
+                "--disable-extensions-except",
+                "--disable-component-extensions-with-background-pages",
+                
+                # Network fingerprinting
+                "--disable-webrtc",
+                "--disable-webrtc-hw-decoding",
+                "--disable-webrtc-hw-encoding",
+                "--disable-webrtc-multiple-routes",
+                "--disable-webrtc-hw-vp8-encoding",
+                
+                # System integration fingerprinting
+                "--no-first-run",
+                "--no-default-browser-check",
+                "--disable-default-browser-check",
+                "--disable-popup-blocking",
+                "--disable-translate",
+                "--disable-sync",
+                
+                # Additional stealth flags
+                "--no-sandbox",
+                "--disable-web-security",
+                "--disable-features=VizDisplayCompositor",
+                "--disable-logging",
+                "--silent",
+                "--log-level=3",
+                
+                # Memory optimization
+                "--memory-pressure-off",
+                "--max_old_space_size=4096"
             ]
 		)
 		
