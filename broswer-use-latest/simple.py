@@ -166,74 +166,195 @@ async def apply_stealth_protections(browser_session):
         
         # 1. CRITICAL: JavaScript Engine Fingerprinting Protection (Addresses math_v8 and error_v8 detection)
         js_engine_protection_script = """
-        // Override Math object methods to reduce V8 engine fingerprinting
-        const originalMathRandom = Math.random;
-        Math.random = function() {
-            // Add slight variation to make it less predictable
-            const base = originalMathRandom.call(this);
-            return (base + Math.sin(Date.now() * 0.0001) * 0.0000001) % 1;
+        // Advanced JavaScript engine fingerprinting protection
+        
+        // Override Math object methods with more sophisticated spoofing
+        const originalMath = {
+            random: Math.random,
+            sin: Math.sin,
+            cos: Math.cos,
+            tan: Math.tan,
+            exp: Math.exp,
+            log: Math.log
         };
         
-        // Override Error stack traces to reduce V8 detection
+        // Spoof Math.random with consistent but natural variation
+        Math.random = function() {
+            const base = originalMath.random.call(this);
+            // Add deterministic but natural-looking variation
+            const seed = (Date.now() * 0.001) % 1000;
+            const variation = originalMath.sin(seed) * 0.0000001;
+            return (base + variation) % 1;
+        };
+        
+        // Override other Math functions to reduce engine fingerprinting
+        ['sin', 'cos', 'tan', 'exp', 'log'].forEach(method => {
+            Math[method] = function(x) {
+                const result = originalMath[method].call(this, x);
+                // Add tiny consistent variation to reduce precision fingerprinting
+                return result + (originalMath.sin(x * 1000) * 0.0000000001);
+            };
+        });
+        
+        // Advanced Error stack trace normalization
         const originalError = Error;
+        const originalErrorCaptureStackTrace = Error.captureStackTrace;
+        
         window.Error = function(...args) {
             const error = new originalError(...args);
-            // Normalize stack trace format
+            
+            // Normalize stack trace to look like regular Chrome
             if (error.stack) {
-                error.stack = error.stack.replace(/chrome-extension:\\/\\/[^\\s]+/g, 'chrome-extension://redacted');
-                error.stack = error.stack.replace(/moz-extension:\\/\\/[^\\s]+/g, 'moz-extension://redacted');
+                error.stack = error.stack
+                    .replace(/chrome-extension:\\/\\/[^\\s]+/g, 'chrome-extension://redacted')
+                    .replace(/moz-extension:\\/\\/[^\\s]+/g, 'moz-extension://redacted')
+                    .replace(/\\/usr\\/bin\\/google-chrome[^\\s]*/g, 'chrome')
+                    .replace(/HeadlessChrome/g, 'Chrome')
+                    .replace(/automation/gi, 'navigation');
             }
             return error;
         };
-        window.Error.prototype = originalError.prototype;
         
-        // Override console methods to prevent detection through error handling
-        const originalConsoleError = console.error;
+        // Preserve Error prototype and static methods
+        window.Error.prototype = originalError.prototype;
+        window.Error.captureStackTrace = originalErrorCaptureStackTrace;
+        
+        // Override Function.toString to hide modifications
+        const originalFunctionToString = Function.prototype.toString;
+        Function.prototype.toString = function() {
+            if (this === Math.random || this === Math.sin || this === Math.cos || 
+                this === Math.tan || this === Math.exp || this === Math.log) {
+                return `function ${this.name}() { [native code] }`;
+            }
+            return originalFunctionToString.call(this);
+        };
+        
+        // Hide console modifications
+        const originalConsole = {
+            error: console.error,
+            warn: console.warn,
+            log: console.log
+        };
+        
         console.error = function(...args) {
-            // Filter out automation-related errors
             const message = args.join(' ');
-            if (!message.includes('webdriver') && !message.includes('automation')) {
-                originalConsoleError.apply(this, args);
+            if (!message.includes('webdriver') && !message.includes('automation') && 
+                !message.includes('HeadlessChrome')) {
+                originalConsole.error.apply(this, args);
             }
         };
         """
         
         # 2. CRITICAL: HTML Element Detection Protection (Addresses html_element detection)
         html_element_protection_script = """
-        // Override HTMLElement properties that reveal automation
-        const originalGetAttribute = Element.prototype.getAttribute;
+        // Advanced HTML element and DOM protection
+        
+        // Override Element prototype methods comprehensively
+        const originalElementMethods = {
+            getAttribute: Element.prototype.getAttribute,
+            setAttribute: Element.prototype.setAttribute,
+            hasAttribute: Element.prototype.hasAttribute,
+            removeAttribute: Element.prototype.removeAttribute,
+            getAttributeNames: Element.prototype.getAttributeNames
+        };
+        
         Element.prototype.getAttribute = function(name) {
-            const result = originalGetAttribute.call(this, name);
-            // Hide automation-related attributes
-            if (name === 'webdriver' || name === 'automation') {
+            const result = originalElementMethods.getAttribute.call(this, name);
+            // Hide all automation-related attributes
+            if (['webdriver', 'automation', 'headless', 'phantom', 'nightmare'].includes(name.toLowerCase())) {
                 return null;
             }
             return result;
         };
         
-        // Override document properties
-        Object.defineProperty(document, 'webdriver', {
-            get: () => undefined
+        Element.prototype.hasAttribute = function(name) {
+            if (['webdriver', 'automation', 'headless', 'phantom', 'nightmare'].includes(name.toLowerCase())) {
+                return false;
+            }
+            return originalElementMethods.hasAttribute.call(this, name);
+        };
+        
+        Element.prototype.getAttributeNames = function() {
+            const names = originalElementMethods.getAttributeNames.call(this);
+            return names.filter(name => 
+                !['webdriver', 'automation', 'headless', 'phantom', 'nightmare'].includes(name.toLowerCase())
+            );
+        };
+        
+        // Override document properties comprehensively
+        const documentDescriptors = {
+            webdriver: { get: () => undefined, configurable: true },
+            $cdc_asdjflasutopfhvcZLmcfl_: { get: () => undefined, configurable: true },
+            $chrome_asyncScriptInfo: { get: () => undefined, configurable: true }
+        };
+        
+        Object.keys(documentDescriptors).forEach(prop => {
+            try {
+                Object.defineProperty(document, prop, documentDescriptors[prop]);
+            } catch (e) {}
         });
         
-        // Hide automation indicators in window object
-        delete window.webdriver;
-        delete window._phantom;
-        delete window.__nightmare;
-        delete window.callPhantom;
+        // Comprehensive window object cleanup
+        const automationProps = [
+            'webdriver', '_phantom', '__nightmare', 'callPhantom', '_Selenium_IDE_Recorder',
+            'document.__webdriver_script_fn', 'document.$cdc_asdjflasutopfhvcZLmcfl_',
+            'document.$chrome_asyncScriptInfo', '__webdriver_evaluate', '__selenium_evaluate',
+            '__webdriver_script_function', '__webdriver_script_func', '__webdriver_script_fn',
+            '__fxdriver_evaluate', '__driver_unwrapped', '__webdriver_unwrapped',
+            '__driver_evaluate', '__selenium_unwrapped', '__fxdriver_unwrapped'
+        ];
         
-        // Override window.chrome to look more natural
-        if (!window.chrome) {
-            window.chrome = {
-                runtime: {
-                    onConnect: null,
-                    onMessage: null
-                },
-                app: {
-                    isInstalled: false
-                }
-            };
+        automationProps.forEach(prop => {
+            try {
+                delete window[prop];
+                Object.defineProperty(window, prop, {
+                    get: () => undefined,
+                    configurable: true
+                });
+            } catch (e) {}
+        });
+        
+        // Enhanced window.chrome spoofing
+        if (!window.chrome || typeof window.chrome !== 'object') {
+            window.chrome = {};
         }
+        
+        // Add realistic Chrome API structure
+        Object.assign(window.chrome, {
+            runtime: {
+                onConnect: null,
+                onMessage: null,
+                connect: function() { return null; },
+                sendMessage: function() { return null; }
+            },
+            app: {
+                isInstalled: false,
+                getDetails: function() { return null; }
+            },
+            csi: function() { return {}; },
+            loadTimes: function() { 
+                return {
+                    requestTime: Date.now() / 1000 - Math.random(),
+                    startLoadTime: Date.now() / 1000 - Math.random(),
+                    commitLoadTime: Date.now() / 1000 - Math.random(),
+                    finishDocumentLoadTime: Date.now() / 1000 - Math.random(),
+                    finishLoadTime: Date.now() / 1000 - Math.random(),
+                    firstPaintTime: Date.now() / 1000 - Math.random(),
+                    firstPaintAfterLoadTime: 0,
+                    navigationType: 'Other'
+                };
+            }
+        });
+        
+        // Override Object.getOwnPropertyDescriptor to hide modifications
+        const originalGetOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
+        Object.getOwnPropertyDescriptor = function(obj, prop) {
+            const descriptor = originalGetOwnPropertyDescriptor(obj, prop);
+            if (automationProps.includes(prop) && obj === window) {
+                return undefined;
+            }
+            return descriptor;
+        };
         """
         
         # 3. ENHANCED: Canvas Fingerprinting Protection (More sophisticated)
@@ -399,7 +520,74 @@ async def apply_stealth_protections(browser_session):
         });
         """
         
-        # 8. NEW: Timezone and Locale Consistency
+        # 8. NEW: DOMRect and Emoji Rendering Protection
+        domrect_protection_script = """
+        // DOMRect and emoji rendering consistency protection
+        
+        // Override getBoundingClientRect for consistent measurements
+        const originalGetBoundingClientRect = Element.prototype.getBoundingClientRect;
+        Element.prototype.getBoundingClientRect = function() {
+            const rect = originalGetBoundingClientRect.call(this);
+            
+            // Add slight consistent variation to avoid perfect measurements
+            const variation = 0.001; // Very small variation
+            
+            return {
+                x: rect.x + (Math.sin(rect.x * 1000) * variation),
+                y: rect.y + (Math.cos(rect.y * 1000) * variation),
+                width: rect.width + (Math.sin(rect.width * 1000) * variation),
+                height: rect.height + (Math.cos(rect.height * 1000) * variation),
+                top: rect.top + (Math.sin(rect.top * 1000) * variation),
+                right: rect.right + (Math.cos(rect.right * 1000) * variation),
+                bottom: rect.bottom + (Math.sin(rect.bottom * 1000) * variation),
+                left: rect.left + (Math.cos(rect.left * 1000) * variation),
+                toJSON: rect.toJSON
+            };
+        };
+        
+        // Override getClientRects for consistency
+        const originalGetClientRects = Element.prototype.getClientRects;
+        Element.prototype.getClientRects = function() {
+            const rects = originalGetClientRects.call(this);
+            const variation = 0.001;
+            
+            // Apply same variation to all rects
+            for (let i = 0; i < rects.length; i++) {
+                const rect = rects[i];
+                Object.defineProperties(rect, {
+                    x: { value: rect.x + (Math.sin(rect.x * 1000) * variation), enumerable: true },
+                    y: { value: rect.y + (Math.cos(rect.y * 1000) * variation), enumerable: true },
+                    width: { value: rect.width + (Math.sin(rect.width * 1000) * variation), enumerable: true },
+                    height: { value: rect.height + (Math.cos(rect.height * 1000) * variation), enumerable: true }
+                });
+            }
+            
+            return rects;
+        };
+        
+        // Override Range.getBoundingClientRect for consistency
+        if (window.Range && Range.prototype.getBoundingClientRect) {
+            const originalRangeGetBoundingClientRect = Range.prototype.getBoundingClientRect;
+            Range.prototype.getBoundingClientRect = function() {
+                const rect = originalRangeGetBoundingClientRect.call(this);
+                const variation = 0.001;
+                
+                return {
+                    x: rect.x + (Math.sin(rect.x * 1000) * variation),
+                    y: rect.y + (Math.cos(rect.y * 1000) * variation),
+                    width: rect.width + (Math.sin(rect.width * 1000) * variation),
+                    height: rect.height + (Math.cos(rect.height * 1000) * variation),
+                    top: rect.top + (Math.sin(rect.top * 1000) * variation),
+                    right: rect.right + (Math.cos(rect.right * 1000) * variation),
+                    bottom: rect.bottom + (Math.sin(rect.bottom * 1000) * variation),
+                    left: rect.left + (Math.cos(rect.left * 1000) * variation),
+                    toJSON: rect.toJSON
+                };
+            };
+        }
+        """
+        
+        # 9. NEW: Timezone and Locale Consistency
         timezone_protection_script = """
         // Ensure timezone consistency
         const originalGetTimezoneOffset = Date.prototype.getTimezoneOffset;
@@ -414,6 +602,14 @@ async def apply_stealth_protections(browser_session):
                 args = ['en-US'];
             }
             return new originalDateTimeFormat(...args);
+        };
+        
+        // Override Date.prototype.toString for consistency
+        const originalDateToString = Date.prototype.toString;
+        Date.prototype.toString = function() {
+            const result = originalDateToString.call(this);
+            // Ensure consistent timezone representation
+            return result.replace(/GMT[+-]\d{4}.*$/, 'GMT-0500 (Eastern Daylight Time)');
         };
         """
         
@@ -438,6 +634,9 @@ async def apply_stealth_protections(browser_session):
         
         print("Applying screen protection...")
         await page.add_init_script(screen_protection_script)
+        
+        print("Applying DOMRect protection...")
+        await page.add_init_script(domrect_protection_script)
         
         print("Applying timezone protection...")
         await page.add_init_script(timezone_protection_script)
@@ -536,23 +735,25 @@ async def test_browser_stealth(
             permissions=["geolocation", "notifications"],
             # Advanced browser-level stealth configuration
             extra_chromium_args=[
-                # Core automation hiding
+                # Core automation hiding (CRITICAL)
                 "--disable-blink-features=AutomationControlled",
                 "--exclude-switches=enable-automation",
                 "--disable-automation",
                 "--disable-extensions-file-access-check",
                 "--disable-extensions-http-throttling",
                 
-                # Reduce fingerprinting vectors
-                "--disable-webgl",
-                "--disable-webgl2",
+                # Anti-headless detection (CRITICAL)
+                "--disable-headless-mode",
+                "--window-size=1366,768",
+                "--start-maximized",
+                "--disable-gpu-sandbox",
+                "--enable-webgl",
+                "--enable-3d-apis",
+                
+                # Reduce fingerprinting vectors but keep some enabled for realism
                 "--disable-canvas-aa",
                 "--disable-2d-canvas-clip-aa",
                 "--disable-gl-drawing-for-tests",
-                "--disable-accelerated-2d-canvas",
-                "--disable-accelerated-jpeg-decoding",
-                "--disable-accelerated-mjpeg-decode",
-                "--disable-accelerated-video-decode",
                 
                 # Memory and performance fingerprinting
                 "--disable-dev-shm-usage",
@@ -562,14 +763,12 @@ async def test_browser_stealth(
                 "--disable-ipc-flooding-protection",
                 
                 # Plugin and extension fingerprinting
-                "--disable-plugins",
                 "--disable-plugins-discovery",
                 "--disable-default-apps",
                 "--disable-extensions-except",
                 "--disable-component-extensions-with-background-pages",
                 
-                # Network fingerprinting
-                "--disable-webrtc",
+                # Network fingerprinting (but keep some WebRTC for realism)
                 "--disable-webrtc-hw-decoding",
                 "--disable-webrtc-hw-encoding",
                 "--disable-webrtc-multiple-routes",
@@ -583,17 +782,27 @@ async def test_browser_stealth(
                 "--disable-translate",
                 "--disable-sync",
                 
+                # Realistic browser behavior
+                "--enable-features=NetworkService,NetworkServiceLogging",
+                "--enable-automation=false",
+                "--disable-blink-features=AutomationControlled",
+                "--user-data-dir-name=Default",
+                
                 # Additional stealth flags
                 "--no-sandbox",
-                "--disable-web-security",
-                "--disable-features=VizDisplayCompositor",
+                "--disable-features=VizDisplayCompositor,TranslateUI",
                 "--disable-logging",
                 "--silent",
                 "--log-level=3",
                 
                 # Memory optimization
                 "--memory-pressure-off",
-                "--max_old_space_size=4096"
+                "--max_old_space_size=4096",
+                
+                # Realistic Chrome flags
+                "--enable-features=VaapiVideoDecoder",
+                "--disable-features=MediaRouter",
+                "--disable-component-update"
             ]
 		)
 		
