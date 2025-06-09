@@ -359,7 +359,7 @@ async def test_browser_stealth(
                 "User-Agent": user_agent,
                 "Accept-Language": "en-US,en;q=0.9",
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-                "sec-ch-ua": '"Google Chrome";v="123", "Not:A-Brand";v="99"',
+                "sec-ch-ua": '"Google Chrome";v="137", "Not:A-Brand";v="99"',
                 "sec-ch-ua-mobile": "?0",
                 "sec-ch-ua-platform": '"Windows"'
             },
@@ -419,14 +419,12 @@ async def test_browser_stealth(
 				if hasattr(result, 'history') and result.history:
 					# Get the last action's result if available
 					last_action = result.history[-1] if result.history else None
-					if last_action and hasattr(last_action, 'extracted_content'):
-						serializable_result = clean_agent_response(last_action.extracted_content)
-					elif last_action and hasattr(last_action, 'result'):
-						serializable_result = clean_agent_response(str(last_action.result))
+					if last_action and hasattr(last_action, 'result'):
+						serializable_result = str(last_action.result)
 					else:
 						serializable_result = f"Agent completed {len(result.history)} actions"
 				else:
-					serializable_result = clean_agent_response(str(result))
+					serializable_result = str(result)
 			except Exception as e:
 				print(f"Error extracting result: {e}")
 				serializable_result = "Test completed but result extraction failed"
