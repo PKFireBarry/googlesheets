@@ -93,38 +93,44 @@ async def navigate_to_application_form(tab):
     This handles cases where the initial URL is just a job description.
     """
     print("Searching for the application form...")
-    apply_keywords = ["apply now", "apply", "submit your application", "start application"]
+    apply_keywords = [
+        "apply for this job",
+        "apply to this job",
+        "apply now",
+        "apply",
+        "submit your application",
+        "start application",
+    ]
     for i in range(3):  # Try up to 3 times to find and navigate
         await handle_cookie_banner(tab) # Handle cookies before every attempt
         current_url = tab.url
-        found_button = False
+        found_and_navigated = False
         for keyword in apply_keywords:
             try:
-                # Use nodriver's powerful find feature, searching for buttons or links
-                apply_button = await tab.find(keyword, best_match=True, timeout=3)
+                # Use a more specific XPath to find clickable buttons or links containing the keyword text
+                xpath_selector = f"//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{keyword}')] | //a[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{keyword}')]"
+                apply_button = await tab.find(by='xpath', value=xpath_selector, timeout=3)
+                
                 if apply_button:
-                    print(f"Found '{keyword}' button/link. Clicking it...")
+                    element_text = await apply_button.text
+                    print(f"Found button/link with text: '{element_text}'. Clicking it...")
                     await apply_button.mouse_click()
                     await tab.sleep(3)  # Wait for potential page navigation
 
                     if tab.url != current_url:
                         print(f"Successfully navigated to new URL: {tab.url}")
-                        # We've moved to a new page, which is likely the form. We can continue the loop
-                        # on the new page to handle multi-step "apply" processes.
-                        found_button = True
-                        break  # Break from the inner keyword loop to restart search on the new page
+                        found_and_navigated = True
+                        break # Break from the inner keyword loop to restart search on the new page
                     else:
-                        print("URL did not change. Assuming form is on this page (e.g., in a modal).")
-                        # The form is likely now visible, so we can stop searching.
-                        return
+                        print("URL did not change. Assuming form is now visible (e.g., in a modal).")
+                        return # Exit, we're done.
             except Exception:
-                # Element not found, just means we try the next keyword.
-                continue
+                continue # Not found, try next keyword
         
-        if not found_button:
+        if not found_and_navigated:
             # If we looped through all keywords and didn't navigate, we're probably on the right page.
-            print("No more 'Apply' buttons found. Assuming form is now visible.")
-            break
+            print("Completed a full keyword search, but did not navigate to a new page. Assuming form is now visible.")
+            break # Exit the outer loop
 
 async def get_llm_response(llm, prompt_text: str, user_data: UserData):
     """Generates a response from the LLM for a given prompt."""
