@@ -69,10 +69,9 @@ async def fill_text_field(tab, keywords, value):
 
 async def handle_cookie_banner(tab):
     """
-    Finds and clicks common cookie consent buttons.
+    Finds and clicks common cookie consent buttons, then waits for page to stabilize.
     """
     print("Checking for cookie consent banners...")
-    # Prioritize accepting, as rejecting can sometimes break site functionality
     accept_keywords = ["accept all", "allow all", "i agree", "accept"]
     
     for keyword in accept_keywords:
@@ -81,10 +80,24 @@ async def handle_cookie_banner(tab):
             if cookie_button:
                 print(f"Found and clicking cookie button: '{keyword}'")
                 await cookie_button.mouse_click()
-                await tab.sleep(1.5) # Wait for banner to disappear
-                return True # Clicked a button
+                
+                # Wait for the page to process the click and potentially reload.
+                print("Waiting for page to stabilize after cookie consent...")
+                try:
+                    # Wait for the main load event to fire, indicating a page reload/update is complete.
+                    await tab.wait_for('Page.loadEventFired', timeout=10)
+                    print("Page load event detected.")
+                except asyncio.TimeoutError:
+                    # If the page doesn't fully reload, it's fine. We still need to wait.
+                    print("Page load event did not fire, waiting for animations.")
+                
+                # Add a final sleep for animations to finish.
+                await tab.sleep(2) 
+                print("Page should now be stable.")
+                return True # A button was clicked and we waited.
         except Exception:
-            continue # Not found, try next keyword
+            # This exception is for tab.find failing, which is normal.
+            continue # Keyword not found, try the next one.
             
     print("No cookie banner found or handled.")
     return False # No button was clicked
@@ -194,6 +207,12 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
 
         # --- Handle Cookie Banner on Initial Load ---
         await handle_cookie_banner(tab)
+
+        # Re-acquire a handle to the active tab, in case the cookie banner opened a new one.
+        if browser.tabs:
+            tab = browser.tabs[-1] # Assume the last tab is the active one.
+            await tab.bring_to_front()
+            print("Switched to the most recent tab to ensure it's active.")
 
         # --- Navigate to the actual application form using LLM ---
         tasks[task_id].update({"status": "processing", "message": "Using LLM to find application form..."})

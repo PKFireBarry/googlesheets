@@ -53,10 +53,13 @@ Represents a single browser tab. This is where most interactions happen.
 
 ### Navigation and Page Interaction
 
+- **`await tab.get(url)`**: Navigates the current tab to a new URL.
 - **`await tab.reload()`**: Reloads the current page.
 - **`await tab.back()`**: Navigates back in the session history.
 - **`await tab.forward()`**: Navigates forward in the session history.
 - **`await tab.close()`**: Closes the tab.
+- **`await tab.bring_to_front()`**: Focuses the tab, making it the active one.
+- **`await tab.wait_for(event, timeout=30)`**: Pauses execution until a specific CDP event occurs (e.g., `'Page.loadEventFired'`).
 
 ### Element Finding
 
@@ -65,6 +68,9 @@ Represents a single browser tab. This is where most interactions happen.
 - **`await tab.select(selector, timeout=10)`**: Finds a single element by CSS selector.
 - **`await tab.select_all(selector)`**: Finds a list of all elements matching a CSS selector.
 - **`await tab.xpath(query)`**: Finds elements using an XPath query.
+- **`await tab.evaluate(js_expression)`**: Executes a JavaScript expression in the page context and returns the result.
+- **`await tab.send(cdp_command, **params)`**: Sends a raw Chrome DevTools Protocol command and returns the result. This is for advanced use.
+- **`await tab.sleep(seconds)`**: Pauses execution for a fixed duration.
 
 ### Mouse and Keyboard
 
@@ -82,7 +88,6 @@ Represents a single browser tab. This is where most interactions happen.
 
 - **`await tab.get_content()`**: Returns the full HTML content of the page.
 - **`await tab.save_screenshot(path)`**: Saves a screenshot of the current viewport to the specified file path. **It does not return data directly.**
-- **`await tab.evaluate(js_expression)`**: Executes a JavaScript expression in the page context and returns the result.
 
 ---
 
