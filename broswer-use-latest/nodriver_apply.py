@@ -51,9 +51,9 @@ async def fill_text_field(tab, keywords, value):
         selector_str = ", ".join(selectors)
         label_selector = f"//label[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{keywords[0]}')]/following-sibling::input"
         
-        element = await tab.select(selector_str, best_match=True, timeout=2)
+        element = await tab.select(selector_str, timeout=2)
         if not element:
-            element = await tab.select(label_selector, best_match=True, timeout=2)
+            element = await tab.select(label_selector, timeout=2)
 
         if element:
             print(f"Found field for '{keywords[0]}' and filling it.")
@@ -200,7 +200,7 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
 
         if temp_file_path:
             # Find the file input on the page and upload
-            file_input = await tab.select('input[type=file]', best_match=True, timeout=5)
+            file_input = await tab.select('input[type=file]', timeout=5)
             if file_input:
                 print(f"Found file input. Uploading resume from {temp_file_path}...")
                 await file_input.upload(temp_file_path)
@@ -247,7 +247,7 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
         tasks[task_id].update({"status": "failed", "message": error_message})
     finally:
         if browser:
-            await browser.stop()
+            browser.stop()
         if temp_file_path and os.path.exists(temp_file_path):
             os.remove(temp_file_path)
 
