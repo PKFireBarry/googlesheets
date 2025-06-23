@@ -112,16 +112,18 @@ async def use_llm_to_navigate(tab, llm: ChatGoogleGenerativeAI):
     for i in range(4):
         print(f"Analyzing view {i+1}...")
         try:
-            # Take screenshot directly into memory using CDP
-            screenshot_response = await tab.send("Page.captureScreenshot", {'format': 'png'})
-
-            # Add a check to ensure the screenshot was captured
-            if not screenshot_response or 'data' not in screenshot_response:
-                print("Warning: Failed to capture screenshot or response was empty. Retrying...")
-                await tab.sleep(2) # Wait a bit before the next attempt
-                continue
-
-            img_base64 = screenshot_response['data']
+            # Take screenshot using the correct method
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                temp_path = tmp.name
+            
+            await tab.save_screenshot(temp_path)
+            
+            # Read into memory and clean up immediately
+            with open(temp_path, 'rb') as f:
+                screenshot_data = f.read()
+            os.remove(temp_path)
+            
+            img_base64 = base64.b64encode(screenshot_data).decode('utf-8')
 
             # More advanced prompt that can signal a scroll
             prompt = [
