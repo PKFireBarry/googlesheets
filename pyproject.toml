@@ -1,0 +1,15 @@
+dependencies = [
+    "browser-use",
+    "fastapi",
+    "uvicorn",
+    "python-dotenv",
+    "langchain-google-genai",
+    "pydantic",
+    "aiofiles",
+    "requests",
+    "beautifulsoup4",
+    "patchright",
+    "nodriver"
+]
+
+[tool.poetry.scripts] 
