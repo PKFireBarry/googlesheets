@@ -99,8 +99,9 @@ async def use_llm_to_navigate(tab, llm: ChatGoogleGenerativeAI):
     for i in range(4):
         print(f"Analyzing view {i+1}...")
         try:
-            screenshot_data = await tab.get_screenshot()
-            img_base64 = base64.b64encode(screenshot_data).decode('utf-8')
+            # Take screenshot directly into memory using CDP
+            screenshot_response = await tab.send("Page.captureScreenshot", {'format': 'png'})
+            img_base64 = screenshot_response['data']
 
             # More advanced prompt that can signal a scroll
             prompt = [
@@ -175,7 +176,7 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
     try:
         # --- Setup Browser and LLM ---
         tasks[task_id].update({"status": "processing", "message": "Initializing browser and LLM..."})
-        llm = ChatGoogleGenerativeAI(model='gemini-1.5-flash', api_key=api_key) # Use a vision-capable model
+        llm = ChatGoogleGenerativeAI(model='gemini-2.5-flash-preview-05-20', api_key=api_key) # Use a vision-capable model
         browser = await uc.start(
             headless=False, 
             browser_args=['--no-sandbox', '--window-size=1920,1080']
@@ -231,7 +232,8 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
             file_input = await tab.select('input[type=file]', timeout=5)
             if file_input:
                 print(f"Found file input. Uploading resume from {temp_file_path}...")
-                await file_input.upload(temp_file_path)
+                # CORRECTED: Use send_file method for elements
+                await file_input.send_file(temp_file_path)
                 await tab.sleep(1)
             else:
                 print("Could not find a file input for the resume.")
