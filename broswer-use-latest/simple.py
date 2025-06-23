@@ -666,11 +666,17 @@ async def run_task(
     Implements the polling pattern instead of waiting for task completion
     """
     try:
+        print(f"=== DEBUG: /run-task endpoint called ===")
+        print(f"DEBUG: Received company: {company}")
+        print(f"DEBUG: Received apiKey: {apiKey[:10] if apiKey else 'None'}...")
+        print(f"DEBUG: LINKEDIN_RUN_TASK_URL: {LINKEDIN_RUN_TASK_URL}")
+        
         # Check if company is provided
         if not company:
+            print("DEBUG: Company name is missing!")
             raise HTTPException(status_code=400, detail="Company name is required")
         
-        print(f"Looking up LinkedIn HR contacts for company: {company}")
+        print(f"DEBUG: Looking up LinkedIn HR contacts for company: {company}")
         
         # Define system prompt for better guidance of the automation
         system_prompt = """You are a professional LinkedIn researcher. Your task is to find HR contacts at companies using Google and LinkedIn.
@@ -716,7 +722,8 @@ Return the Results of the LinkedIn profile found
 Compile and return all collected information about the HR employee(s) and any available company HR contact details.
 """
 
-        print('Starting LinkedIn search with task')
+        print('DEBUG: Starting LinkedIn search with task')
+        print(f'DEBUG: Task length: {len(task)} characters')
         
         # Prepare the request body
         request_body = {
@@ -730,35 +737,73 @@ Compile and return all collected information about the HR employee(s) and any av
         # Add API key if provided
         if gemini_api_key:
             request_body["api_key"] = gemini_api_key.strip()
-            print(f'Using provided API key for the task: {gemini_api_key[:5]}...')
+            print(f'DEBUG: Using provided API key for the task: {gemini_api_key[:5]}...')
         else:
-            print('No API key provided, relying on bore.pub default')
+            print('DEBUG: No API key provided, relying on bore.pub default')
+        
+        print(f'DEBUG: Request body keys: {list(request_body.keys())}')
+        print(f'DEBUG: Request body size: {len(str(request_body))} characters')
+        print(f'DEBUG: About to POST to: {LINKEDIN_RUN_TASK_URL}')
         
         # Create the fetch request to bore.pub to START the task
-        response = requests.post(
-            LINKEDIN_RUN_TASK_URL,
-            headers={'Content-Type': 'application/json'},
-            json=request_body
-        )
+        try:
+            response = requests.post(
+                LINKEDIN_RUN_TASK_URL,
+                headers={'Content-Type': 'application/json'},
+                json=request_body,
+                timeout=30  # Add timeout
+            )
+            
+            print(f'DEBUG: Response status code: {response.status_code}')
+            print(f'DEBUG: Response headers: {dict(response.headers)}')
+            print(f'DEBUG: Response text: {response.text}')
+            
+        except requests.exceptions.RequestException as req_error:
+            print(f'DEBUG: Request exception occurred: {req_error}')
+            print(f'DEBUG: Request exception type: {type(req_error)}')
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to connect to bore.pub service: {str(req_error)}"
+            )
         
         if not response.ok:
-            print(f"LinkedIn lookup failed to start: {response.text}")
+            print(f"DEBUG: LinkedIn lookup failed to start: {response.text}")
+            print(f"DEBUG: Response status: {response.status_code}")
+            print(f"DEBUG: Response reason: {response.reason}")
+            
+            # Try to get more detailed error info
+            try:
+                error_json = response.json()
+                print(f"DEBUG: Error JSON: {error_json}")
+            except:
+                print("DEBUG: Could not parse error response as JSON")
+            
             raise HTTPException(
                 status_code=response.status_code,
                 detail=f"LinkedIn lookup failed to start: {response.text}"
             )
         
         # Get the task information with the task ID
-        task_info = response.json()
-        print('Task started with info:', task_info)
+        try:
+            task_info = response.json()
+            print('DEBUG: Task started with info:', task_info)
+        except Exception as json_error:
+            print(f'DEBUG: Failed to parse response JSON: {json_error}')
+            print(f'DEBUG: Raw response: {response.text}')
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to parse response from bore.pub service: {str(json_error)}"
+            )
         
         if not task_info or not task_info.get('task_id'):
+            print(f'DEBUG: Invalid task_info structure: {task_info}')
             raise HTTPException(
                 status_code=500,
                 detail="Failed to get task ID from service"
             )
         
         task_id = task_info['task_id']
+        print(f'DEBUG: Got task_id: {task_id}')
         
         # Set up a background timeout to stop the task if it runs too long
         async def stop_task_after_timeout():
@@ -769,27 +814,34 @@ Compile and return all collected information about the HR employee(s) and any av
                 if status_response.ok:
                     status_data = status_response.json()
                     if status_data.get('status') == 'running':
-                        print(f"Task {task_id} is taking too long, stopping it automatically...")
+                        print(f"DEBUG: Task {task_id} is taking too long, stopping it automatically...")
                         await stop_linkedin_task(task_id)
             except Exception as stop_error:
-                print(f"Error in timeout handler for task {task_id}: {stop_error}")
+                print(f"DEBUG: Error in timeout handler for task {task_id}: {stop_error}")
         
         # Start the timeout task in the background
         asyncio.create_task(stop_task_after_timeout())
         
         # Return the task ID for polling
-        return JSONResponse(content={
+        response_data = {
             "task_id": task_id,
             "taskId": task_id,
             "status": "running",
             "message": "LinkedIn search task started successfully",
             "company": company
-        })
+        }
         
-    except HTTPException:
+        print(f'DEBUG: Returning response: {response_data}')
+        return JSONResponse(content=response_data)
+        
+    except HTTPException as http_error:
+        print(f'DEBUG: HTTPException occurred: {http_error.detail}')
         raise
     except Exception as error:
-        print(f'Error initiating LinkedIn HR lookup: {error}')
+        print(f'DEBUG: Unexpected error initiating LinkedIn HR lookup: {error}')
+        print(f'DEBUG: Error type: {type(error)}')
+        import traceback
+        print(f'DEBUG: Traceback: {traceback.format_exc()}')
         raise HTTPException(
             status_code=500,
             detail=str(error)
