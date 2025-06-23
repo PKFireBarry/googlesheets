@@ -33,6 +33,14 @@ app = FastAPI()
 # In-memory task storage for status tracking
 tasks = {}
 
+# LinkedIn Lookup Service URLs (Bore.pub endpoints)
+LINKEDIN_RUN_TASK_URL = "http://bore.pub:7777/run-task"
+LINKEDIN_STOP_TASK_URL = "http://bore.pub:7777/stop-task"
+LINKEDIN_TASK_STATUS_URL = "http://bore.pub:7777/task-status"
+
+# Maximum time (in milliseconds) a task should run before we force stop it
+MAX_TASK_RUNTIME = 95000  # 1.5 minutes
+
 # Common user agents for better stealth
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
@@ -371,7 +379,7 @@ async def apply_stealth_protections(browser_session):
                 const chars = result.split('');
                 const pos = Math.floor(chars.length * 0.8); // Modify near the end
                 if (chars[pos] && /[A-Za-z0-9]/.test(chars[pos])) {{
-                    chars[pos] = chars[pos] === 'A' ? 'B' : 'A';
+                        chars[pos] = chars[pos] === 'A' ? 'B' : 'A';
                 }}
                 return chars.join('');
             }}
@@ -646,6 +654,253 @@ async def apply_stealth_protections(browser_session):
     except Exception as e:
         print(f"⚠️  Error applying stealth protections: {e}")
         # Continue anyway - don't fail the entire process
+
+@app.post('/run-task')
+async def run_task(
+    company: str = Form(...),
+    apiKey: str = Form(None)
+):
+    """
+    POST handler for LinkedIn lookup
+    This bypasses CORS using the bore.pub service to scrape LinkedIn data
+    Implements the polling pattern instead of waiting for task completion
+    """
+    try:
+        # Check if company is provided
+        if not company:
+            raise HTTPException(status_code=400, detail="Company name is required")
+        
+        print(f"Looking up LinkedIn HR contacts for company: {company}")
+        
+        # Define system prompt for better guidance of the automation
+        system_prompt = """You are a professional LinkedIn researcher. Your task is to find HR contacts at companies using Google and LinkedIn.
+Follow the instructions carefully and meticulously. If you encounter any obstacles, try alternative approaches to find the information.
+Focus specifically on finding HR personnel with clear job titles related to Human Resources, Recruitment, or Talent Acquisition.
+Extract profile details accurately, especially LinkedIn profile URLs and contact information."""
+        
+        # Create the LinkedIn search task for the bore.pub service
+        task = f"""
+Go to Google.com (always start with this step)
+Search for the company {company} on LinkedIn.
+
+Check if the Company has a LinkedIn Page
+    If no LinkedIn page is found, return to Google.com and exit the process.
+    If a LinkedIn page is found, click on the company page.
+
+Navigate to the People Section
+    Locate the People section of the company's LinkedIn page.
+    Scroll down to the people cards on the page to find people that work in HR-related roles.
+    Identify profiles of employees (excluding accounts labeled as "LinkedIn Member", as these are private).
+  
+Find HR-Related Employees
+    Search for at least one employee with a job title related to:
+        Human Resources (HR)
+        Recruitment
+        Talent Acquisition
+        Hiring Manager
+        Other relevant HR roles
+    If no suitable employee is found, return to Google.com and exit the process.
+
+Extract Contact Information
+    Click on the selected employee's profile picture to open their profile.
+    Click the More button.
+    Open the Contact Info overlay and collect any available details, such as:
+        Full name
+        Profile image URL
+        Job title
+        LinkedIn profile URL
+        Email (if available)
+        Company website (if available)
+Return to google.com
+Return the Results of the LinkedIn profile found
+Compile and return all collected information about the HR employee(s) and any available company HR contact details.
+"""
+
+        print('Starting LinkedIn search with task')
+        
+        # Prepare the request body
+        request_body = {
+            "task": task,
+            "system_prompt": system_prompt
+        }
+        
+        # Use provided API key, or fall back to environment variable
+        gemini_api_key = apiKey or os.getenv('GEMINI_API_KEY')
+        
+        # Add API key if provided
+        if gemini_api_key:
+            request_body["api_key"] = gemini_api_key.strip()
+            print(f'Using provided API key for the task: {gemini_api_key[:5]}...')
+        else:
+            print('No API key provided, relying on bore.pub default')
+        
+        # Create the fetch request to bore.pub to START the task
+        response = requests.post(
+            LINKEDIN_RUN_TASK_URL,
+            headers={'Content-Type': 'application/json'},
+            json=request_body
+        )
+        
+        if not response.ok:
+            print(f"LinkedIn lookup failed to start: {response.text}")
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"LinkedIn lookup failed to start: {response.text}"
+            )
+        
+        # Get the task information with the task ID
+        task_info = response.json()
+        print('Task started with info:', task_info)
+        
+        if not task_info or not task_info.get('task_id'):
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to get task ID from service"
+            )
+        
+        task_id = task_info['task_id']
+        
+        # Set up a background timeout to stop the task if it runs too long
+        async def stop_task_after_timeout():
+            await asyncio.sleep(MAX_TASK_RUNTIME / 1000)  # Convert to seconds
+            try:
+                # Check if the task is still running before stopping it
+                status_response = requests.get(f"{LINKEDIN_TASK_STATUS_URL}/{task_id}")
+                if status_response.ok:
+                    status_data = status_response.json()
+                    if status_data.get('status') == 'running':
+                        print(f"Task {task_id} is taking too long, stopping it automatically...")
+                        await stop_linkedin_task(task_id)
+            except Exception as stop_error:
+                print(f"Error in timeout handler for task {task_id}: {stop_error}")
+        
+        # Start the timeout task in the background
+        asyncio.create_task(stop_task_after_timeout())
+        
+        # Return the task ID for polling
+        return JSONResponse(content={
+            "task_id": task_id,
+            "taskId": task_id,
+            "status": "running",
+            "message": "LinkedIn search task started successfully",
+            "company": company
+        })
+        
+    except HTTPException:
+        raise
+    except Exception as error:
+        print(f'Error initiating LinkedIn HR lookup: {error}')
+        raise HTTPException(
+            status_code=500,
+            detail=str(error)
+        )
+
+@app.get('/task-status/{task_id}')
+async def get_task_status_linkedin(task_id: str):
+    """
+    GET handler to check the status of a LinkedIn lookup task by polling
+    """
+    try:
+        if not task_id:
+            raise HTTPException(status_code=400, detail="Task ID is required")
+        
+        print(f"Checking status of LinkedIn task: {task_id}")
+        
+        # Call the task-status endpoint
+        status_url = f"{LINKEDIN_TASK_STATUS_URL}/{task_id}"
+        status_response = requests.get(status_url)
+        
+        if not status_response.ok:
+            print(f"Failed to get task status: {status_response.text}")
+            raise HTTPException(
+                status_code=status_response.status_code,
+                detail=f"Failed to get task status: {status_response.text}"
+            )
+        
+        # Return the status
+        status_data = status_response.json()
+        print(f"Task {task_id} status: {status_data.get('status')}")
+        
+        # Make sure we have consistent field names
+        return JSONResponse(content={
+            **status_data,
+            "task_id": task_id,
+            "taskId": task_id
+        })
+        
+    except HTTPException:
+        raise
+    except Exception as error:
+        print(f'Error checking LinkedIn task status: {error}')
+        raise HTTPException(
+            status_code=500,
+            detail=str(error)
+        )
+
+@app.post('/stop-task')
+async def stop_task(
+    task_id: str = Form(...)
+):
+    """
+    POST handler to stop a running LinkedIn lookup task
+    """
+    try:
+        if not task_id:
+            raise HTTPException(status_code=400, detail="Task ID is required")
+        
+        print(f"Stopping LinkedIn task with ID: {task_id}")
+        stop_response = requests.post(
+            LINKEDIN_STOP_TASK_URL,
+            headers={'Content-Type': 'application/json'},
+            json={"task_id": task_id}
+        )
+        
+        if not stop_response.ok:
+            print(f"Failed to stop task: {stop_response.text}")
+            raise HTTPException(
+                status_code=stop_response.status_code,
+                detail=f"Failed to stop task: {stop_response.text}"
+            )
+        
+        stop_result = stop_response.json()
+        print('Task stop result:', stop_result)
+        
+        return JSONResponse(content={
+            "success": True,
+            "message": "Task stopped successfully",
+            "task_id": task_id,
+            **stop_result
+        })
+        
+    except HTTPException:
+        raise
+    except Exception as error:
+        print(f'Error stopping LinkedIn task: {error}')
+        raise HTTPException(
+            status_code=500,
+            detail=str(error)
+        )
+
+async def stop_linkedin_task(task_id: str):
+    """
+    Helper function to stop a running LinkedIn lookup task
+    """
+    try:
+        print(f"Stopping LinkedIn task with ID: {task_id}")
+        stop_response = requests.post(
+            LINKEDIN_STOP_TASK_URL,
+            headers={'Content-Type': 'application/json'},
+            json={"task_id": task_id}
+        )
+        
+        if not stop_response.ok:
+            print(f"Failed to stop task: {stop_response.text}")
+            return
+        
+        stop_result = stop_response.json()
+        print('Task stop result:', stop_result)
+    except Exception as error:
+        print(f'Error stopping LinkedIn task: {error}')
 
 @app.get('/auto-apply-status/{task_id}')
 async def get_task_status(task_id: str):
