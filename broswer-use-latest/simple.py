@@ -185,6 +185,27 @@ async def process_auto_apply(task_id, prompt, url, api_key, file, file_url):
             device_scale_factor=1.0,
             is_mobile=False,
             permissions=["geolocation"],
+            # Add critical anti-fingerprinting browser flags
+            extra_chromium_args=[
+                "--disable-webrtc",  # Block WebRTC at browser level
+                "--disable-webgl",   # Reduce WebGL fingerprinting
+                "--disable-canvas-aa",  # Reduce canvas anti-aliasing fingerprinting
+                "--disable-2d-canvas-clip-aa",  # Reduce canvas clipping fingerprinting
+                "--disable-gl-drawing-for-tests",  # Reduce GPU fingerprinting
+                "--disable-dev-shm-usage",  # Reduce memory fingerprinting
+                "--no-first-run",  # Reduce startup fingerprinting
+                "--disable-default-apps",  # Reduce extension fingerprinting
+                "--disable-extensions-file-access-check",  # Reduce extension detection
+                "--disable-background-timer-throttling",  # Reduce timing fingerprinting
+                "--disable-renderer-backgrounding",  # Reduce background detection
+                "--disable-backgrounding-occluded-windows",  # Reduce window state detection
+                "--disable-ipc-flooding-protection",  # Reduce IPC fingerprinting
+				"--disable-blink-features=AutomationControlled",  # Hide automation
+                "--exclude-switches=enable-automation",  # Remove automation flags
+                "--disable-extensions-except",  # Reduce extension fingerprinting
+                "--disable-plugins-discovery",  # Reduce plugin detection
+                "--no-sandbox"  # Sometimes helps with detection
+            ]
 		)
 		
 		# Use patchright with browser session for stealth capabilities
