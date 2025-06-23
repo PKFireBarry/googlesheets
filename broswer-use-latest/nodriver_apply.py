@@ -90,47 +90,44 @@ async def handle_cookie_banner(tab):
 async def navigate_to_application_form(tab):
     """
     Tries to find and click an 'Apply' button to navigate to the actual form.
-    This handles cases where the initial URL is just a job description.
+    This version now searches within iframes.
     """
-    print("Searching for the application form...")
+    print("Searching for the application form, including within iframes...")
     apply_keywords = [
-        "apply for this job",
-        "apply to this job",
-        "apply now",
-        "apply",
-        "submit your application",
-        "start application",
+        "apply for this job", "apply to this job", "apply now", "apply",
+        "submit your application", "start application"
     ]
-    for i in range(3):  # Try up to 3 times to find and navigate
-        await handle_cookie_banner(tab) # Handle cookies before every attempt
-        current_url = tab.url
-        found_and_navigated = False
+    
+    # Contexts to search: the main tab and all frames within it
+    search_contexts = [tab] + tab.frames
+    
+    for context in search_contexts:
+        if hasattr(context, 'is_detached') and context.is_detached():
+            print("Skipping a detached iframe.")
+            continue
+            
         for keyword in apply_keywords:
             try:
-                # Use a more specific XPath to find clickable buttons or links containing the keyword text
-                xpath_selector = f"//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{keyword}')] | //a[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{keyword}')]"
-                apply_button = await tab.find(by='xpath', value=xpath_selector, timeout=3)
+                # Use a more robust XPath to find clickable elements with the keyword in their text content
+                xpath_selector = f".//button[.//text()[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{keyword}')]] | .//a[.//text()[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{keyword}')]]"
                 
+                # Use find() which is better for single, best-match elements
+                apply_button = await context.find(by='xpath', value=xpath_selector, timeout=2)
+
                 if apply_button:
                     element_text = await apply_button.text
-                    print(f"Found button/link with text: '{element_text}'. Clicking it...")
+                    print(f"Found button/link with text: '{element_text}'. Attempting to click...")
+                    await apply_button.scroll_into_view()
+                    await asyncio.sleep(0.5)
                     await apply_button.mouse_click()
-                    await tab.sleep(3)  # Wait for potential page navigation
-
-                    if tab.url != current_url:
-                        print(f"Successfully navigated to new URL: {tab.url}")
-                        found_and_navigated = True
-                        break # Break from the inner keyword loop to restart search on the new page
-                    else:
-                        print("URL did not change. Assuming form is now visible (e.g., in a modal).")
-                        return # Exit, we're done.
+                    await tab.sleep(3) # Wait for navigation/modal
+                    print("Successfully clicked the apply button.")
+                    return True # Assume success and exit
             except Exception:
-                continue # Not found, try next keyword
-        
-        if not found_and_navigated:
-            # If we looped through all keywords and didn't navigate, we're probably on the right page.
-            print("Completed a full keyword search, but did not navigate to a new page. Assuming form is now visible.")
-            break # Exit the outer loop
+                continue # Ignore errors and try the next keyword/context
+
+    print("Could not find a clickable apply button on the page or in any iframes.")
+    return False
 
 async def get_llm_response(llm, prompt_text: str, user_data: UserData):
     """Generates a response from the LLM for a given prompt."""
@@ -168,7 +165,8 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
 
         # --- Navigate to the actual application form ---
         tasks[task_id].update({"status": "processing", "message": "Searching for application form..."})
-        await navigate_to_application_form(tab)
+        if not await navigate_to_application_form(tab):
+            raise Exception("Failed to find and click the 'Apply' button after searching the page and all iframes.")
 
         # --- Handle Resume Upload ---
         tasks[task_id].update({"status": "processing", "message": "Looking for resume upload field..."})
