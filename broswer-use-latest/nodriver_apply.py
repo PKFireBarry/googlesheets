@@ -4,6 +4,7 @@ import tempfile
 import uuid
 import re
 import base64
+import json
 
 import nodriver as uc
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
@@ -12,6 +13,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 import uvicorn
 import aiofiles
 import httpx
+from langchain_core.messages import HumanMessage
 
 app = FastAPI()
 
@@ -87,49 +89,65 @@ async def handle_cookie_banner(tab):
     print("No cookie banner found or handled.")
     return False # No button was clicked
 
-async def navigate_to_application_form(tab):
+async def use_llm_to_navigate(tab, llm: ChatGoogleGenerativeAI):
     """
-    Tries to find and click an 'Apply' button to navigate to the actual form.
-    This version now searches within iframes.
+    Uses a vision-capable LLM to find the coordinates of the apply button,
+    scrolling if necessary.
     """
-    print("Searching for the application form, including within iframes...")
-    apply_keywords = [
-        "apply for this job", "apply to this job", "apply now", "apply",
-        "submit your application", "start application", "application", 
-    ]
-    
-    # First, find all iframe elements on the page
-    iframes = await tab.find_all('iframe')
-    
-    # Contexts to search: the main tab and all iframes
-    search_contexts = [tab] + iframes
-    
-    for context in search_contexts:
-        if hasattr(context, 'is_detached') and context.is_detached():
-            print("Skipping a detached iframe.")
-            continue
+    print("Starting visual search for navigation element...")
+    # Loop up to 4 times (initial view + 3 scrolls)
+    for i in range(4):
+        print(f"Analyzing view {i+1}...")
+        try:
+            screenshot_data = await tab.get_screenshot()
+            img_base64 = base64.b64encode(screenshot_data).decode('utf-8')
+
+            # More advanced prompt that can signal a scroll
+            prompt = [
+                HumanMessage(
+                    content=[
+                        {
+                            "type": "text",
+                            "text": "You are a web automation assistant. Look at this screenshot. Your goal is to find the main 'Apply' button/link. "
+                                    "- If you see the button, return ONLY a JSON object with its center coordinates: {\"click\": {\"x\": 123, \"y\": 456}}. "
+                                    "- If you DO NOT see the button but believe it is further down, return ONLY this JSON: {\"scroll\": true}. "
+                                    "- If the button is not visible and you believe you're at the end of the page, return {\"end\": true}."
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": f"data:image/png;base64,{img_base64}"
+                        },
+                    ]
+                )
+            ]
             
-        for keyword in apply_keywords:
-            try:
-                # Use a more robust XPath to find clickable elements with the keyword in their text content
-                xpath_selector = f".//button[.//text()[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{keyword}')]] | .//a[.//text()[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{keyword}')]]"
+            response = await llm.ainvoke(prompt)
+            json_string = response.content.strip().replace("```json", "").replace("```", "")
+            action = json.loads(json_string)
+
+            if action.get('click'):
+                coords = action['click']
+                x, y = int(coords['x']), int(coords['y'])
+                print(f"LLM found element at x={x}, y={y}. Clicking.")
+                await tab.mouse.click(x, y)
+                await tab.sleep(3)
+                return True # Success
+            
+            elif action.get('scroll'):
+                print("LLM advised scrolling. Scrolling down...")
+                await tab.scroll_down(800) # Scroll down a fixed amount
+                await tab.sleep(2) # Wait for content to load
+                continue # Continue to the next loop iteration to re-scan
                 
-                # Use find() which is better for single, best-match elements
-                apply_button = await context.find(by='xpath', value=xpath_selector, timeout=2)
+            elif action.get('end'):
+                print("LLM concluded the element is not on the page.")
+                break # Exit loop
 
-                if apply_button:
-                    element_text = await apply_button.text
-                    print(f"Found button/link with text: '{element_text}'. Attempting to click...")
-                    await apply_button.scroll_into_view()
-                    await asyncio.sleep(0.5)
-                    await apply_button.mouse_click()
-                    await tab.sleep(3) # Wait for navigation/modal
-                    print("Successfully clicked the apply button.")
-                    return True # Assume success and exit
-            except Exception:
-                continue # Ignore errors and try the next keyword/context
+        except Exception as e:
+            print(f"An error occurred during LLM navigation attempt {i+1}: {e}")
+            break # Exit loop on error
 
-    print("Could not find a clickable apply button on the page or in any iframes.")
+    print("Could not find the navigation element after analyzing the page.")
     return False
 
 async def get_llm_response(llm, prompt_text: str, user_data: UserData):
@@ -157,8 +175,11 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
     try:
         # --- Setup Browser and LLM ---
         tasks[task_id].update({"status": "processing", "message": "Initializing browser and LLM..."})
-        llm = ChatGoogleGenerativeAI(model='gemini-2.5-flash-preview-05-20', api_key=api_key)
-        browser = await uc.start(headless=False, browser_args=['--no-sandbox'])
+        llm = ChatGoogleGenerativeAI(model='gemini-1.5-flash', api_key=api_key) # Use a vision-capable model
+        browser = await uc.start(
+            headless=False, 
+            browser_args=['--no-sandbox', '--window-size=1920,1080']
+        )
         tab = await browser.get(job_url)
         print(f"Navigated to: {job_url}")
         await tab.sleep(2) # Wait for page to settle
@@ -166,10 +187,10 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
         # --- Handle Cookie Banner on Initial Load ---
         await handle_cookie_banner(tab)
 
-        # --- Navigate to the actual application form ---
-        tasks[task_id].update({"status": "processing", "message": "Searching for application form..."})
-        if not await navigate_to_application_form(tab):
-            raise Exception("Failed to find and click the 'Apply' button after searching the page and all iframes.")
+        # --- Navigate to the actual application form using LLM ---
+        tasks[task_id].update({"status": "processing", "message": "Using LLM to find application form..."})
+        if not await use_llm_to_navigate(tab, llm):
+            raise Exception("LLM-based navigation failed to find the application form.")
 
         # --- Handle Resume Upload ---
         tasks[task_id].update({"status": "processing", "message": "Looking for resume upload field..."})
@@ -295,7 +316,7 @@ async def hybrid_auto_apply(
     Endpoint to trigger the hybrid auto-application process.
     Receives user data and job info, then starts a background task.
     """
-    llm = ChatGoogleGenerativeAI(model='gemini-2.5-flash-preview-05-20', api_key=api_key)
+    llm = ChatGoogleGenerativeAI(model='gemini-1.5-flash', api_key=api_key)
     
     # Use the LLM to parse the unstructured prompt into structured data
     user_data_model = await parse_prompt_to_user_data(llm, prompt)
