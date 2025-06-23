@@ -3,6 +3,7 @@ import os
 import tempfile
 import uuid
 import re
+import base64
 
 import nodriver as uc
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
@@ -10,6 +11,7 @@ from pydantic import BaseModel, Field
 from langchain_google_genai import ChatGoogleGenerativeAI
 import uvicorn
 import aiofiles
+import httpx
 
 app = FastAPI()
 
@@ -79,7 +81,7 @@ async def get_llm_response(llm, prompt_text: str, user_data: UserData):
         print(f"LLM generation failed: {e}")
         return "Experienced and motivated professional seeking a challenging role." # Fallback answer
 
-async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_data: UserData, resume_file: UploadFile | None):
+async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_data: UserData, resume_file: UploadFile | None, file_url: str | None):
     """The main background task for the hybrid auto-apply process."""
     tasks[task_id] = {"status": "starting", "message": "Starting hybrid auto-apply process."}
     browser = None
@@ -96,6 +98,8 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
 
         # --- Handle Resume Upload ---
         tasks[task_id].update({"status": "processing", "message": "Looking for resume upload field..."})
+        
+        # Process the resume, whether it's a direct upload or a URL
         if resume_file:
             # Save uploaded file to a temporary path
             suffix = os.path.splitext(resume_file.filename)[-1]
@@ -103,11 +107,34 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
                 content = await resume_file.read()
                 await tmp.write(content)
                 temp_file_path = tmp.name
-            
-            # Find the file input on the page
+        elif file_url:
+            # Handle file_url: support both HTTP(S) and data URLs
+            if file_url.startswith('data:'):
+                try:
+                    match = re.match(r'data:(?P<mime>[^;]+);filename=(?P<filename>[^;]+);base64,(?P<data>.+)', file_url)
+                    filename = match.group('filename')
+                    suffix = os.path.splitext(filename)[-1]
+                    file_data = base64.b64decode(match.group('data'))
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                        tmp.write(file_data)
+                        temp_file_path = tmp.name
+                except Exception as e:
+                    print(f"Failed to parse data URL: {e}")
+            else:
+                # Download file from HTTP(S) URL
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(file_url)
+                    response.raise_for_status()
+                    suffix = os.path.splitext(file_url)[-1]
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                        tmp.write(response.content)
+                        temp_file_path = tmp.name
+
+        if temp_file_path:
+            # Find the file input on the page and upload
             file_input = await tab.select('input[type=file]', best_match=True, timeout=5)
             if file_input:
-                print("Found file input. Uploading resume...")
+                print(f"Found file input. Uploading resume from {temp_file_path}...")
                 await file_input.upload(temp_file_path)
                 await tab.sleep(1)
             else:
@@ -156,24 +183,51 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
         if temp_file_path and os.path.exists(temp_file_path):
             os.remove(temp_file_path)
 
+async def parse_prompt_to_user_data(llm: ChatGoogleGenerativeAI, prompt: str) -> UserData:
+    """Uses the LLM to parse the unstructured prompt into a structured UserData object."""
+    print("Parsing prompt to extract structured user data...")
+    parsing_prompt = (
+        "You are a data extraction expert. Parse the following text from a job application prompt "
+        "and extract the user's personal information. Return ONLY a valid JSON object with the following keys: "
+        "'first_name', 'last_name', 'email', 'phone', 'linkedin', 'github', 'portfolio', 'address'. "
+        "If a value is not found, omit the key or set it to null.\n\n"
+        f"Text to parse:\n---\n{prompt}\n---\n\n"
+        "JSON object:"
+    )
+    
+    try:
+        response = await llm.ainvoke(parsing_prompt)
+        # Clean the response to ensure it's valid JSON
+        json_string = response.content.strip().replace("```json", "").replace("```", "")
+        user_data_model = UserData.model_validate_json(json_string)
+        print("Successfully parsed user data from prompt.")
+        return user_data_model
+    except Exception as e:
+        print(f"Failed to parse user data from prompt: {e}. Proceeding with empty data.")
+        # Return a default/empty model if parsing fails
+        return UserData(first_name="N/A", last_name="N/A", email="N/A", phone="N/A")
+
+
 @app.post("/auto-apply")
 async def hybrid_auto_apply(
-    job_url: str = Form(...),
+    url: str = Form(...),
     api_key: str = Form(...),
-    user_data: str = Form(...), # JSON string for UserData
-    resume: UploadFile = File(None)
+    prompt: str = Form(...),
+    resume: UploadFile = File(None),
+    file_url: str = Form(None)
 ):
     """
     Endpoint to trigger the hybrid auto-application process.
     Receives user data and job info, then starts a background task.
     """
-    try:
-        user_data_model = UserData.model_validate_json(user_data)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid user_data JSON: {e}")
+    llm = ChatGoogleGenerativeAI(model='gemini-2.5-flash-preview-05-20', api_key=api_key)
+    
+    # Use the LLM to parse the unstructured prompt into structured data
+    user_data_model = await parse_prompt_to_user_data(llm, prompt)
 
     task_id = str(uuid.uuid4())
-    asyncio.create_task(process_hybrid_apply(task_id, job_url, api_key, user_data_model, resume))
+    # Pass the file_url to the background task
+    asyncio.create_task(process_hybrid_apply(task_id, url, api_key, user_data_model, resume, file_url))
     
     return {"task_id": task_id, "status": "starting"}
 
