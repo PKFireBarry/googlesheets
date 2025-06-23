@@ -95,11 +95,14 @@ async def navigate_to_application_form(tab):
     print("Searching for the application form, including within iframes...")
     apply_keywords = [
         "apply for this job", "apply to this job", "apply now", "apply",
-        "submit your application", "start application"
+        "submit your application", "start application", "application", 
     ]
     
-    # Contexts to search: the main tab and all frames within it
-    search_contexts = [tab] + tab.frames
+    # First, find all iframe elements on the page
+    iframes = await tab.find_all('iframe')
+    
+    # Contexts to search: the main tab and all iframes
+    search_contexts = [tab] + iframes
     
     for context in search_contexts:
         if hasattr(context, 'is_detached') and context.is_detached():
