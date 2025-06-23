@@ -65,6 +65,28 @@ async def fill_text_field(tab, keywords, value):
         print(f"Could not find or fill field for '{keywords[0]}': {e}")
     return False
 
+async def handle_cookie_banner(tab):
+    """
+    Finds and clicks common cookie consent buttons.
+    """
+    print("Checking for cookie consent banners...")
+    # Prioritize accepting, as rejecting can sometimes break site functionality
+    accept_keywords = ["accept all", "allow all", "i agree", "accept"]
+    
+    for keyword in accept_keywords:
+        try:
+            cookie_button = await tab.find(keyword, best_match=True, timeout=2)
+            if cookie_button:
+                print(f"Found and clicking cookie button: '{keyword}'")
+                await cookie_button.mouse_click()
+                await tab.sleep(1.5) # Wait for banner to disappear
+                return True # Clicked a button
+        except Exception:
+            continue # Not found, try next keyword
+            
+    print("No cookie banner found or handled.")
+    return False # No button was clicked
+
 async def navigate_to_application_form(tab):
     """
     Tries to find and click an 'Apply' button to navigate to the actual form.
@@ -73,6 +95,7 @@ async def navigate_to_application_form(tab):
     print("Searching for the application form...")
     apply_keywords = ["apply now", "apply", "submit your application", "start application"]
     for i in range(3):  # Try up to 3 times to find and navigate
+        await handle_cookie_banner(tab) # Handle cookies before every attempt
         current_url = tab.url
         found_button = False
         for keyword in apply_keywords:
@@ -133,6 +156,9 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
         tab = await browser.get(job_url)
         print(f"Navigated to: {job_url}")
         await tab.sleep(2) # Wait for page to settle
+
+        # --- Handle Cookie Banner on Initial Load ---
+        await handle_cookie_banner(tab)
 
         # --- Navigate to the actual application form ---
         tasks[task_id].update({"status": "processing", "message": "Searching for application form..."})
