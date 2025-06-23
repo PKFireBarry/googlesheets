@@ -101,6 +101,13 @@ async def use_llm_to_navigate(tab, llm: ChatGoogleGenerativeAI):
         try:
             # Take screenshot directly into memory using CDP
             screenshot_response = await tab.send("Page.captureScreenshot", {'format': 'png'})
+
+            # Add a check to ensure the screenshot was captured
+            if not screenshot_response or 'data' not in screenshot_response:
+                print("Warning: Failed to capture screenshot or response was empty. Retrying...")
+                await tab.sleep(2) # Wait a bit before the next attempt
+                continue
+
             img_base64 = screenshot_response['data']
 
             # More advanced prompt that can signal a scroll
