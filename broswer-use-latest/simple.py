@@ -3,7 +3,7 @@ import os
 import sys
 import random
 import uuid
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request
 from pydantic import BaseModel
 from fastapi.responses import JSONResponse
 import uvicorn
@@ -666,9 +666,18 @@ async def run_task(
     Implements the polling pattern instead of waiting for task completion
     """
     try:
-        print(f"=== DEBUG: /run-task endpoint called ===")
-        print(f"DEBUG: Received company: {company}")
-        print(f"DEBUG: Received apiKey: {apiKey[:10] if apiKey else 'None'}...")
+        print(f"=== DEBUG: /api/linkedin endpoint called ===")
+        
+        # Get the request body as JSON
+        body = await request.json()
+        print(f"DEBUG: Received request body: {body}")
+        
+        # Extract company and optional API key
+        company = body.get('company')
+        apiKey = body.get('apiKey')
+        
+        print(f"DEBUG: Extracted company: {company}")
+        print(f"DEBUG: Extracted apiKey: {apiKey[:10] if apiKey else 'None'}...")
         print(f"DEBUG: LINKEDIN_RUN_TASK_URL: {LINKEDIN_RUN_TASK_URL}")
         
         # Check if company is provided
@@ -842,6 +851,51 @@ Compile and return all collected information about the HR employee(s) and any av
         print(f'DEBUG: Error type: {type(error)}')
         import traceback
         print(f'DEBUG: Traceback: {traceback.format_exc()}')
+        raise HTTPException(
+            status_code=500,
+            detail=str(error)
+        )
+
+@app.get('/api/linkedin')
+async def api_linkedin_get(request: Request):
+    """
+    GET handler to check the status of a LinkedIn lookup task by polling
+    """
+    try:
+        # Get taskId from query parameters
+        task_id = request.query_params.get('taskId')
+        
+        if not task_id:
+            raise HTTPException(status_code=400, detail="Task ID is required")
+        
+        print(f"DEBUG: Checking status of LinkedIn task: {task_id}")
+        
+        # Call the task-status endpoint
+        status_url = f"{LINKEDIN_TASK_STATUS_URL}/{task_id}"
+        status_response = requests.get(status_url)
+        
+        if not status_response.ok:
+            print(f"DEBUG: Failed to get task status: {status_response.text}")
+            raise HTTPException(
+                status_code=status_response.status_code,
+                detail=f"Failed to get task status: {status_response.text}"
+            )
+        
+        # Return the status
+        status_data = status_response.json()
+        print(f"DEBUG: Task {task_id} status: {status_data.get('status')}")
+        
+        # Make sure we have consistent field names
+        return JSONResponse(content={
+            **status_data,
+            "task_id": task_id,
+            "taskId": task_id
+        })
+        
+    except HTTPException:
+        raise
+    except Exception as error:
+        print(f'DEBUG: Error checking LinkedIn task status: {error}')
         raise HTTPException(
             status_code=500,
             detail=str(error)
