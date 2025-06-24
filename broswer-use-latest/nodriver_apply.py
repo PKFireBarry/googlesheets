@@ -946,7 +946,7 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
                 
                 # Wait for potential Cloudflare modal to appear
                 cf_found = False
-                max_attempts = 3
+                max_attempts = 1  # Reduced from 3 to 1 to prevent browser hangs
                 
                 for attempt in range(max_attempts):
                     print(f"Cloudflare detection attempt {attempt + 1}/{max_attempts}")
