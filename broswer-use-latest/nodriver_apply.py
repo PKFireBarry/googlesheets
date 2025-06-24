@@ -358,156 +358,112 @@ async def use_llm_to_navigate(tab, llm: ChatGoogleGenerativeAI):
                     print(f"WARNING: Click coordinates ({x}, {y}) are OUTSIDE viewport ({viewport_debug['viewport']['width']}x{viewport_debug['viewport']['height']})")
                 
                 try:
-                    # First, create a visual indicator at the exact coordinates the LLM provided
-                    indicator_script = f"""
-                    (function() {{
-                        // Create visual indicator at LLM coordinates
-                        const indicator = document.createElement('div');
-                        indicator.id = 'llm-click-indicator';
-                        indicator.style.position = 'fixed';
-                        indicator.style.left = '{x}px';
-                        indicator.style.top = '{y}px';
-                        indicator.style.width = '30px';
-                        indicator.style.height = '30px';
-                        indicator.style.backgroundColor = 'lime';
-                        indicator.style.border = '3px solid red';
-                        indicator.style.borderRadius = '50%';
-                        indicator.style.zIndex = '99999';
-                        indicator.style.pointerEvents = 'none';
-                        indicator.style.transform = 'translate(-50%, -50%)';
-                        document.body.appendChild(indicator);
-                        
-                        console.log('Visual indicator placed at LLM coordinates ({x}, {y})');
-                        
-                        // Also log what's at those coordinates
-                        const elementAtCoords = document.elementFromPoint({x}, {y});
-                        if (elementAtCoords) {{
-                            console.log('Element at LLM coordinates:', {{
-                                tag: elementAtCoords.tagName,
-                                className: elementAtCoords.className,
-                                id: elementAtCoords.id,
-                                text: elementAtCoords.textContent?.substring(0, 50),
-                                clickable: elementAtCoords.tagName === 'BUTTON' || elementAtCoords.tagName === 'A' || elementAtCoords.onclick !== null,
-                                boundingRect: elementAtCoords.getBoundingClientRect()
-                            }});
-                        }} else {{
-                            console.log('No element found at LLM coordinates ({x}, {y})');
-                        }}
-                        
-                        return elementAtCoords ? true : false;
-                    }})()
-                    """
+                    # First, create a visual indicator and check what's there
+                    print(f"Creating visual indicator at ({x}, {y})")
                     
-                    element_found = await tab.evaluate(indicator_script)
+                    # Create the indicator
+                    await tab.evaluate(f"""
+                    const indicator = document.createElement('div');
+                    indicator.id = 'llm-click-indicator';
+                    indicator.style.position = 'fixed';
+                    indicator.style.left = '{x}px';
+                    indicator.style.top = '{y}px';
+                    indicator.style.width = '30px';
+                    indicator.style.height = '30px';
+                    indicator.style.backgroundColor = 'lime';
+                    indicator.style.border = '3px solid red';
+                    indicator.style.borderRadius = '50%';
+                    indicator.style.zIndex = '99999';
+                    indicator.style.pointerEvents = 'none';
+                    indicator.style.transform = 'translate(-50%, -50%)';
+                    document.body.appendChild(indicator);
+                    """)
+                    
+                    # Check what element is at those coordinates
+                    element_info = await tab.evaluate(f"""
+                    const element = document.elementFromPoint({x}, {y});
+                    if (element) {{
+                        return {{
+                            tag: element.tagName,
+                            className: element.className,
+                            id: element.id,
+                            text: element.textContent?.substring(0, 100),
+                            clickable: element.tagName === 'BUTTON' || element.tagName === 'A' || element.onclick !== null
+                        }};
+                    }}
+                    return null;
+                    """)
+                    
+                    if element_info:
+                        print(f"Element at LLM coordinates: {element_info}")
+                    else:
+                        print(f"No element found at LLM coordinates ({x}, {y})")
+                    
                     await tab.sleep(3)  # Let user see the indicator
                     
-                    # Use comprehensive JavaScript approach with real mouse events
-                    click_script = f"""
-                    (function() {{
-                        console.log('Starting click at coordinates ({x}, {y})');
-                        
-                        // Find the element at the coordinates
-                        const element = document.elementFromPoint({x}, {y});
-                        if (!element) {{
-                            console.log('No element found at coordinates');
-                            return false;
-                        }}
-                        
-                        console.log('Found element:', element.tagName, element.className, element.id);
-                        console.log('Element text:', element.textContent?.substring(0, 100));
-                        console.log('Element bounding rect:', element.getBoundingClientRect());
-                        
-                        // Scroll element into view if needed
+                    # Try to click the element at those coordinates
+                    print(f"Attempting to click element at ({x}, {y})")
+                    
+                    click_result = await tab.evaluate(f"""
+                    const element = document.elementFromPoint({x}, {y});
+                    if (element) {{
+                        // Try multiple click approaches
                         element.scrollIntoView({{behavior: 'smooth', block: 'center'}});
                         
-                        // Wait a bit for scroll
-                        setTimeout(() => {{
-                            // Create and dispatch comprehensive mouse events
-                            const mouseEvents = ['mousedown', 'mouseup', 'click'];
-                            
-                            mouseEvents.forEach(eventType => {{
-                                const event = new MouseEvent(eventType, {{
-                                    view: window,
-                                    bubbles: true,
-                                    cancelable: true,
-                                    clientX: {x},
-                                    clientY: {y},
-                                    button: 0,
-                                    buttons: 1
-                                }});
-                                
-                                element.dispatchEvent(event);
-                                console.log('Dispatched', eventType, 'event');
-                            }});
-                            
-                            // Also try direct click
-                            element.click();
-                            console.log('Direct click executed');
-                            
-                            // Try focus and click if it's a button/link
-                            if (element.tagName === 'BUTTON' || element.tagName === 'A' || element.type === 'submit') {{
-                                element.focus();
-                                element.click();
-                                console.log('Focus and click executed for interactive element');
-                            }}
-                            
-                            // Remove the indicator after clicking
-                            const indicator = document.getElementById('llm-click-indicator');
-                            if (indicator) {{
-                                indicator.remove();
-                            }}
-                            
-                        }}, 500);
+                        // Direct click
+                        element.click();
+                        
+                        // Mouse events
+                        const clickEvent = new MouseEvent('click', {{
+                            view: window,
+                            bubbles: true,
+                            cancelable: true,
+                            clientX: {x},
+                            clientY: {y}
+                        }});
+                        element.dispatchEvent(clickEvent);
+                        
+                        // Remove indicator
+                        const indicator = document.getElementById('llm-click-indicator');
+                        if (indicator) indicator.remove();
                         
                         return true;
-                    }})()
-                    """
+                    }}
+                    return false;
+                    """)
                     
-                    result = await tab.evaluate(click_script)
-                    await tab.sleep(4)  # Wait for any animations/navigation
+                    await tab.sleep(3)  # Wait for any navigation/changes
                     
-                    if result:
-                        print("Comprehensive JavaScript click completed successfully.")
+                    if click_result:
+                        print("Click executed successfully.")
                         return True
                     else:
-                        print("No element found at coordinates, trying alternative...")
+                        print("No element found at coordinates, trying nearby search...")
                         
                         # Fallback: try to find any clickable element nearby
-                        fallback_script = f"""
-                        (function() {{
-                            // Try to find clickable elements near the coordinates
-                            console.log('Searching for clickable elements near ({x}, {y})');
-                            const searchRadius = 50;
-                            let foundElement = null;
-                            
-                            for (let offsetX = -searchRadius; offsetX <= searchRadius; offsetX += 10) {{
-                                for (let offsetY = -searchRadius; offsetY <= searchRadius; offsetY += 10) {{
-                                    const testX = {x} + offsetX;
-                                    const testY = {y} + offsetY;
-                                    const testElement = document.elementFromPoint(testX, testY);
-                                    
-                                    if (testElement && (testElement.tagName === 'BUTTON' || testElement.tagName === 'A' || testElement.onclick)) {{
-                                        console.log('Found clickable element at offset', offsetX, offsetY, ':', testElement.tagName, testElement.className);
-                                        foundElement = testElement;
-                                        testElement.click();
-                                        return true;
-                                    }}
+                        print(f"Searching for clickable elements near ({x}, {y})")
+                        
+                        fallback_result = await tab.evaluate(f"""
+                        const searchRadius = 50;
+                        for (let offsetX = -searchRadius; offsetX <= searchRadius; offsetX += 20) {{
+                            for (let offsetY = -searchRadius; offsetY <= searchRadius; offsetY += 20) {{
+                                const testX = {x} + offsetX;
+                                const testY = {y} + offsetY;
+                                const testElement = document.elementFromPoint(testX, testY);
+                                
+                                if (testElement && (testElement.tagName === 'BUTTON' || testElement.tagName === 'A' || testElement.onclick)) {{
+                                    testElement.click();
+                                    return true;
                                 }}
                             }}
-                            
-                            if (!foundElement) {{
-                                console.log('No clickable elements found within', searchRadius, 'pixels of coordinates');
-                            }}
-                            
-                            return false;
-                        }})()
-                        """
+                        }}
+                        return false;
+                        """)
                         
-                        fallback_result = await tab.evaluate(fallback_script)
                         await tab.sleep(3)
                         
                         if fallback_result:
-                            print("Fallback nearby element click succeeded.")
+                            print("Found and clicked nearby element.")
                             return True
                         else:
                             print("No clickable elements found nearby.")
@@ -587,7 +543,13 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
         
         # --- DEBUG: Show all clickable elements ---
         print("Analyzing clickable elements on page...")
-        await debug_clickable_elements(tab)
+        try:
+            # Simple approach - just count buttons and links
+            button_count = await tab.evaluate("document.querySelectorAll('button').length")
+            link_count = await tab.evaluate("document.querySelectorAll('a[href]').length")
+            print(f"Found {button_count} buttons and {link_count} links on the page")
+        except Exception as e:
+            print(f"Simple element count failed: {e}")
 
         # --- Navigate to the actual application form using LLM ---
         tasks[task_id].update({"status": "processing", "message": "Using LLM to find application form..."})
