@@ -220,7 +220,10 @@ async def analyze_and_fill_all_form_elements(tab, llm, user_data):
                                 await element.click()
                                 await asyncio.sleep(0.3)
                                 
-                                # Clear the field completely
+                                # Clear the field completely with multiple methods
+                                print(f"Clearing {field_info['name']} field...")
+                                
+                                # Method 1: Select all and delete
                                 await tab.evaluate(f"""
                                 (function() {{
                                     const el = document.querySelector('{selector}');
@@ -228,12 +231,52 @@ async def analyze_and_fill_all_form_elements(tab, llm, user_data):
                                         el.focus();
                                         el.select();
                                         el.value = '';
+                                        // Trigger input events to notify the form
+                                        el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                        el.dispatchEvent(new Event('change', {{ bubbles: true }}));
                                     }}
                                 }})();
                                 """)
+                                await asyncio.sleep(0.3)
+                                
+                                # Method 2: Use Ctrl+A and Delete for stubborn fields
+                                await element.click()
                                 await asyncio.sleep(0.2)
                                 
+                                # Send Ctrl+A to select all
+                                await tab.send_keys('\ue009a')  # Ctrl+A
+                                await asyncio.sleep(0.2)
+                                
+                                # Send Delete key
+                                await tab.send_keys('\ue017')  # Delete key
+                                await asyncio.sleep(0.2)
+                                
+                                # Verify field is empty
+                                current_value = await tab.evaluate(f"""
+                                (function() {{
+                                    const el = document.querySelector('{selector}');
+                                    return el ? el.value : '';
+                                }})();
+                                """)
+                                
+                                if current_value:
+                                    print(f"Field still contains: '{current_value}' - trying aggressive clear...")
+                                    # Final aggressive clear
+                                    await tab.evaluate(f"""
+                                    (function() {{
+                                        const el = document.querySelector('{selector}');
+                                        if (el) {{
+                                            el.value = '';
+                                            el.textContent = '';
+                                            el.innerHTML = '';
+                                            el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                        }}
+                                    }})();
+                                    """)
+                                    await asyncio.sleep(0.2)
+                                
                                 # Type the value
+                                print(f"Typing value: {str(field_info['value'])}")
                                 await element.send_keys(str(field_info['value']))
                                 await asyncio.sleep(0.5)
                                 
@@ -871,77 +914,152 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
         # --- HANDLE CLOUDFLARE VERIFICATION ---
         if submitted:
             tasks[task_id].update({"status": "processing", "message": "Checking for verification challenges..."})
-            await tab.sleep(3)  # Wait for any redirects/popups
+            await tab.sleep(5)  # Wait longer for any redirects/popups to appear
             
             # Look for Cloudflare verification
             try:
                 print("Checking for Cloudflare verification...")
                 
-                # First try nodriver's built-in method
-                try:
-                    print("Attempting built-in Cloudflare verification...")
-                    result = await tab.verify_cf()
-                    if result:
-                        print("Cloudflare verification completed using nodriver's built-in method!")
-                        await tab.sleep(3)
-                    else:
-                        print("Built-in verification returned False, trying manual detection...")
+                # Wait for potential Cloudflare modal to appear
+                cf_found = False
+                max_attempts = 3
+                
+                for attempt in range(max_attempts):
+                    print(f"Cloudflare detection attempt {attempt + 1}/{max_attempts}")
+                    
+                    # Look for Cloudflare verification elements with more comprehensive selectors
+                    cf_selectors = [
+                        # Turnstile checkbox
+                        "input[type='checkbox'][id*='cf']",
+                        "input[type='checkbox'][name*='cf']",
+                        ".cf-turnstile input[type='checkbox']",
+                        "[data-sitekey] input[type='checkbox']",
                         
-                        # Manual detection approach
-                        cf_found = False
+                        # Generic verification checkboxes
+                        "input[type='checkbox']",
                         
-                        # Look for common Cloudflare elements
-                        cf_selectors = [
-                            "input[type='checkbox']",  # Generic checkbox approach
-                            ".cf-turnstile",
-                            "[data-sitekey]",
-                            ".challenge-form",
-                            "iframe[src*='challenges.cloudflare.com']"
-                        ]
+                        # Turnstile containers
+                        ".cf-turnstile",
+                        "[data-sitekey]",
                         
-                        for selector in cf_selectors:
-                            try:
-                                print(f"Trying CF selector: {selector}")
+                        # Challenge forms
+                        ".challenge-form",
+                        "#challenge-form",
+                        
+                        # Iframes
+                        "iframe[src*='challenges.cloudflare.com']",
+                        "iframe[src*='turnstile']",
+                        "iframe[title*='verification']",
+                        "iframe[title*='challenge']"
+                    ]
+                    
+                    for selector in cf_selectors:
+                        try:
+                            print(f"Trying CF selector: {selector}")
+                            
+                            if selector.startswith('iframe'):
+                                # Handle iframes specially
+                                iframes = await tab.select_all(selector, timeout=2)
+                                for iframe in iframes:
+                                    try:
+                                        print(f"Found iframe, attempting to interact...")
+                                        await iframe.mouse_move()
+                                        await tab.sleep(1)
+                                        await iframe.click()
+                                        print("Clicked iframe!")
+                                        cf_found = True
+                                        break
+                                    except Exception as iframe_error:
+                                        print(f"Iframe interaction failed: {iframe_error}")
+                                        continue
+                            else:
+                                # Handle regular elements
                                 cf_elements = await tab.select_all(selector, timeout=2)
                                 
                                 for cf_element in cf_elements:
                                     try:
-                                        # Check if this looks like a verification element
-                                        await cf_element.update()
-                                        element_text = cf_element.text.lower() if hasattr(cf_element, 'text') else ""
+                                        # Check if element is visible and interactable
+                                        is_visible = await tab.evaluate(f"""
+                                        (function() {{
+                                            const elements = document.querySelectorAll('{selector}');
+                                            for (let el of elements) {{
+                                                const rect = el.getBoundingClientRect();
+                                                const style = window.getComputedStyle(el);
+                                                
+                                                if (rect.width > 0 && rect.height > 0 && 
+                                                    style.display !== 'none' && 
+                                                    style.visibility !== 'hidden' &&
+                                                    style.opacity !== '0') {{
+                                                    
+                                                    // Check for verification-related attributes or text
+                                                    const elementText = el.textContent.toLowerCase();
+                                                    const hasVerifyText = elementText.includes('verify') || 
+                                                                         elementText.includes('human') || 
+                                                                         elementText.includes('robot') ||
+                                                                         elementText.includes('challenge');
+                                                    
+                                                    const hasVerifyAttrs = el.className.includes('cf') ||
+                                                                          el.className.includes('turnstile') ||
+                                                                          el.id.includes('cf') ||
+                                                                          el.hasAttribute('data-sitekey');
+                                                    
+                                                    if (hasVerifyText || hasVerifyAttrs || el.type === 'checkbox') {{
+                                                        return true;
+                                                    }}
+                                                }}
+                                            }}
+                                            return false;
+                                        }})();
+                                        """)
                                         
-                                        # Look for verification-related text or attributes
-                                        if any(keyword in element_text for keyword in ['verify', 'human', 'robot', 'challenge']) or \
-                                           any(attr in str(cf_element.attrs) for attr in ['cf-', 'turnstile', 'challenge']):
+                                        if is_visible:
+                                            print(f"Found visible Cloudflare element with selector: {selector}")
                                             
-                                            print(f"Found potential Cloudflare element: {selector}")
+                                            # Try to click the element
                                             await cf_element.mouse_move()
                                             await tab.sleep(1)
                                             await cf_element.click()
                                             print("Clicked Cloudflare verification element!")
-                                            await tab.sleep(5)  # Wait for verification to complete
+                                            await tab.sleep(3)  # Wait for verification to process
                                             cf_found = True
                                             break
+                                            
                                     except Exception as elem_error:
-                                        print(f"Error checking CF element: {elem_error}")
+                                        print(f"Error interacting with CF element: {elem_error}")
                                         continue
-                                        
-                                if cf_found:
-                                    break
-                                    
-                            except Exception as selector_error:
-                                print(f"CF selector '{selector}' failed: {selector_error}")
-                                continue
-                        
-                        if not cf_found:
-                            print("No Cloudflare verification elements found")
                             
-                except Exception as builtin_error:
-                    print(f"Built-in CF verification failed: {builtin_error}")
-                    print("Continuing without Cloudflare verification...")
+                            if cf_found:
+                                break
+                                
+                        except Exception as selector_error:
+                            print(f"CF selector '{selector}' failed: {selector_error}")
+                            continue
+                    
+                    if cf_found:
+                        print("✅ Cloudflare verification completed!")
+                        await tab.sleep(5)  # Wait for verification to complete
+                        break
+                    else:
+                        print(f"No CF elements found in attempt {attempt + 1}, waiting before retry...")
+                        await tab.sleep(3)
+                
+                if not cf_found:
+                    print("❌ No Cloudflare verification elements found after all attempts")
+                    
+                    # Try the built-in method as last resort
+                    try:
+                        print("Trying built-in verify_cf() method as fallback...")
+                        result = await tab.verify_cf()
+                        if result:
+                            print("✅ Built-in Cloudflare verification succeeded!")
+                            cf_found = True
+                        else:
+                            print("❌ Built-in verification also failed")
+                    except Exception as builtin_error:
+                        print(f"Built-in CF verification failed: {builtin_error}")
                     
             except Exception as e:
-                print(f"Error checking for Cloudflare: {e}")
+                print(f"Error in Cloudflare verification: {e}")
 
         # --- VERIFY SUBMISSION SUCCESS ---
         await tab.sleep(3)  # Wait for any final redirects
@@ -949,28 +1067,82 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
         try:
             print("Checking for submission confirmation...")
             
-            # Look for success indicators
-            success_keywords = [
-                "thank you",
-                "application submitted",
-                "application received", 
-                "successfully submitted",
-                "confirmation",
-                "we'll be in touch",
-                "application complete"
+            # First check for error indicators or incomplete submission
+            error_keywords = [
+                "verify you are human",
+                "complete the verification",
+                "security check",
+                "prove you're not a robot",
+                "cloudflare",
+                "verification required",
+                "please verify",
+                "captcha",
+                "challenge"
             ]
             
             page_text = await tab.get_content()
             page_text_lower = page_text.lower()
             
-            success_found = any(keyword in page_text_lower for keyword in success_keywords)
+            # Check for verification/error indicators
+            verification_needed = any(keyword in page_text_lower for keyword in error_keywords)
             
-            if success_found:
-                print("✅ Application appears to have been submitted successfully!")
-                tasks[task_id].update({"status": "completed", "message": "Application submitted successfully! Confirmation detected."})
+            if verification_needed:
+                print("⚠️  Verification challenge detected - application may not be complete")
+                tasks[task_id].update({"status": "incomplete", "message": "Application submitted but verification challenge detected. Please complete manually."})
+                
+                # Try one more time to find and click verification
+                print("Making final attempt to complete verification...")
+                try:
+                    # Look for any visible checkboxes or buttons
+                    final_selectors = [
+                        "input[type='checkbox']:not([style*='display: none'])",
+                        "button:contains('Verify')",
+                        ".verify-button",
+                        "[role='checkbox']"
+                    ]
+                    
+                    for selector in final_selectors:
+                        try:
+                            elements = await tab.select_all(selector, timeout=2)
+                            for element in elements:
+                                try:
+                                    print(f"Final verification attempt with: {selector}")
+                                    await element.mouse_move()
+                                    await tab.sleep(1)
+                                    await element.click()
+                                    await tab.sleep(5)
+                                    print("Clicked final verification element!")
+                                    break
+                                except:
+                                    continue
+                        except:
+                            continue
+                            
+                except Exception as final_error:
+                    print(f"Final verification attempt failed: {final_error}")
+                
             else:
-                print("⚠️  Could not confirm successful submission - please check manually")
-                tasks[task_id].update({"status": "completed", "message": "Application submitted but confirmation unclear - please verify manually."})
+                # Look for success indicators
+                success_keywords = [
+                    "thank you",
+                    "application submitted",
+                    "application received", 
+                    "successfully submitted",
+                    "confirmation",
+                    "we'll be in touch",
+                    "application complete",
+                    "your application has been sent",
+                    "application sent successfully"
+                ]
+                
+                success_found = any(keyword in page_text_lower for keyword in success_keywords)
+                
+                if success_found:
+                    print("✅ Application appears to have been submitted successfully!")
+                    tasks[task_id].update({"status": "completed", "message": "Application submitted successfully! Confirmation detected."})
+                else:
+                    print("⚠️  Could not confirm successful submission - please check manually")
+                    tasks[task_id].update({"status": "completed", "message": "Application submitted but confirmation unclear - please verify manually."})
                 
         except Exception as e:
             print(f"Error checking submission status: {e}")
