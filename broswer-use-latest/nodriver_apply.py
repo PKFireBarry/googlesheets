@@ -174,54 +174,47 @@ async def use_llm_to_navigate(tab, llm: ChatGoogleGenerativeAI):
                 x, y = int(coords['x']), int(coords['y'])
                 print(f"LLM found element at x={x}, y={y}. Clicking using CDP.")
                 try:
-                    # Use CDP (Chrome DevTools Protocol) for reliable clicking
-                    # First dispatch a mousePressed event at the coordinates
-                    await tab.send({
-                        "method": "Input.dispatchMouseEvent",
-                        "params": {
-                            "type": "mousePressed",
-                            "x": x,
-                            "y": y,
-                            "button": "left",
-                            "clickCount": 1
-                        }
-                    })
-                    await asyncio.sleep(0.1)
-                    
-                    # Then dispatch a mouseReleased event to complete the click
-                    await tab.send({
-                        "method": "Input.dispatchMouseEvent",
-                        "params": {
-                            "type": "mouseReleased",
-                            "x": x,
-                            "y": y,
-                            "button": "left",
-                            "clickCount": 1
-                        }
-                    })
-                    await tab.sleep(3)
-                    print("Click completed successfully using CDP.")
-                    return True # Success
-                except Exception as e:
-                    print(f"CDP click failed ({e}), trying alternative approach...")
-                    # Last resort: try to find an element at those coordinates and click it
-                    try:
-                        # Use JavaScript to click at coordinates
-                        js_click = f"""
+                    # First try JavaScript approach - more reliable for actual clicking
+                    js_click = f"""
+                    (function() {{
                         const element = document.elementFromPoint({x}, {y});
                         if (element) {{
-                            element.click();
-                            console.log('Clicked element:', element);
+                            console.log('Found element at coordinates:', element);
+                            element.scrollIntoView({{behavior: 'smooth', block: 'center'}});
+                            setTimeout(() => {{
+                                element.click();
+                                console.log('Clicked element successfully');
+                            }}, 500);
+                            return true;
                         }} else {{
-                            console.log('No element found at coordinates');
+                            console.log('No element found at coordinates {x}, {y}');
+                            return false;
                         }}
+                    }})()
+                    """
+                    result = await tab.evaluate(js_click)
+                    await tab.sleep(3)
+                    if result:
+                        print("Click completed successfully using JavaScript.")
+                        return True
+                    else:
+                        print("No element found at coordinates, trying alternative...")
+                        # Fallback to simpler JavaScript click
+                        raise Exception("JavaScript click found no element")
+                except Exception as e:
+                    print(f"JavaScript click failed ({e}), trying simple click...")
+                    # Last resort: try simple direct click at coordinates
+                    try:
+                        # Use simple JavaScript to click at coordinates
+                        simple_click = f"""
+                        document.elementFromPoint({x}, {y})?.click();
                         """
-                        await tab.evaluate(js_click)
+                        await tab.evaluate(simple_click)
                         await tab.sleep(3)
-                        print("Click completed using JavaScript.")
+                        print("Click completed using simple JavaScript.")
                         return True
                     except Exception as js_error:
-                        print(f"JavaScript click also failed: {js_error}")
+                        print(f"Simple JavaScript click also failed: {js_error}")
                         return False
             
             elif action.get('scroll'):
