@@ -73,163 +73,7 @@ async def fill_text_field(tab, keywords, value):
         print(f"Could not find or fill field for '{keywords[0]}': {e}")
     return False
 
-async def debug_clickable_elements(tab):
-    """Debug function to show all clickable elements and their positions."""
-    print("=== ANALYZING CLICKABLE ELEMENTS ===")
-    
-    try:
-        clickable_elements = await tab.evaluate("""
-        (function() {
-            // Find all potentially clickable elements
-            const clickableSelectors = [
-                'button',
-                'a[href]',
-                'input[type="submit"]',
-                'input[type="button"]',
-                '[onclick]',
-                '[role="button"]',
-                '.btn',
-                '.button'
-            ];
-            
-            const elements = [];
-            
-            clickableSelectors.forEach(selector => {
-                const found = document.querySelectorAll(selector);
-                found.forEach(el => {
-                    const rect = el.getBoundingClientRect();
-                    if (rect.width > 0 && rect.height > 0) { // Only visible elements
-                        elements.push({
-                            tag: el.tagName,
-                            className: el.className,
-                            id: el.id,
-                            text: el.textContent?.trim().substring(0, 50),
-                            x: Math.round(rect.left + rect.width / 2),
-                            y: Math.round(rect.top + rect.height / 2),
-                            width: Math.round(rect.width),
-                            height: Math.round(rect.height),
-                            selector: selector
-                        });
-                    }
-                });
-            });
-            
-            return elements;
-        })()
-        """)
-        
-        print(f"Found {len(clickable_elements)} clickable elements:")
-        for i, elem in enumerate(clickable_elements[:10]):  # Show first 10
-            print(f"  {i+1}. {elem['tag']} at ({elem['x']}, {elem['y']}) - '{elem['text'][:30]}...' [{elem['width']}x{elem['height']}]")
-        
-        if len(clickable_elements) > 10:
-            print(f"  ... and {len(clickable_elements) - 10} more elements")
-            
-        # Look specifically for "Apply" related buttons
-        apply_elements = [elem for elem in clickable_elements if 'apply' in elem['text'].lower()]
-        if apply_elements:
-            print(f"\nFound {len(apply_elements)} elements containing 'apply':")
-            for elem in apply_elements:
-                print(f"  - {elem['tag']} at ({elem['x']}, {elem['y']}) - '{elem['text']}'")
-        else:
-            print("\nNo elements containing 'apply' found")
-            
-        print("=== CLICKABLE ELEMENTS ANALYSIS COMPLETE ===")
-        
-    except Exception as e:
-        print(f"Debug clickable elements failed: {e}")
-        import traceback
-        traceback.print_exc()
-
-async def test_mouse_movement(tab):
-    """Test function to verify mouse movement is working correctly."""
-    print("=== TESTING MOUSE MOVEMENT ===")
-    
-    try:
-        # Get viewport dimensions first
-        viewport_info = await tab.evaluate("""
-        ({
-            width: window.innerWidth,
-            height: window.innerHeight,
-            scrollX: window.scrollX,
-            scrollY: window.scrollY,
-            devicePixelRatio: window.devicePixelRatio
-        })
-        """)
-        print(f"Viewport info: {viewport_info}")
-        
-        # Calculate center and test positions
-        center_x = viewport_info['width'] // 2
-        center_y = viewport_info['height'] // 2
-        
-        print(f"Calculated center position: ({center_x}, {center_y})")
-        
-        # Test 1: JavaScript-based mouse event simulation with detailed logging
-        print("Test 1: Testing JavaScript mouse events...")
-        js_test = f"""
-        console.log('Creating mouse movement test...');
-        console.log('Viewport dimensions:', window.innerWidth, 'x', window.innerHeight);
-        console.log('Calculated center:', {center_x}, {center_y});
-        
-        // Create a visual indicator
-        const indicator = document.createElement('div');
-        indicator.style.position = 'fixed';
-        indicator.style.width = '20px';
-        indicator.style.height = '20px';
-        indicator.style.backgroundColor = 'red';
-        indicator.style.borderRadius = '50%';
-        indicator.style.zIndex = '10000';
-        indicator.style.pointerEvents = 'none';
-        indicator.style.border = '2px solid white';
-        indicator.style.boxShadow = '0 0 10px rgba(255,0,0,0.8)';
-        document.body.appendChild(indicator);
-        
-        // Test mouse events at specific coordinates including center
-        const coords = [
-            {{x: {center_x}, y: {center_y}, label: 'CENTER'}},
-            {{x: 100, y: 100, label: 'TOP-LEFT'}},
-            {{x: {viewport_info['width'] - 100}, y: 100, label: 'TOP-RIGHT'}},
-            {{x: {center_x}, y: {viewport_info['height'] - 100}, label: 'BOTTOM-CENTER'}}
-        ];
-        
-        coords.forEach((coord, i) => {{
-            setTimeout(() => {{
-                indicator.style.left = coord.x + 'px';
-                indicator.style.top = coord.y + 'px';
-                console.log(`${{coord.label}}: Moved indicator to (${{coord.x}}, ${{coord.y}})`);
-                
-                // Check what element is at this position
-                const elementAtPos = document.elementFromPoint(coord.x, coord.y);
-                if (elementAtPos) {{
-                    console.log(`Element at ${{coord.label}} (${{coord.x}}, ${{coord.y}}):`, elementAtPos.tagName, elementAtPos.className, elementAtPos.id);
-                }}
-                
-                // Dispatch mouse events
-                const mouseEvent = new MouseEvent('mousemove', {{
-                    clientX: coord.x,
-                    clientY: coord.y,
-                    bubbles: true
-                }});
-                document.dispatchEvent(mouseEvent);
-            }}, i * 1000);
-        }});
-        
-        // Remove indicator after test
-        setTimeout(() => {{
-            document.body.removeChild(indicator);
-            console.log('Mouse movement test completed');
-        }}, 5000);
-        """
-        
-        await tab.evaluate(js_test)
-        await asyncio.sleep(6)
-        
-        print("=== MOUSE MOVEMENT TEST COMPLETE ===")
-        
-    except Exception as e:
-        print(f"Mouse movement test failed: {e}")
-        import traceback
-        traceback.print_exc()
+# Removed unused debug functions - focusing on core functionality
 
 async def handle_cookie_banner(tab):
     """
@@ -278,221 +122,7 @@ async def handle_cookie_banner(tab):
     print("No cookie banner found or handled.")
     return False # No button was clicked
 
-async def use_llm_to_navigate(tab, llm: ChatGoogleGenerativeAI):
-    """
-    Uses a vision-capable LLM to find the coordinates of the apply button,
-    scrolling if necessary.
-    """
-    print("Starting visual search for navigation element...")
-    # Loop up to 4 times (initial view + 3 scrolls)
-    for i in range(4):
-        print(f"Analyzing view {i+1}...")
-        try:
-            # Take screenshot using the correct method
-            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-                temp_path = tmp.name
-            
-            await tab.save_screenshot(temp_path)
-            
-            # Read into memory and clean up immediately
-            with open(temp_path, 'rb') as f:
-                screenshot_data = f.read()
-            os.remove(temp_path)
-            
-            img_base64 = base64.b64encode(screenshot_data).decode('utf-8')
-
-            # More advanced prompt that can signal a scroll
-            prompt = [
-                HumanMessage(
-                    content=[
-                        {
-                            "type": "text",
-                            "text": "You are a web automation assistant. Look at this screenshot. Your goal is to find the main 'Apply' button/link. "
-                                    "- If you see the button, return ONLY a JSON object with its center coordinates: {\"click\": {\"x\": 123, \"y\": 456}}. "
-                                    "- If you DO NOT see the button but believe it is further down, return ONLY this JSON: {\"scroll\": true}. "
-                                    "- If the button is not visible and you believe you're at the end of the page, return {\"end\": true}."
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": f"data:image/png;base64,{img_base64}"
-                        },
-                    ]
-                )
-            ]
-            
-            response = await llm.ainvoke(prompt)
-            json_string = response.content.strip().replace("```json", "").replace("```", "")
-            print(f"LLM raw response: {json_string}")
-            
-            action = json.loads(json_string)
-            print(f"LLM parsed action: {action}")
-
-            if action.get('click'):
-                coords = action['click']
-                x, y = int(coords['x']), int(coords['y'])
-                
-                # Get detailed viewport and positioning information
-                viewport_debug = await tab.evaluate("""
-                ({
-                    viewport: {
-                        width: window.innerWidth,
-                        height: window.innerHeight,
-                        scrollX: window.scrollX,
-                        scrollY: window.scrollY
-                    },
-                    document: {
-                        width: document.documentElement.scrollWidth,
-                        height: document.documentElement.scrollHeight
-                    },
-                    devicePixelRatio: window.devicePixelRatio
-                })
-                """)
-                
-                print(f"=== LLM CLICK ANALYSIS ===")
-                print(f"LLM provided coordinates: ({x}, {y})")
-                print(f"Viewport info: {viewport_debug}")
-                print(f"Click is at {(x/viewport_debug['viewport']['width']*100):.1f}% from left, {(y/viewport_debug['viewport']['height']*100):.1f}% from top")
-                
-                # Check if coordinates are within viewport
-                if x > viewport_debug['viewport']['width'] or y > viewport_debug['viewport']['height']:
-                    print(f"WARNING: Click coordinates ({x}, {y}) are OUTSIDE viewport ({viewport_debug['viewport']['width']}x{viewport_debug['viewport']['height']})")
-                
-                try:
-                    # First, create a visual indicator and check what's there
-                    print(f"Creating visual indicator at ({x}, {y})")
-                    
-                    # Create the indicator
-                    await tab.evaluate(f"""
-                    const indicator = document.createElement('div');
-                    indicator.id = 'llm-click-indicator';
-                    indicator.style.position = 'fixed';
-                    indicator.style.left = '{x}px';
-                    indicator.style.top = '{y}px';
-                    indicator.style.width = '30px';
-                    indicator.style.height = '30px';
-                    indicator.style.backgroundColor = 'lime';
-                    indicator.style.border = '3px solid red';
-                    indicator.style.borderRadius = '50%';
-                    indicator.style.zIndex = '99999';
-                    indicator.style.pointerEvents = 'none';
-                    indicator.style.transform = 'translate(-50%, -50%)';
-                    document.body.appendChild(indicator);
-                    """)
-                    
-                    # Check what element is at those coordinates
-                    element_info = await tab.evaluate(f"""
-                    const element = document.elementFromPoint({x}, {y});
-                    if (element) {{
-                        return {{
-                            tag: element.tagName,
-                            className: element.className,
-                            id: element.id,
-                            text: element.textContent?.substring(0, 100),
-                            clickable: element.tagName === 'BUTTON' || element.tagName === 'A' || element.onclick !== null
-                        }};
-                    }}
-                    return null;
-                    """)
-                    
-                    if element_info:
-                        print(f"Element at LLM coordinates: {element_info}")
-                    else:
-                        print(f"No element found at LLM coordinates ({x}, {y})")
-                    
-                    await tab.sleep(3)  # Let user see the indicator
-                    
-                    # Try to click the element at those coordinates
-                    print(f"Attempting to click element at ({x}, {y})")
-                    
-                    click_result = await tab.evaluate(f"""
-                    const element = document.elementFromPoint({x}, {y});
-                    if (element) {{
-                        // Try multiple click approaches
-                        element.scrollIntoView({{behavior: 'smooth', block: 'center'}});
-                        
-                        // Direct click
-                        element.click();
-                        
-                        // Mouse events
-                        const clickEvent = new MouseEvent('click', {{
-                            view: window,
-                            bubbles: true,
-                            cancelable: true,
-                            clientX: {x},
-                            clientY: {y}
-                        }});
-                        element.dispatchEvent(clickEvent);
-                        
-                        // Remove indicator
-                        const indicator = document.getElementById('llm-click-indicator');
-                        if (indicator) indicator.remove();
-                        
-                        return true;
-                    }}
-                    return false;
-                    """)
-                    
-                    await tab.sleep(3)  # Wait for any navigation/changes
-                    
-                    if click_result:
-                        print("Click executed successfully.")
-                        return True
-                    else:
-                        print("No element found at coordinates, trying nearby search...")
-                        
-                        # Fallback: try to find any clickable element nearby
-                        print(f"Searching for clickable elements near ({x}, {y})")
-                        
-                        fallback_result = await tab.evaluate(f"""
-                        const searchRadius = 50;
-                        for (let offsetX = -searchRadius; offsetX <= searchRadius; offsetX += 20) {{
-                            for (let offsetY = -searchRadius; offsetY <= searchRadius; offsetY += 20) {{
-                                const testX = {x} + offsetX;
-                                const testY = {y} + offsetY;
-                                const testElement = document.elementFromPoint(testX, testY);
-                                
-                                if (testElement && (testElement.tagName === 'BUTTON' || testElement.tagName === 'A' || testElement.onclick)) {{
-                                    testElement.click();
-                                    return true;
-                                }}
-                            }}
-                        }}
-                        return false;
-                        """)
-                        
-                        await tab.sleep(3)
-                        
-                        if fallback_result:
-                            print("Found and clicked nearby element.")
-                            return True
-                        else:
-                            print("No clickable elements found nearby.")
-                            return False
-                        
-                except Exception as e:
-                    print(f"All click attempts failed: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    return False
-            
-            elif action.get('scroll'):
-                print("LLM advised scrolling. Scrolling down...")
-                await tab.scroll_down(800) # Scroll down a fixed amount
-                await tab.sleep(2) # Wait for content to load
-                print("Scroll completed, continuing to next view...")
-                continue # Continue to the next loop iteration to re-scan
-                
-            elif action.get('end'):
-                print("LLM concluded the element is not on the page.")
-                break # Exit loop
-
-        except Exception as e:
-            print(f"An error occurred during LLM navigation attempt {i+1}: {e}")
-            print(f"Full error details: {type(e).__name__}: {str(e)}")
-            break # Exit loop on error
-
-    print("Could not find the navigation element after analyzing the page.")
-    return False
+# Removed LLM navigation function - using native nodriver methods only
 
 async def get_llm_response(llm, prompt_text: str, user_data: UserData):
     """Generates a response from the LLM for a given prompt."""
@@ -517,9 +147,9 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
     temp_file_path = None
     
     try:
-        # --- Setup Browser and LLM ---
-        tasks[task_id].update({"status": "processing", "message": "Initializing browser and LLM..."})
-        llm = ChatGoogleGenerativeAI(model='gemini-2.5-flash-preview-05-20', api_key=api_key) # Use a vision-capable model
+        # --- Setup Browser ---
+        tasks[task_id].update({"status": "processing", "message": "Initializing browser..."})
+        llm = ChatGoogleGenerativeAI(model='gemini-2.5-flash', api_key=api_key) # For text responses only
         browser = await uc.start(
             headless=False, 
             browser_args=['--no-sandbox', '--window-size=1920,1080']
@@ -537,24 +167,78 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
             await tab.bring_to_front()
             print("Switched to the most recent tab to ensure it's active.")
 
-        # --- TEST MOUSE MOVEMENT ---
-        print("Running mouse movement test...")
-        await test_mouse_movement(tab)
+        # --- FIND AND CLICK APPLY BUTTON USING NATIVE NODRIVER ---
+        tasks[task_id].update({"status": "processing", "message": "Looking for apply button..."})
         
-        # --- DEBUG: Show all clickable elements ---
-        print("Analyzing clickable elements on page...")
-        try:
-            # Simple approach - just count buttons and links
-            button_count = await tab.evaluate("document.querySelectorAll('button').length")
-            link_count = await tab.evaluate("document.querySelectorAll('a[href]').length")
-            print(f"Found {button_count} buttons and {link_count} links on the page")
-        except Exception as e:
-            print(f"Simple element count failed: {e}")
-
-        # --- Navigate to the actual application form using LLM ---
-        tasks[task_id].update({"status": "processing", "message": "Using LLM to find application form..."})
-        if not await use_llm_to_navigate(tab, llm):
-            raise Exception("LLM-based navigation failed to find the application form.")
+        # Wait a moment for page to fully load
+        await tab.sleep(2)
+        
+        # Try different variations of "apply" text
+        apply_keywords = [
+            "apply now",
+            "apply for this job", 
+            "apply to this job",
+            "apply",
+            "submit application",
+            "apply for position"
+        ]
+        
+        button_found = False
+        for keyword in apply_keywords:
+            try:
+                print(f"Searching for button with text: '{keyword}'")
+                apply_button = await tab.find(keyword, best_match=True, timeout=3)
+                if apply_button:
+                    print(f"Found apply button with text: '{keyword}'")
+                    print("Moving mouse to apply button...")
+                    await apply_button.mouse_move()
+                    await tab.sleep(0.5)
+                    
+                    print("Clicking apply button...")
+                    await apply_button.click()
+                    await tab.sleep(3)
+                    
+                    print("Apply button clicked successfully!")
+                    button_found = True
+                    break
+            except Exception as e:
+                print(f"Could not find button with text '{keyword}': {e}")
+                continue
+        
+        if not button_found:
+            print("Could not find apply button with text search. Trying CSS selectors...")
+            
+            # Try common CSS selectors for apply buttons
+            selectors = [
+                "button[class*='apply']",
+                "a[class*='apply']", 
+                "button[id*='apply']",
+                "a[id*='apply']",
+                ".apply-button",
+                ".btn-apply",
+                "button[type='submit']"
+            ]
+            
+            for selector in selectors:
+                try:
+                    print(f"Trying selector: {selector}")
+                    element = await tab.select(selector, timeout=2)
+                    if element:
+                        print(f"Found element with selector: {selector}")
+                        print("Clicking element...")
+                        await element.mouse_move()
+                        await tab.sleep(0.5)
+                        await element.click()
+                        await tab.sleep(3)
+                        print("Element clicked successfully!")
+                        button_found = True
+                        break
+                except Exception as e:
+                    print(f"Selector '{selector}' failed: {e}")
+                    continue
+        
+        if not button_found:
+            raise Exception("Could not find any apply button on the page.")
 
         # --- Handle Resume Upload ---
         tasks[task_id].update({"status": "processing", "message": "Looking for resume upload field..."})
