@@ -141,46 +141,107 @@ async def analyze_and_fill_all_form_elements(tab, llm, user_data):
     print("=== COMPREHENSIVE FORM ANALYSIS ===")
     
     try:
-        # Find all interactive form elements
-        selectors = [
-            'input[type="text"]',
-            'input[type="email"]', 
-            'input[type="tel"]',
-            'input[type="url"]',
-            'input[type="number"]',
-            'input[type="password"]',
-            'input[type="search"]',
-            'input:not([type])',  # inputs without type default to text
-            'textarea',
-            'select',
-            'input[type="radio"]',
-            'input[type="checkbox"]'
-        ]
-        
+        # Find all interactive form elements that are actually visible and fillable
         all_elements = []
-        for selector in selectors:
-            try:
-                elements = await tab.select_all(selector)
-                all_elements.extend(elements)
-            except:
-                continue
         
-        print(f"Found {len(all_elements)} interactive form elements")
+        # Get elements using JavaScript to check visibility
+        visible_elements = await tab.evaluate("""
+        const selectors = [
+            'input[type="text"]:not([hidden]):not([style*="display: none"])',
+            'input[type="email"]:not([hidden]):not([style*="display: none"])', 
+            'input[type="tel"]:not([hidden]):not([style*="display: none"])',
+            'input[type="url"]:not([hidden]):not([style*="display: none"])',
+            'input[type="number"]:not([hidden]):not([style*="display: none"])',
+            'input[type="password"]:not([hidden]):not([style*="display: none"])',
+            'input[type="search"]:not([hidden]):not([style*="display: none"])',
+            'input:not([type]):not([hidden]):not([style*="display: none"])',
+            'textarea:not([hidden]):not([style*="display: none"])',
+            'select:not([hidden]):not([style*="display: none"])',
+            'input[type="radio"]:not([hidden]):not([style*="display: none"])',
+            'input[type="checkbox"]:not([hidden]):not([style*="display: none"])'
+        ];
         
-        # Analyze each element and prepare for LLM
+        const visibleElements = [];
+        selectors.forEach(selector => {
+            const elements = document.querySelectorAll(selector);
+            elements.forEach(el => {
+                const rect = el.getBoundingClientRect();
+                const style = window.getComputedStyle(el);
+                
+                // Check if element is actually visible and interactable
+                if (rect.width > 0 && rect.height > 0 && 
+                    style.display !== 'none' && 
+                    style.visibility !== 'hidden' &&
+                    style.opacity !== '0' &&
+                    !el.disabled &&
+                    !el.readOnly) {
+                    
+                    visibleElements.push({
+                        tag: el.tagName.toLowerCase(),
+                        type: el.type || 'text',
+                        name: el.name || '',
+                        id: el.id || '',
+                        placeholder: el.placeholder || '',
+                        ariaLabel: el.getAttribute('aria-label') || '',
+                        required: el.required || false,
+                        value: el.value || ''
+                    });
+                }
+            });
+        });
+        
+        return visibleElements;
+        """)
+        
+        print(f"Found {len(visible_elements)} visible interactive form elements")
+        
+        # Now get the actual nodriver elements for the visible ones
         form_fields = []
-        for i, element in enumerate(all_elements):
+        for i, elem_info in enumerate(visible_elements):
             try:
-                context = await get_field_context(element, tab)
-                if context and context.get('question'):
-                    form_fields.append({
-                        'element': element,
-                        'context': context,
-                        'index': i
-                    })
-                    print(f"Field {i+1}: {context['tag']}[{context['type']}] - '{context['question'][:50]}...'")
+                # Try to find the element using multiple selectors
+                element = None
+                selectors_to_try = []
+                
+                if elem_info['id']:
+                    selectors_to_try.append(f"#{elem_info['id']}")
+                if elem_info['name']:
+                    selectors_to_try.append(f"[name='{elem_info['name']}']")
+                if elem_info['placeholder']:
+                    selectors_to_try.append(f"[placeholder='{elem_info['placeholder']}']")
+                
+                for selector in selectors_to_try:
+                    try:
+                        element = await tab.select(selector, timeout=1)
+                        if element:
+                            break
+                    except:
+                        continue
+                
+                if element:
+                    # Create context from the JavaScript info
+                    context = {
+                        'type': elem_info['type'],
+                        'name': elem_info['name'],
+                        'id': elem_info['id'],
+                        'placeholder': elem_info['placeholder'],
+                        'aria_label': elem_info['ariaLabel'],
+                        'required': elem_info['required'],
+                        'tag': elem_info['tag'],
+                        'question': elem_info['placeholder'] or elem_info['ariaLabel'] or elem_info['name'] or f"{elem_info['tag']}_{elem_info['type']}"
+                    }
+                    
+                    # Skip if no meaningful question/context
+                    if context['question'] and len(context['question']) > 0:
+                        form_fields.append({
+                            'element': element,
+                            'context': context,
+                            'index': i
+                        })
+                        print(f"Field {i+1}: {context['tag']}[{context['type']}] - '{context['question'][:50]}...'")
+                    
             except Exception as e:
-                print(f"Error analyzing element {i}: {e}")
+                print(f"Error processing element {i}: {e}")
         
         print(f"Identified {len(form_fields)} fillable fields")
         
@@ -222,7 +283,7 @@ async def fill_fields_with_llm_intelligence(form_fields, llm, user_data, tab):
             try:
                 current_value = await element.evaluate("this.value")
                 if current_value and current_value.strip():
-                    print(f"Skipping field '{context['question'][:30]}...' - already filled")
+                    print(f"Skipping field '{context['question'][:30]}...' - already filled with: '{current_value[:20]}...'")
                     continue
             except:
                 pass
@@ -289,8 +350,18 @@ async def handle_text_field(element, context, llm, user_data, tab):
             await element.click()
             await asyncio.sleep(0.3)
             
-            # Clear any existing content
-            await element.clear_input()
+            # Clear any existing content more thoroughly
+            await element.click()
+            await asyncio.sleep(0.2)
+            
+            # Select all text and delete it
+            await tab.evaluate("""
+            const activeElement = document.activeElement;
+            if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
+                activeElement.select();
+                activeElement.value = '';
+            }
+            """)
             await asyncio.sleep(0.2)
             
             # Type the response
@@ -744,41 +815,106 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
             # Look for Cloudflare verification
             try:
                 print("Checking for Cloudflare verification...")
-                # Try to find the verification checkbox/button
-                cf_selectors = [
-                    "input[type='checkbox'][id*='cf']",
-                    ".cf-turnstile",
-                    "[data-sitekey]",
-                    "iframe[src*='cloudflare']",
-                    ".challenge-form"
-                ]
                 
-                for selector in cf_selectors:
-                    try:
-                        cf_element = await tab.select(selector, timeout=2)
-                        if cf_element:
-                            print(f"Found Cloudflare element with selector: {selector}")
-                            await cf_element.mouse_move()
-                            await tab.sleep(1)
-                            await cf_element.click()
-                            print("Clicked Cloudflare verification!")
-                            await tab.sleep(5)  # Wait for verification to complete
-                            break
-                    except Exception as e:
-                        print(f"CF selector '{selector}' failed: {e}")
-                        
-                # Alternative: Use nodriver's built-in Cloudflare verification
+                # First try nodriver's built-in method
                 try:
+                    print("Attempting built-in Cloudflare verification...")
                     result = await tab.verify_cf()
                     if result:
                         print("Cloudflare verification completed using nodriver's built-in method!")
-                except Exception as e:
-                    print(f"Built-in CF verification failed: {e}")
+                        await tab.sleep(3)
+                    else:
+                        print("Built-in verification returned False, trying manual detection...")
+                        
+                        # Manual detection approach
+                        cf_found = False
+                        
+                        # Look for common Cloudflare elements
+                        cf_selectors = [
+                            "input[type='checkbox']",  # Generic checkbox approach
+                            ".cf-turnstile",
+                            "[data-sitekey]",
+                            ".challenge-form",
+                            "iframe[src*='challenges.cloudflare.com']"
+                        ]
+                        
+                        for selector in cf_selectors:
+                            try:
+                                print(f"Trying CF selector: {selector}")
+                                cf_elements = await tab.select_all(selector, timeout=2)
+                                
+                                for cf_element in cf_elements:
+                                    try:
+                                        # Check if this looks like a verification element
+                                        await cf_element.update()
+                                        element_text = cf_element.text.lower() if hasattr(cf_element, 'text') else ""
+                                        
+                                        # Look for verification-related text or attributes
+                                        if any(keyword in element_text for keyword in ['verify', 'human', 'robot', 'challenge']) or \
+                                           any(attr in str(cf_element.attrs) for attr in ['cf-', 'turnstile', 'challenge']):
+                                            
+                                            print(f"Found potential Cloudflare element: {selector}")
+                                            await cf_element.mouse_move()
+                                            await tab.sleep(1)
+                                            await cf_element.click()
+                                            print("Clicked Cloudflare verification element!")
+                                            await tab.sleep(5)  # Wait for verification to complete
+                                            cf_found = True
+                                            break
+                                    except Exception as elem_error:
+                                        print(f"Error checking CF element: {elem_error}")
+                                        continue
+                                        
+                                if cf_found:
+                                    break
+                                    
+                            except Exception as selector_error:
+                                print(f"CF selector '{selector}' failed: {selector_error}")
+                                continue
+                        
+                        if not cf_found:
+                            print("No Cloudflare verification elements found")
+                            
+                except Exception as builtin_error:
+                    print(f"Built-in CF verification failed: {builtin_error}")
+                    print("Continuing without Cloudflare verification...")
                     
             except Exception as e:
                 print(f"Error checking for Cloudflare: {e}")
 
-        tasks[task_id].update({"status": "completed", "message": "Application submitted! Please check for any final confirmations."})
+        # --- VERIFY SUBMISSION SUCCESS ---
+        await tab.sleep(3)  # Wait for any final redirects
+        
+        try:
+            print("Checking for submission confirmation...")
+            
+            # Look for success indicators
+            success_keywords = [
+                "thank you",
+                "application submitted",
+                "application received", 
+                "successfully submitted",
+                "confirmation",
+                "we'll be in touch",
+                "application complete"
+            ]
+            
+            page_text = await tab.get_content()
+            page_text_lower = page_text.lower()
+            
+            success_found = any(keyword in page_text_lower for keyword in success_keywords)
+            
+            if success_found:
+                print("✅ Application appears to have been submitted successfully!")
+                tasks[task_id].update({"status": "completed", "message": "Application submitted successfully! Confirmation detected."})
+            else:
+                print("⚠️  Could not confirm successful submission - please check manually")
+                tasks[task_id].update({"status": "completed", "message": "Application submitted but confirmation unclear - please verify manually."})
+                
+        except Exception as e:
+            print(f"Error checking submission status: {e}")
+            tasks[task_id].update({"status": "completed", "message": "Application submitted! Please check for any final confirmations."})
+
         print("--- Application Process Complete ---")
         print("Application has been submitted. Keeping browser open for 30 seconds to see results...")
         await asyncio.sleep(30)
