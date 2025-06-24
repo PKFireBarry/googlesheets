@@ -79,41 +79,43 @@ async def debug_clickable_elements(tab):
     
     try:
         clickable_elements = await tab.evaluate("""
-        // Find all potentially clickable elements
-        const clickableSelectors = [
-            'button',
-            'a[href]',
-            'input[type="submit"]',
-            'input[type="button"]',
-            '[onclick]',
-            '[role="button"]',
-            '.btn',
-            '.button'
-        ];
-        
-        const elements = [];
-        
-        clickableSelectors.forEach(selector => {
-            const found = document.querySelectorAll(selector);
-            found.forEach(el => {
-                const rect = el.getBoundingClientRect();
-                if (rect.width > 0 && rect.height > 0) { // Only visible elements
-                    elements.push({
-                        tag: el.tagName,
-                        className: el.className,
-                        id: el.id,
-                        text: el.textContent?.trim().substring(0, 50),
-                        x: Math.round(rect.left + rect.width / 2),
-                        y: Math.round(rect.top + rect.height / 2),
-                        width: Math.round(rect.width),
-                        height: Math.round(rect.height),
-                        selector: selector
-                    });
-                }
+        (function() {
+            // Find all potentially clickable elements
+            const clickableSelectors = [
+                'button',
+                'a[href]',
+                'input[type="submit"]',
+                'input[type="button"]',
+                '[onclick]',
+                '[role="button"]',
+                '.btn',
+                '.button'
+            ];
+            
+            const elements = [];
+            
+            clickableSelectors.forEach(selector => {
+                const found = document.querySelectorAll(selector);
+                found.forEach(el => {
+                    const rect = el.getBoundingClientRect();
+                    if (rect.width > 0 && rect.height > 0) { // Only visible elements
+                        elements.push({
+                            tag: el.tagName,
+                            className: el.className,
+                            id: el.id,
+                            text: el.textContent?.trim().substring(0, 50),
+                            x: Math.round(rect.left + rect.width / 2),
+                            y: Math.round(rect.top + rect.height / 2),
+                            width: Math.round(rect.width),
+                            height: Math.round(rect.height),
+                            selector: selector
+                        });
+                    }
+                });
             });
-        });
-        
-        return elements;
+            
+            return elements;
+        })()
         """)
         
         print(f"Found {len(clickable_elements)} clickable elements:")
@@ -358,40 +360,42 @@ async def use_llm_to_navigate(tab, llm: ChatGoogleGenerativeAI):
                 try:
                     # First, create a visual indicator at the exact coordinates the LLM provided
                     indicator_script = f"""
-                    // Create visual indicator at LLM coordinates
-                    const indicator = document.createElement('div');
-                    indicator.id = 'llm-click-indicator';
-                    indicator.style.position = 'fixed';
-                    indicator.style.left = '{x}px';
-                    indicator.style.top = '{y}px';
-                    indicator.style.width = '30px';
-                    indicator.style.height = '30px';
-                    indicator.style.backgroundColor = 'lime';
-                    indicator.style.border = '3px solid red';
-                    indicator.style.borderRadius = '50%';
-                    indicator.style.zIndex = '99999';
-                    indicator.style.pointerEvents = 'none';
-                    indicator.style.transform = 'translate(-50%, -50%)';
-                    document.body.appendChild(indicator);
-                    
-                    console.log('Visual indicator placed at LLM coordinates ({x}, {y})');
-                    
-                    // Also log what's at those coordinates
-                    const elementAtCoords = document.elementFromPoint({x}, {y});
-                    if (elementAtCoords) {{
-                        console.log('Element at LLM coordinates:', {{
-                            tag: elementAtCoords.tagName,
-                            className: elementAtCoords.className,
-                            id: elementAtCoords.id,
-                            text: elementAtCoords.textContent?.substring(0, 50),
-                            clickable: elementAtCoords.tagName === 'BUTTON' || elementAtCoords.tagName === 'A' || elementAtCoords.onclick !== null,
-                            boundingRect: elementAtCoords.getBoundingClientRect()
-                        }});
-                    }} else {{
-                        console.log('No element found at LLM coordinates ({x}, {y})');
-                    }}
-                    
-                    return elementAtCoords ? true : false;
+                    (function() {{
+                        // Create visual indicator at LLM coordinates
+                        const indicator = document.createElement('div');
+                        indicator.id = 'llm-click-indicator';
+                        indicator.style.position = 'fixed';
+                        indicator.style.left = '{x}px';
+                        indicator.style.top = '{y}px';
+                        indicator.style.width = '30px';
+                        indicator.style.height = '30px';
+                        indicator.style.backgroundColor = 'lime';
+                        indicator.style.border = '3px solid red';
+                        indicator.style.borderRadius = '50%';
+                        indicator.style.zIndex = '99999';
+                        indicator.style.pointerEvents = 'none';
+                        indicator.style.transform = 'translate(-50%, -50%)';
+                        document.body.appendChild(indicator);
+                        
+                        console.log('Visual indicator placed at LLM coordinates ({x}, {y})');
+                        
+                        // Also log what's at those coordinates
+                        const elementAtCoords = document.elementFromPoint({x}, {y});
+                        if (elementAtCoords) {{
+                            console.log('Element at LLM coordinates:', {{
+                                tag: elementAtCoords.tagName,
+                                className: elementAtCoords.className,
+                                id: elementAtCoords.id,
+                                text: elementAtCoords.textContent?.substring(0, 50),
+                                clickable: elementAtCoords.tagName === 'BUTTON' || elementAtCoords.tagName === 'A' || elementAtCoords.onclick !== null,
+                                boundingRect: elementAtCoords.getBoundingClientRect()
+                            }});
+                        }} else {{
+                            console.log('No element found at LLM coordinates ({x}, {y})');
+                        }}
+                        
+                        return elementAtCoords ? true : false;
+                    }})()
                     """
                     
                     element_found = await tab.evaluate(indicator_script)
@@ -470,31 +474,33 @@ async def use_llm_to_navigate(tab, llm: ChatGoogleGenerativeAI):
                         
                         # Fallback: try to find any clickable element nearby
                         fallback_script = f"""
-                        // Try to find clickable elements near the coordinates
-                        console.log('Searching for clickable elements near ({x}, {y})');
-                        const searchRadius = 50;
-                        let foundElement = null;
-                        
-                        for (let offsetX = -searchRadius; offsetX <= searchRadius; offsetX += 10) {{
-                            for (let offsetY = -searchRadius; offsetY <= searchRadius; offsetY += 10) {{
-                                const testX = {x} + offsetX;
-                                const testY = {y} + offsetY;
-                                const testElement = document.elementFromPoint(testX, testY);
-                                
-                                if (testElement && (testElement.tagName === 'BUTTON' || testElement.tagName === 'A' || testElement.onclick)) {{
-                                    console.log('Found clickable element at offset', offsetX, offsetY, ':', testElement.tagName, testElement.className);
-                                    foundElement = testElement;
-                                    testElement.click();
-                                    return true;
+                        (function() {{
+                            // Try to find clickable elements near the coordinates
+                            console.log('Searching for clickable elements near ({x}, {y})');
+                            const searchRadius = 50;
+                            let foundElement = null;
+                            
+                            for (let offsetX = -searchRadius; offsetX <= searchRadius; offsetX += 10) {{
+                                for (let offsetY = -searchRadius; offsetY <= searchRadius; offsetY += 10) {{
+                                    const testX = {x} + offsetX;
+                                    const testY = {y} + offsetY;
+                                    const testElement = document.elementFromPoint(testX, testY);
+                                    
+                                    if (testElement && (testElement.tagName === 'BUTTON' || testElement.tagName === 'A' || testElement.onclick)) {{
+                                        console.log('Found clickable element at offset', offsetX, offsetY, ':', testElement.tagName, testElement.className);
+                                        foundElement = testElement;
+                                        testElement.click();
+                                        return true;
+                                    }}
                                 }}
                             }}
-                        }}
-                        
-                        if (!foundElement) {{
-                            console.log('No clickable elements found within', searchRadius, 'pixels of coordinates');
-                        }}
-                        
-                        return false;
+                            
+                            if (!foundElement) {{
+                                console.log('No clickable elements found within', searchRadius, 'pixels of coordinates');
+                            }}
+                            
+                            return false;
+                        }})()
                         """
                         
                         fallback_result = await tab.evaluate(fallback_script)
