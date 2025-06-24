@@ -940,233 +940,14 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
             tasks[task_id].update({"status": "processing", "message": "Checking for verification challenges..."})
             await tab.sleep(5)  # Wait longer for any redirects/popups to appear
             
-            # Look for Cloudflare verification
+            # Look for Cloudflare verification using visual detection
             try:
-                print("Checking for Cloudflare verification...")
-                
-                # Wait for potential Cloudflare modal to appear
-                cf_found = False
-                max_attempts = 1  # Reduced from 3 to 1 to prevent browser hangs
-                
-                for attempt in range(max_attempts):
-                    print(f"Cloudflare detection attempt {attempt + 1}/{max_attempts}")
-                    
-                    # Enhanced Cloudflare detection selectors
-                    cf_selectors = [
-                        # Specific Cloudflare iframe patterns
-                        "iframe[src*='challenges.cloudflare.com']",
-                        "iframe[src*='turnstile']",
-                        "iframe[title*='Widget containing a Cloudflare security challenge']",
-                        "iframe[title*='Cloudflare security challenge']",
-                        "iframe[id*='cf-chl-widget']",
-                        
-                        # Turnstile containers and elements
-                        ".cf-turnstile",
-                        "[data-sitekey]",
-                        ".cf-turnstile-wrapper",
-                        
-                        # Generic verification iframes
-                        "iframe[title*='verification']",
-                        "iframe[title*='challenge']",
-                        "iframe[title*='security']",
-                        
-                        # Challenge forms and containers
-                        ".challenge-form",
-                        "#challenge-form",
-                        ".cf-challenge",
-                        ".cloudflare-challenge",
-                        
-                        # Input elements within Cloudflare contexts
-                        ".cf-turnstile input[type='checkbox']",
-                        "[data-sitekey] input[type='checkbox']",
-                        "input[type='checkbox'][id*='cf']",
-                        "input[type='checkbox'][name*='cf']",
-                        
-                        # Generic checkboxes (last resort)
-                        "input[type='checkbox']"
-                    ]
-                    
-                    for selector in cf_selectors:
-                        try:
-                            print(f"Trying CF selector: {selector}")
-                            
-                            if selector.startswith('iframe'):
-                                # Handle iframes specially - try to click on them
-                                iframes = await tab.select_all(selector, timeout=2)
-                                for iframe in iframes:
-                                    try:
-                                        print(f"Found Cloudflare iframe, attempting to interact...")
-                                        
-                                        # Get iframe dimensions and position
-                                        iframe_info = await tab.evaluate(f"""
-                                        (function() {{
-                                            const iframe = document.querySelector('{selector}');
-                                            if (iframe) {{
-                                                const rect = iframe.getBoundingClientRect();
-                                                return {{
-                                                    x: rect.left + rect.width / 2,
-                                                    y: rect.top + rect.height / 2,
-                                                    width: rect.width,
-                                                    height: rect.height,
-                                                    visible: rect.width > 0 && rect.height > 0
-                                                }};
-                                            }}
-                                            return null;
-                                        }})();
-                                        """)
-                                        
-                                        if iframe_info and iframe_info['visible']:
-                                            print(f"Clicking across Cloudflare iframe horizontally: width={iframe_info['width']}, height={iframe_info['height']}")
-                                            
-                                            # Click multiple times across the iframe horizontally (left to right)
-                                            # This ensures we hit the checkbox regardless of its position
-                                            center_y = iframe_info['y']  # Keep vertical center
-                                            left_x = iframe_info['x'] - (iframe_info['width'] / 2) + 20  # Start 20px from left edge
-                                            right_x = iframe_info['x'] + (iframe_info['width'] / 2) - 20  # End 20px from right edge
-                                            
-                                            # Calculate 5 click positions across the iframe
-                                            click_positions = []
-                                            for i in range(5):
-                                                x_pos = left_x + (i * (right_x - left_x) / 4)
-                                                click_positions.append((x_pos, center_y))
-                                            
-                                            print(f"Will click at positions: {click_positions}")
-                                            
-                                            # Click at each position with a small delay
-                                            for i, (click_x, click_y) in enumerate(click_positions):
-                                                try:
-                                                    print(f"Click {i+1}/5 at position ({click_x:.0f}, {click_y:.0f})")
-                                                    await tab.mouse_click(click_x, click_y)
-                                                    await tab.sleep(0.5)  # Short delay between clicks
-                                                    
-                                                    # Check if verification was successful after each click
-                                                    # Look for signs that the challenge was completed
-                                                    verification_check = await tab.evaluate("""
-                                                    (function() {
-                                                        // Look for success indicators
-                                                        const successIndicators = [
-                                                            'success', 'verified', 'complete', 'passed'
-                                                        ];
-                                                        
-                                                        const bodyText = document.body.textContent.toLowerCase();
-                                                        const hasSuccess = successIndicators.some(indicator => 
-                                                            bodyText.includes(indicator)
-                                                        );
-                                                        
-                                                        // Also check if the iframe disappeared or changed
-                                                        const cfIframe = document.querySelector('iframe[src*="challenges.cloudflare.com"]');
-                                                        const iframeGone = !cfIframe;
-                                                        
-                                                        return hasSuccess || iframeGone;
-                                                    })();
-                                                    """)
-                                                    
-                                                    if verification_check:
-                                                        print(f"✅ Verification appears successful after click {i+1}!")
-                                                        cf_found = True
-                                                        break
-                                                        
-                                                except Exception as click_error:
-                                                    print(f"Click {i+1} failed: {click_error}")
-                                                    continue
-                                            
-                                            # Also try clicking on the iframe element itself as backup
-                                            if not cf_found:
-                                                try:
-                                                    await iframe.mouse_move()
-                                                    await tab.sleep(0.5)
-                                                    await iframe.click()
-                                                    print("Also tried clicking iframe element directly")
-                                                    await tab.sleep(2)
-                                                except Exception as iframe_click_error:
-                                                    print(f"Direct iframe click failed: {iframe_click_error}")
-                                            
-                                            if cf_found:
-                                                break
-                                            
-                                    except Exception as iframe_error:
-                                        print(f"Iframe interaction failed: {iframe_error}")
-                                        continue
-                            else:
-                                # Handle regular elements
-                                cf_elements = await tab.select_all(selector, timeout=2)
-                                
-                                for cf_element in cf_elements:
-                                    try:
-                                        # Check if element is visible and interactable
-                                        is_visible = await tab.evaluate(f"""
-                                        (function() {{
-                                            const elements = document.querySelectorAll('{selector}');
-                                            for (let el of elements) {{
-                                                const rect = el.getBoundingClientRect();
-                                                const style = window.getComputedStyle(el);
-                                                
-                                                if (rect.width > 0 && rect.height > 0 && 
-                                                    style.display !== 'none' && 
-                                                    style.visibility !== 'hidden' &&
-                                                    style.opacity !== '0') {{
-                                                    
-                                                    // Check for verification-related attributes or text
-                                                    const elementText = el.textContent.toLowerCase();
-                                                    const hasVerifyText = elementText.includes('verify') || 
-                                                                         elementText.includes('human') || 
-                                                                         elementText.includes('robot') ||
-                                                                         elementText.includes('challenge') ||
-                                                                         elementText.includes('security');
-                                                    
-                                                    const hasVerifyAttrs = el.className.includes('cf') ||
-                                                                          el.className.includes('turnstile') ||
-                                                                          el.id.includes('cf') ||
-                                                                          el.hasAttribute('data-sitekey') ||
-                                                                          el.closest('.cf-turnstile') ||
-                                                                          el.closest('[data-sitekey]');
-                                                    
-                                                    if (hasVerifyText || hasVerifyAttrs || el.type === 'checkbox') {{
-                                                        return true;
-                                                    }}
-                                                }}
-                                            }}
-                                            return false;
-                                        }})();
-                                        """)
-                                        
-                                        if is_visible:
-                                            print(f"Found visible Cloudflare element with selector: {selector}")
-                                            
-                                            # Try to click the element
-                                            await cf_element.mouse_move()
-                                            await tab.sleep(1)
-                                            await cf_element.click()
-                                            print("Clicked Cloudflare verification element!")
-                                            await tab.sleep(3)  # Wait for verification to process
-                                            cf_found = True
-                                            break
-                                            
-                                    except Exception as elem_error:
-                                        print(f"Error interacting with CF element: {elem_error}")
-                                        continue
-                            
-                            if cf_found:
-                                break
-                                
-                        except Exception as selector_error:
-                            print(f"CF selector '{selector}' failed: {selector_error}")
-                            continue
-                    
-                    if cf_found:
-                        print("✅ Cloudflare verification completed!")
-                        await tab.sleep(5)  # Wait for verification to complete
-                        break
-                    else:
-                        print(f"No CF elements found in attempt {attempt + 1}, waiting before retry...")
-                        await tab.sleep(3)
+                print("Checking for Cloudflare verification using visual detection...")
+                cf_found = await visual_cloudflare_detection(tab, llm)
                 
                 if not cf_found:
-                    print("❌ No Cloudflare verification elements found after all attempts")
-                    
-                    # Try the built-in method as last resort
+                    print("Visual detection failed, trying built-in verify_cf() method as fallback...")
                     try:
-                        print("Trying built-in verify_cf() method as fallback...")
                         result = await tab.verify_cf()
                         if result:
                             print("✅ Built-in Cloudflare verification succeeded!")
@@ -1334,6 +1115,152 @@ async def get_task_status(task_id: str):
     if task_id not in tasks:
         raise HTTPException(status_code=404, detail="Task not found")
     return tasks[task_id]
+
+async def visual_cloudflare_detection(tab, llm):
+    """Use visual detection with LLM to find and click Cloudflare verification elements."""
+    try:
+        print("Taking screenshot for visual Cloudflare detection...")
+        
+        # Take a screenshot of the current page
+        screenshot_path = f"/tmp/cf_detection_{uuid.uuid4().hex}.png"
+        await tab.save_screenshot(screenshot_path)
+        print(f"Screenshot saved to: {screenshot_path}")
+        
+        # Read the screenshot and encode it for the LLM
+        with open(screenshot_path, 'rb') as img_file:
+            screenshot_data = base64.b64encode(img_file.read()).decode('utf-8')
+        
+        # Create a prompt for the LLM to analyze the screenshot
+        visual_prompt = """
+        You are analyzing a screenshot of a web page to find the EXACT CLICKABLE CHECKBOX for Cloudflare verification.
+
+        IMPORTANT: You must identify the precise checkbox element that needs to be clicked, NOT the container, iframe, or surrounding area.
+
+        Look specifically for:
+        1. A small square checkbox (usually empty or with a checkmark)
+        2. The actual clickable checkbox element in Cloudflare "Verify you are human" widgets
+        3. The checkbox in "I'm not a robot" verification widgets
+        4. The small clickable square in Turnstile verification widgets
+        5. Any small checkbox that appears to be for bot verification
+
+        DO NOT return coordinates for:
+        - The entire verification widget container
+        - The iframe boundaries
+        - Text labels like "Verify you are human"
+        - The background or border of the verification widget
+
+        ONLY return coordinates for the actual small checkbox that a user would click on.
+
+        If you find the clickable checkbox element, return the coordinates in this exact format:
+        COORDINATES: x,y
+
+        Where x,y are the pixel coordinates of the CENTER of the actual checkbox element (usually a small square).
+
+        If you cannot find a specific clickable checkbox element, respond with:
+        NO_VERIFICATION_FOUND
+
+        Focus on finding the small square checkbox element that users click to verify they are human. This is typically a small square (10-20 pixels) that may be empty or contain a checkmark.
+        """
+        
+        # Send the screenshot to the LLM for analysis
+        message = HumanMessage(
+            content=[
+                {"type": "text", "text": visual_prompt},
+                {
+                    "type": "image_url", 
+                    "image_url": {"url": f"data:image/png;base64,{screenshot_data}"}
+                }
+            ]
+        )
+        
+        print("Sending screenshot to LLM for analysis...")
+        response = await llm.ainvoke([message])
+        analysis_result = response.content.strip()
+        
+        print(f"LLM analysis result: {analysis_result}")
+        
+        # Parse the LLM response
+        if "COORDINATES:" in analysis_result:
+            # Extract coordinates
+            coord_line = [line for line in analysis_result.split('\n') if 'COORDINATES:' in line][0]
+            coords_str = coord_line.split('COORDINATES:')[1].strip()
+            
+            try:
+                x, y = map(float, coords_str.split(','))
+                print(f"LLM identified verification element at coordinates: ({x}, {y})")
+                
+                # Click at the identified coordinates
+                print(f"Clicking at LLM-identified position: ({x}, {y})")
+                await tab.mouse_click(x, y)
+                await tab.sleep(3)  # Wait for verification to process
+                
+                # Verify if the click was successful
+                verification_success = await check_verification_success(tab)
+                
+                if verification_success:
+                    print("✅ Visual Cloudflare verification succeeded!")
+                    return True
+                else:
+                    print("❌ Click was made but verification may not have succeeded")
+                    return False
+                    
+            except ValueError as coord_error:
+                print(f"Error parsing coordinates '{coords_str}': {coord_error}")
+                return False
+                
+        elif "NO_VERIFICATION_FOUND" in analysis_result:
+            print("LLM analysis: No verification elements found in screenshot")
+            return False
+        else:
+            print(f"Unexpected LLM response format: {analysis_result}")
+            return False
+            
+    except Exception as e:
+        print(f"Error in visual Cloudflare detection: {e}")
+        return False
+    finally:
+        # Clean up screenshot file
+        try:
+            if 'screenshot_path' in locals() and os.path.exists(screenshot_path):
+                os.remove(screenshot_path)
+        except:
+            pass
+
+async def check_verification_success(tab):
+    """Check if Cloudflare verification was successful."""
+    try:
+        # Wait a moment for any changes to take effect
+        await tab.sleep(2)
+        
+        # Check for success indicators
+        success_check = await tab.evaluate("""
+        (function() {
+            // Look for success indicators
+            const successIndicators = [
+                'success', 'verified', 'complete', 'passed', 'submitted'
+            ];
+            
+            const bodyText = document.body.textContent.toLowerCase();
+            const hasSuccess = successIndicators.some(indicator => 
+                bodyText.includes(indicator)
+            );
+            
+            // Check if verification elements disappeared
+            const cfIframe = document.querySelector('iframe[src*="challenges.cloudflare.com"]');
+            const verifyText = bodyText.includes('verify you are human');
+            const challengeText = bodyText.includes('security check');
+            
+            const verificationGone = !cfIframe && !verifyText && !challengeText;
+            
+            return hasSuccess || verificationGone;
+        })();
+        """)
+        
+        return success_check
+        
+    except Exception as e:
+        print(f"Error checking verification success: {e}")
+        return False
 
 if __name__ == "__main__":
     uvicorn.run("nodriver_apply:app", host="0.0.0.0", port=8000, reload=True) 
