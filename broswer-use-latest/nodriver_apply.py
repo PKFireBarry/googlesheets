@@ -687,7 +687,7 @@ async def handle_cookie_banner(tab):
                     print("Waiting for page to stabilize after cookie consent...")
                     try:
                         # Wait for the main load event to fire, indicating a page reload/update is complete.
-                        await tab.wait_for('Page.loadEventFired', timeout=10)
+                        await tab.wait_for('Page.loadEventFired', timeout=4)
                         print("Page load event detected.")
                     except asyncio.TimeoutError:
                         # If the page doesn't fully reload, it's fine. We still need to wait.
