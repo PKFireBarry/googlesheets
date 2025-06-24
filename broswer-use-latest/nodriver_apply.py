@@ -73,15 +73,101 @@ async def fill_text_field(tab, keywords, value):
         print(f"Could not find or fill field for '{keywords[0]}': {e}")
     return False
 
+async def debug_clickable_elements(tab):
+    """Debug function to show all clickable elements and their positions."""
+    print("=== ANALYZING CLICKABLE ELEMENTS ===")
+    
+    try:
+        clickable_elements = await tab.evaluate("""
+        // Find all potentially clickable elements
+        const clickableSelectors = [
+            'button',
+            'a[href]',
+            'input[type="submit"]',
+            'input[type="button"]',
+            '[onclick]',
+            '[role="button"]',
+            '.btn',
+            '.button'
+        ];
+        
+        const elements = [];
+        
+        clickableSelectors.forEach(selector => {
+            const found = document.querySelectorAll(selector);
+            found.forEach(el => {
+                const rect = el.getBoundingClientRect();
+                if (rect.width > 0 && rect.height > 0) { // Only visible elements
+                    elements.push({
+                        tag: el.tagName,
+                        className: el.className,
+                        id: el.id,
+                        text: el.textContent?.trim().substring(0, 50),
+                        x: Math.round(rect.left + rect.width / 2),
+                        y: Math.round(rect.top + rect.height / 2),
+                        width: Math.round(rect.width),
+                        height: Math.round(rect.height),
+                        selector: selector
+                    });
+                }
+            });
+        });
+        
+        return elements;
+        """)
+        
+        print(f"Found {len(clickable_elements)} clickable elements:")
+        for i, elem in enumerate(clickable_elements[:10]):  # Show first 10
+            print(f"  {i+1}. {elem['tag']} at ({elem['x']}, {elem['y']}) - '{elem['text'][:30]}...' [{elem['width']}x{elem['height']}]")
+        
+        if len(clickable_elements) > 10:
+            print(f"  ... and {len(clickable_elements) - 10} more elements")
+            
+        # Look specifically for "Apply" related buttons
+        apply_elements = [elem for elem in clickable_elements if 'apply' in elem['text'].lower()]
+        if apply_elements:
+            print(f"\nFound {len(apply_elements)} elements containing 'apply':")
+            for elem in apply_elements:
+                print(f"  - {elem['tag']} at ({elem['x']}, {elem['y']}) - '{elem['text']}'")
+        else:
+            print("\nNo elements containing 'apply' found")
+            
+        print("=== CLICKABLE ELEMENTS ANALYSIS COMPLETE ===")
+        
+    except Exception as e:
+        print(f"Debug clickable elements failed: {e}")
+        import traceback
+        traceback.print_exc()
+
 async def test_mouse_movement(tab):
     """Test function to verify mouse movement is working correctly."""
     print("=== TESTING MOUSE MOVEMENT ===")
     
     try:
-        # Test 1: JavaScript-based mouse event simulation
+        # Get viewport dimensions first
+        viewport_info = await tab.evaluate("""
+        ({
+            width: window.innerWidth,
+            height: window.innerHeight,
+            scrollX: window.scrollX,
+            scrollY: window.scrollY,
+            devicePixelRatio: window.devicePixelRatio
+        })
+        """)
+        print(f"Viewport info: {viewport_info}")
+        
+        # Calculate center and test positions
+        center_x = viewport_info['width'] // 2
+        center_y = viewport_info['height'] // 2
+        
+        print(f"Calculated center position: ({center_x}, {center_y})")
+        
+        # Test 1: JavaScript-based mouse event simulation with detailed logging
         print("Test 1: Testing JavaScript mouse events...")
-        js_test = """
+        js_test = f"""
         console.log('Creating mouse movement test...');
+        console.log('Viewport dimensions:', window.innerWidth, 'x', window.innerHeight);
+        console.log('Calculated center:', {center_x}, {center_y});
         
         // Create a visual indicator
         const indicator = document.createElement('div');
@@ -92,60 +178,49 @@ async def test_mouse_movement(tab):
         indicator.style.borderRadius = '50%';
         indicator.style.zIndex = '10000';
         indicator.style.pointerEvents = 'none';
-        indicator.style.top = '400px';
-        indicator.style.left = '500px';
+        indicator.style.border = '2px solid white';
+        indicator.style.boxShadow = '0 0 10px rgba(255,0,0,0.8)';
         document.body.appendChild(indicator);
         
-        // Test mouse events at coordinates
+        // Test mouse events at specific coordinates including center
         const coords = [
-            {x: 300, y: 300},
-            {x: 600, y: 300}, 
-            {x: 600, y: 600},
-            {x: 300, y: 600}
+            {{x: {center_x}, y: {center_y}, label: 'CENTER'}},
+            {{x: 100, y: 100, label: 'TOP-LEFT'}},
+            {{x: {viewport_info['width'] - 100}, y: 100, label: 'TOP-RIGHT'}},
+            {{x: {center_x}, y: {viewport_info['height'] - 100}, label: 'BOTTOM-CENTER'}}
         ];
         
-        coords.forEach((coord, i) => {
-            setTimeout(() => {
+        coords.forEach((coord, i) => {{
+            setTimeout(() => {{
                 indicator.style.left = coord.x + 'px';
                 indicator.style.top = coord.y + 'px';
-                console.log(`Moved indicator to (${coord.x}, ${coord.y})`);
+                console.log(`${{coord.label}}: Moved indicator to (${{coord.x}}, ${{coord.y}})`);
+                
+                // Check what element is at this position
+                const elementAtPos = document.elementFromPoint(coord.x, coord.y);
+                if (elementAtPos) {{
+                    console.log(`Element at ${{coord.label}} (${{coord.x}}, ${{coord.y}}):`, elementAtPos.tagName, elementAtPos.className, elementAtPos.id);
+                }}
                 
                 // Dispatch mouse events
-                const mouseEvent = new MouseEvent('mousemove', {
+                const mouseEvent = new MouseEvent('mousemove', {{
                     clientX: coord.x,
                     clientY: coord.y,
                     bubbles: true
-                });
+                }});
                 document.dispatchEvent(mouseEvent);
-            }, i * 500);
-        });
+            }}, i * 1000);
+        }});
         
         // Remove indicator after test
-        setTimeout(() => {
+        setTimeout(() => {{
             document.body.removeChild(indicator);
             console.log('Mouse movement test completed');
-        }, 3000);
+        }}, 5000);
         """
         
         await tab.evaluate(js_test)
-        await asyncio.sleep(4)
-        
-        # Test 2: Try CDP with correct format
-        print("Test 2: Testing CDP mouse events...")
-        try:
-            # Try the CDP approach but with better error handling
-            result = await tab.evaluate("""
-            // Test if we can get mouse position
-            let mouseX = 0, mouseY = 0;
-            document.addEventListener('mousemove', (e) => {
-                mouseX = e.clientX;
-                mouseY = e.clientY;
-            });
-            console.log('Mouse tracking enabled');
-            """)
-            print("Mouse tracking enabled via JavaScript")
-        except Exception as cdp_error:
-            print(f"CDP approach failed: {cdp_error}")
+        await asyncio.sleep(6)
         
         print("=== MOUSE MOVEMENT TEST COMPLETE ===")
         
@@ -253,9 +328,75 @@ async def use_llm_to_navigate(tab, llm: ChatGoogleGenerativeAI):
             if action.get('click'):
                 coords = action['click']
                 x, y = int(coords['x']), int(coords['y'])
-                print(f"LLM found element at x={x}, y={y}. Attempting robust click.")
+                
+                # Get detailed viewport and positioning information
+                viewport_debug = await tab.evaluate("""
+                ({
+                    viewport: {
+                        width: window.innerWidth,
+                        height: window.innerHeight,
+                        scrollX: window.scrollX,
+                        scrollY: window.scrollY
+                    },
+                    document: {
+                        width: document.documentElement.scrollWidth,
+                        height: document.documentElement.scrollHeight
+                    },
+                    devicePixelRatio: window.devicePixelRatio
+                })
+                """)
+                
+                print(f"=== LLM CLICK ANALYSIS ===")
+                print(f"LLM provided coordinates: ({x}, {y})")
+                print(f"Viewport info: {viewport_debug}")
+                print(f"Click is at {(x/viewport_debug['viewport']['width']*100):.1f}% from left, {(y/viewport_debug['viewport']['height']*100):.1f}% from top")
+                
+                # Check if coordinates are within viewport
+                if x > viewport_debug['viewport']['width'] or y > viewport_debug['viewport']['height']:
+                    print(f"WARNING: Click coordinates ({x}, {y}) are OUTSIDE viewport ({viewport_debug['viewport']['width']}x{viewport_debug['viewport']['height']})")
                 
                 try:
+                    # First, create a visual indicator at the exact coordinates the LLM provided
+                    indicator_script = f"""
+                    // Create visual indicator at LLM coordinates
+                    const indicator = document.createElement('div');
+                    indicator.id = 'llm-click-indicator';
+                    indicator.style.position = 'fixed';
+                    indicator.style.left = '{x}px';
+                    indicator.style.top = '{y}px';
+                    indicator.style.width = '30px';
+                    indicator.style.height = '30px';
+                    indicator.style.backgroundColor = 'lime';
+                    indicator.style.border = '3px solid red';
+                    indicator.style.borderRadius = '50%';
+                    indicator.style.zIndex = '99999';
+                    indicator.style.pointerEvents = 'none';
+                    indicator.style.transform = 'translate(-50%, -50%)';
+                    document.body.appendChild(indicator);
+                    
+                    console.log('Visual indicator placed at LLM coordinates ({x}, {y})');
+                    
+                    // Also log what's at those coordinates
+                    const elementAtCoords = document.elementFromPoint({x}, {y});
+                    if (elementAtCoords) {{
+                        console.log('Element at LLM coordinates:', {{
+                            tag: elementAtCoords.tagName,
+                            className: elementAtCoords.className,
+                            id: elementAtCoords.id,
+                            text: elementAtCoords.textContent?.substring(0, 50),
+                            clickable: elementAtCoords.tagName === 'BUTTON' || elementAtCoords.tagName === 'A' || elementAtCoords.onclick !== null,
+                            boundingRect: elementAtCoords.getBoundingClientRect()
+                        }});
+                    }} else {{
+                        console.log('No element found at LLM coordinates ({x}, {y})');
+                    }}
+                    
+                    return elementAtCoords ? true : false;
+                    """
+                    
+                    element_found = await tab.evaluate(indicator_script)
+                    await tab.sleep(3)  # Let user see the indicator
+                    
                     # Use comprehensive JavaScript approach with real mouse events
                     click_script = f"""
                     (function() {{
@@ -269,6 +410,8 @@ async def use_llm_to_navigate(tab, llm: ChatGoogleGenerativeAI):
                         }}
                         
                         console.log('Found element:', element.tagName, element.className, element.id);
+                        console.log('Element text:', element.textContent?.substring(0, 100));
+                        console.log('Element bounding rect:', element.getBoundingClientRect());
                         
                         // Scroll element into view if needed
                         element.scrollIntoView({{behavior: 'smooth', block: 'center'}});
@@ -304,6 +447,12 @@ async def use_llm_to_navigate(tab, llm: ChatGoogleGenerativeAI):
                                 console.log('Focus and click executed for interactive element');
                             }}
                             
+                            // Remove the indicator after clicking
+                            const indicator = document.getElementById('llm-click-indicator');
+                            if (indicator) {{
+                                indicator.remove();
+                            }}
+                            
                         }}, 500);
                         
                         return true;
@@ -322,17 +471,29 @@ async def use_llm_to_navigate(tab, llm: ChatGoogleGenerativeAI):
                         # Fallback: try to find any clickable element nearby
                         fallback_script = f"""
                         // Try to find clickable elements near the coordinates
-                        const searchRadius = 20;
+                        console.log('Searching for clickable elements near ({x}, {y})');
+                        const searchRadius = 50;
+                        let foundElement = null;
+                        
                         for (let offsetX = -searchRadius; offsetX <= searchRadius; offsetX += 10) {{
                             for (let offsetY = -searchRadius; offsetY <= searchRadius; offsetY += 10) {{
-                                const testElement = document.elementFromPoint({x} + offsetX, {y} + offsetY);
+                                const testX = {x} + offsetX;
+                                const testY = {y} + offsetY;
+                                const testElement = document.elementFromPoint(testX, testY);
+                                
                                 if (testElement && (testElement.tagName === 'BUTTON' || testElement.tagName === 'A' || testElement.onclick)) {{
-                                    console.log('Found clickable element nearby:', testElement);
+                                    console.log('Found clickable element at offset', offsetX, offsetY, ':', testElement.tagName, testElement.className);
+                                    foundElement = testElement;
                                     testElement.click();
                                     return true;
                                 }}
                             }}
                         }}
+                        
+                        if (!foundElement) {{
+                            console.log('No clickable elements found within', searchRadius, 'pixels of coordinates');
+                        }}
+                        
                         return false;
                         """
                         
@@ -417,6 +578,10 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
         # --- TEST MOUSE MOVEMENT ---
         print("Running mouse movement test...")
         await test_mouse_movement(tab)
+        
+        # --- DEBUG: Show all clickable elements ---
+        print("Analyzing clickable elements on page...")
+        await debug_clickable_elements(tab)
 
         # --- Navigate to the actual application form using LLM ---
         tasks[task_id].update({"status": "processing", "message": "Using LLM to find application form..."})
