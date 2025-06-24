@@ -51,17 +51,26 @@ async def fill_text_field(tab, keywords, value):
     try:
         selectors = [f"input[name*='{kw}'], input[aria-label*='{kw}'], input[placeholder*='{kw}']" for kw in keywords]
         selector_str = ", ".join(selectors)
-        label_selector = f"//label[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{keywords[0]}')]/following-sibling::input"
         
         element = await tab.select(selector_str, timeout=2)
         if not element:
-            element = await tab.select(label_selector, timeout=2)
+            # Try XPath to find input associated with label
+            xpath_selector = f"//label[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{keywords[0]}')]/following-sibling::input"
+            xpath_results = await tab.xpath(xpath_selector, timeout=2)
+            if xpath_results:
+                element = xpath_results[0]
 
         if element:
             print(f"Found field for '{keywords[0]}' and filling it.")
-            await element.mouse_click()
+            # Get element position and move mouse before clicking
+            position = await element.get_position()
+            center_x = position['x'] + position['width'] / 2
+            center_y = position['y'] + position['height'] / 2
+            await tab.mouse_move(center_x, center_y)
+            await asyncio.sleep(0.2)
+            await element.click()
             await asyncio.sleep(0.3)
-            await element.send_keys(value, delay=0.05)
+            await element.send_keys(value)
             return True
     except Exception as e:
         print(f"Could not find or fill field for '{keywords[0]}': {e}")
@@ -79,7 +88,13 @@ async def handle_cookie_banner(tab):
             cookie_button = await tab.find(keyword, best_match=True, timeout=2)
             if cookie_button:
                 print(f"Found and clicking cookie button: '{keyword}'")
-                await cookie_button.mouse_click()
+                # Get element position and move mouse before clicking
+                position = await cookie_button.get_position()
+                center_x = position['x'] + position['width'] / 2
+                center_y = position['y'] + position['height'] / 2
+                await tab.mouse_move(center_x, center_y)
+                await asyncio.sleep(0.2)
+                await cookie_button.click()
                 
                 # Wait for the page to process the click and potentially reload.
                 print("Waiting for page to stabilize after cookie consent...")
@@ -154,7 +169,10 @@ async def use_llm_to_navigate(tab, llm: ChatGoogleGenerativeAI):
             if action.get('click'):
                 coords = action['click']
                 x, y = int(coords['x']), int(coords['y'])
-                print(f"LLM found element at x={x}, y={y}. Clicking.")
+                print(f"LLM found element at x={x}, y={y}. Moving mouse and clicking.")
+                # Move mouse to the target location first
+                await tab.mouse_move(x, y)
+                await asyncio.sleep(0.3)
                 await tab.mouse_click(x, y)
                 await tab.sleep(3)
                 print("Click completed successfully.")
@@ -290,12 +308,19 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
         for text_area in text_areas:
             try:
                 # Attempt to find the question associated with the textarea
-                label = await text_area.find_element(by='xpath', value='..').text or await text_area.get('aria-label')
+                # Try to get aria-label or placeholder from the textarea attributes
+                label = text_area.attributes.get('aria-label') or text_area.attributes.get('placeholder') or "Please provide relevant information"
                 if label:
                     answer = await get_llm_response(llm, label, user_data)
-                    await text_area.mouse_click()
+                    # Get element position and move mouse before clicking
+                    position = await text_area.get_position()
+                    center_x = position['x'] + position['width'] / 2
+                    center_y = position['y'] + position['height'] / 2
+                    await tab.mouse_move(center_x, center_y)
+                    await asyncio.sleep(0.2)
+                    await text_area.click()
                     await asyncio.sleep(0.3)
-                    await text_area.send_keys(answer, delay=0.05)
+                    await text_area.send_keys(answer)
                     await tab.sleep(1)
             except Exception as e:
                 print(f"Could not process a textarea: {e}")
@@ -352,7 +377,7 @@ async def hybrid_auto_apply(
     Endpoint to trigger the hybrid auto-application process.
     Receives user data and job info, then starts a background task.
     """
-    llm = ChatGoogleGenerativeAI(model='gemini-1.5-flash', api_key=api_key)
+    llm = ChatGoogleGenerativeAI(model='gemini-2.5-flash', api_key=api_key)
     
     # Use the LLM to parse the unstructured prompt into structured data
     user_data_model = await parse_prompt_to_user_data(llm, prompt)
