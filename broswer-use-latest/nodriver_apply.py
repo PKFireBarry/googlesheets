@@ -1132,34 +1132,46 @@ async def visual_cloudflare_detection(tab, llm):
         
         # Create a prompt for the LLM to analyze the screenshot
         visual_prompt = """
-        You are analyzing a screenshot of a web page to find the EXACT CLICKABLE CHECKBOX for Cloudflare verification.
+        You are analyzing a screenshot of a web page to find Cloudflare verification elements that need to be clicked.
 
-        IMPORTANT: You must identify the precise checkbox element that needs to be clicked, NOT the container, iframe, or surrounding area.
+        TASK: Find any of these verification elements and return their EXACT center coordinates:
 
-        Look specifically for:
-        1. A small square checkbox (usually empty or with a checkmark)
-        2. The actual clickable checkbox element in Cloudflare "Verify you are human" widgets
-        3. The checkbox in "I'm not a robot" verification widgets
-        4. The small clickable square in Turnstile verification widgets
-        5. Any small checkbox that appears to be for bot verification
+        1. **Cloudflare Turnstile checkbox** - A small square checkbox (usually 15-25px) that may be:
+           - Empty square with border
+           - Square with checkmark
+           - Square with loading spinner
+           - Located near text like "Verify you are human" or "I'm not a robot"
 
-        DO NOT return coordinates for:
-        - The entire verification widget container
-        - The iframe boundaries
-        - Text labels like "Verify you are human"
-        - The background or border of the verification widget
+        2. **reCAPTCHA checkbox** - Similar small square checkbox near "I'm not a robot" text
 
-        ONLY return coordinates for the actual small checkbox that a user would click on.
+        3. **hCaptcha checkbox** - Square verification checkbox
 
-        If you find the clickable checkbox element, return the coordinates in this exact format:
+        4. **Any verification button** - Buttons with text like:
+           - "Verify"
+           - "Continue" 
+           - "I'm human"
+           - "Proceed"
+
+        CRITICAL REQUIREMENTS:
+        - Return coordinates for the CENTER of the actual clickable element
+        - Look for small square checkboxes (typically 15-25 pixels wide/high)
+        - Ignore large containers, iframes, or text labels
+        - Focus on the actual interactive element that responds to clicks
+
+        RESPONSE FORMAT:
+        If you find a verification element, respond with:
         COORDINATES: x,y
 
-        Where x,y are the pixel coordinates of the CENTER of the actual checkbox element (usually a small square).
-
-        If you cannot find a specific clickable checkbox element, respond with:
+        If no verification elements are visible, respond with:
         NO_VERIFICATION_FOUND
 
-        Focus on finding the small square checkbox element that users click to verify they are human. This is typically a small square (10-20 pixels) that may be empty or contain a checkmark.
+        EXAMPLES of what to look for:
+        - Small empty square next to "Verify you are human"
+        - Small checkbox with checkmark in verification widget
+        - Small square with loading animation
+        - Buttons labeled "Verify" or "Continue"
+
+        Focus on precision - return the exact center coordinates of the clickable element.
         """
         
         # Send the screenshot to the LLM for analysis
@@ -1191,7 +1203,88 @@ async def visual_cloudflare_detection(tab, llm):
                 
                 # Click at the identified coordinates
                 print(f"Clicking at LLM-identified position: ({x}, {y})")
-                await tab.mouse_click(x, y)
+                
+                # First try native nodriver mouse clicking if available
+                try:
+                    # Try different possible method names
+                    if hasattr(tab, 'mouse_click'):
+                        await tab.mouse_click(x, y)
+                        print("Used native mouse_click method")
+                        click_result = 'native_click_success'
+                    elif hasattr(tab, 'click'):
+                        await tab.click(x, y)
+                        print("Used native click method")
+                        click_result = 'native_click_success'
+                    else:
+                        raise AttributeError("No native click method found")
+                except (AttributeError, Exception) as native_error:
+                    print(f"Native clicking failed: {native_error}, using JavaScript fallback")
+                    
+                    # Use JavaScript-based clicking as fallback
+                    click_result = await tab.evaluate(f"""
+                (function() {{
+                    try {{
+                        // Method 1: Direct coordinate click using document.elementFromPoint
+                        const element = document.elementFromPoint({x}, {y});
+                        if (element) {{
+                            console.log('Found element at coordinates:', element);
+                            
+                            // Try multiple click methods
+                            element.click();
+                            
+                            // Dispatch mouse events for more thorough interaction
+                            const mouseDownEvent = new MouseEvent('mousedown', {{
+                                bubbles: true,
+                                cancelable: true,
+                                clientX: {x},
+                                clientY: {y}
+                            }});
+                            element.dispatchEvent(mouseDownEvent);
+                            
+                            const mouseUpEvent = new MouseEvent('mouseup', {{
+                                bubbles: true,
+                                cancelable: true,
+                                clientX: {x},
+                                clientY: {y}
+                            }});
+                            element.dispatchEvent(mouseUpEvent);
+                            
+                            const clickEvent = new MouseEvent('click', {{
+                                bubbles: true,
+                                cancelable: true,
+                                clientX: {x},
+                                clientY: {y}
+                            }});
+                            element.dispatchEvent(clickEvent);
+                            
+                            return 'clicked_element';
+                        }}
+                        
+                        // Method 2: Try to find Cloudflare checkbox specifically
+                        const cfCheckboxes = document.querySelectorAll('input[type="checkbox"], [role="checkbox"]');
+                        for (let checkbox of cfCheckboxes) {{
+                            const rect = checkbox.getBoundingClientRect();
+                            const centerX = rect.left + rect.width / 2;
+                            const centerY = rect.top + rect.height / 2;
+                            
+                            // Check if this checkbox is near our target coordinates
+                            if (Math.abs(centerX - {x}) < 50 && Math.abs(centerY - {y}) < 50) {{
+                                console.log('Found nearby checkbox:', checkbox);
+                                checkbox.click();
+                                checkbox.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                return 'clicked_checkbox';
+                            }}
+                        }}
+                        
+                        return 'no_element_found';
+                    }} catch (error) {{
+                        console.error('Click error:', error);
+                            return 'error: ' + error.message;
+                     }}
+                 }})();
+                 """)
+                
+                print(f"Click result: {click_result}")
                 await tab.sleep(3)  # Wait for verification to process
                 
                 # Verify if the click was successful
@@ -1235,32 +1328,61 @@ async def check_verification_success(tab):
     """Check if Cloudflare verification was successful."""
     try:
         # Wait a moment for any changes to take effect
-        await tab.sleep(2)
+        await tab.sleep(3)
         
         # Check for success indicators
         success_check = await tab.evaluate("""
         (function() {
+            const bodyText = document.body.textContent.toLowerCase();
+            console.log('Current page text sample:', bodyText.substring(0, 500));
+            
             // Look for success indicators
             const successIndicators = [
-                'success', 'verified', 'complete', 'passed', 'submitted'
+                'success', 'verified', 'complete', 'passed', 'submitted',
+                'thank you', 'application received', 'application submitted'
             ];
             
-            const bodyText = document.body.textContent.toLowerCase();
             const hasSuccess = successIndicators.some(indicator => 
                 bodyText.includes(indicator)
             );
             
             // Check if verification elements disappeared
             const cfIframe = document.querySelector('iframe[src*="challenges.cloudflare.com"]');
+            const turnstileIframe = document.querySelector('iframe[src*="turnstile"]');
             const verifyText = bodyText.includes('verify you are human');
             const challengeText = bodyText.includes('security check');
+            const robotText = bodyText.includes('not a robot');
             
-            const verificationGone = !cfIframe && !verifyText && !challengeText;
+            const verificationGone = !cfIframe && !turnstileIframe && !verifyText && !challengeText && !robotText;
             
-            return hasSuccess || verificationGone;
+            // Check for checkboxes that might be checked now
+            const checkboxes = document.querySelectorAll('input[type="checkbox"], [role="checkbox"]');
+            let hasCheckedBox = false;
+            checkboxes.forEach(checkbox => {
+                if (checkbox.checked || checkbox.getAttribute('aria-checked') === 'true') {
+                    hasCheckedBox = true;
+                    console.log('Found checked verification checkbox');
+                }
+            });
+            
+            const result = {
+                hasSuccess: hasSuccess,
+                verificationGone: verificationGone,
+                hasCheckedBox: hasCheckedBox,
+                cfIframe: !!cfIframe,
+                turnstileIframe: !!turnstileIframe,
+                verifyText: verifyText,
+                challengeText: challengeText,
+                robotText: robotText
+            };
+            
+            console.log('Verification check result:', result);
+            
+            return hasSuccess || verificationGone || hasCheckedBox;
         })();
         """)
         
+        print(f"Verification success check result: {success_check}")
         return success_check
         
     except Exception as e:
@@ -1366,7 +1488,23 @@ async def try_shadow_dom_interaction(tab, x, y):
             template_result = await tab.template_location()
             if template_result:
                 print(f"Template location found: {template_result}")
-                await tab.mouse_click(template_result[0], template_result[1])
+                # Use JavaScript clicking instead of mouse_click
+                template_click_result = await tab.evaluate(f"""
+                (function() {{
+                    try {{
+                        const element = document.elementFromPoint({template_result[0]}, {template_result[1]});
+                        if (element) {{
+                            element.click();
+                            element.dispatchEvent(new MouseEvent('click', {{ bubbles: true }}));
+                            return 'template_clicked';
+                        }}
+                        return 'no_template_element';
+                    }} catch (error) {{
+                        return 'template_error: ' + error.message;
+                    }}
+                }})();
+                """)
+                print(f"Template click result: {template_click_result}")
                 await tab.sleep(3)
                 return await check_verification_success(tab)
         except Exception as template_error:
