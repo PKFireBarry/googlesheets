@@ -146,20 +146,25 @@ async def use_llm_to_navigate(tab, llm: ChatGoogleGenerativeAI):
             
             response = await llm.ainvoke(prompt)
             json_string = response.content.strip().replace("```json", "").replace("```", "")
+            print(f"LLM raw response: {json_string}")
+            
             action = json.loads(json_string)
+            print(f"LLM parsed action: {action}")
 
             if action.get('click'):
                 coords = action['click']
                 x, y = int(coords['x']), int(coords['y'])
                 print(f"LLM found element at x={x}, y={y}. Clicking.")
-                await tab.mouse.click(x, y)
+                await tab.mouse_click(x, y)
                 await tab.sleep(3)
+                print("Click completed successfully.")
                 return True # Success
             
             elif action.get('scroll'):
                 print("LLM advised scrolling. Scrolling down...")
                 await tab.scroll_down(800) # Scroll down a fixed amount
                 await tab.sleep(2) # Wait for content to load
+                print("Scroll completed, continuing to next view...")
                 continue # Continue to the next loop iteration to re-scan
                 
             elif action.get('end'):
@@ -168,6 +173,7 @@ async def use_llm_to_navigate(tab, llm: ChatGoogleGenerativeAI):
 
         except Exception as e:
             print(f"An error occurred during LLM navigation attempt {i+1}: {e}")
+            print(f"Full error details: {type(e).__name__}: {str(e)}")
             break # Exit loop on error
 
     print("Could not find the navigation element after analyzing the page.")
