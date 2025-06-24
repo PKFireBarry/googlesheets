@@ -1202,6 +1202,11 @@ async def visual_cloudflare_detection(tab, llm):
                     return True
                 else:
                     print("❌ Click was made but verification may not have succeeded")
+                    # Try additional Shadow DOM-aware methods
+                    shadow_success = await try_shadow_dom_interaction(tab, x, y)
+                    if shadow_success:
+                        print("✅ Shadow DOM interaction succeeded!")
+                        return True
                     return False
                     
             except ValueError as coord_error:
@@ -1260,6 +1265,127 @@ async def check_verification_success(tab):
         
     except Exception as e:
         print(f"Error checking verification success: {e}")
+        return False
+
+async def try_shadow_dom_interaction(tab, x, y):
+    """Try to interact with Cloudflare elements hidden in Shadow DOM."""
+    try:
+        print("Attempting Shadow DOM-aware Cloudflare interaction...")
+        
+        # Method 1: Try to find and interact with shadow roots
+        shadow_interaction = await tab.evaluate(f"""
+        (async function() {{
+            try {{
+                // Look for elements that might contain shadow roots
+                const potentialHosts = document.querySelectorAll('div[id*="cf"], iframe, [data-sitekey], .cf-turnstile');
+                
+                for (let host of potentialHosts) {{
+                    if (host.shadowRoot) {{
+                        console.log('Found shadow root on:', host);
+                        
+                        // Look for checkboxes or clickable elements in shadow root
+                        const shadowCheckboxes = host.shadowRoot.querySelectorAll('input[type="checkbox"], [role="checkbox"], button, .checkbox');
+                        
+                        for (let checkbox of shadowCheckboxes) {{
+                            console.log('Found shadow checkbox:', checkbox);
+                            
+                            // Try to click it
+                            checkbox.click();
+                            
+                            // Also dispatch mouse events
+                            checkbox.dispatchEvent(new MouseEvent('mousedown', {{ bubbles: true }}));
+                            checkbox.dispatchEvent(new MouseEvent('mouseup', {{ bubbles: true }}));
+                            checkbox.dispatchEvent(new MouseEvent('click', {{ bubbles: true }}));
+                            
+                            return true;
+                        }}
+                    }}
+                }}
+                
+                // Method 2: Try to find iframe and access its content
+                const cfIframes = document.querySelectorAll('iframe[src*="challenges.cloudflare.com"], iframe[src*="turnstile"]');
+                
+                for (let iframe of cfIframes) {{
+                    try {{
+                        // Try to access iframe content (may be blocked by CORS)
+                        const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                        if (iframeDoc) {{
+                            const iframeCheckboxes = iframeDoc.querySelectorAll('input[type="checkbox"], [role="checkbox"], button');
+                            
+                            for (let checkbox of iframeCheckboxes) {{
+                                console.log('Found iframe checkbox:', checkbox);
+                                checkbox.click();
+                                return true;
+                            }}
+                        }}
+                    }} catch (e) {{
+                        console.log('Iframe access blocked:', e);
+                    }}
+                }}
+                
+                // Method 3: Try coordinate-based clicking with JavaScript
+                const elementAtPoint = document.elementFromPoint({x}, {y});
+                if (elementAtPoint) {{
+                    console.log('Element at coordinates:', elementAtPoint);
+                    
+                    // Try various click methods
+                    elementAtPoint.click();
+                    elementAtPoint.dispatchEvent(new MouseEvent('click', {{ bubbles: true }}));
+                    
+                    // If it's part of a shadow tree, try to find the host
+                    let current = elementAtPoint;
+                    while (current && current.parentNode) {{
+                        if (current.parentNode.nodeType === 11) {{ // DOCUMENT_FRAGMENT_NODE (shadow root)
+                            console.log('Found shadow root parent');
+                            current.click();
+                            return true;
+                        }}
+                        current = current.parentNode;
+                    }}
+                    
+                    return true;
+                }}
+                
+                return false;
+                
+            }} catch (error) {{
+                console.error('Shadow DOM interaction error:', error);
+                return false;
+            }}
+        }})();
+        """)
+        
+        if shadow_interaction:
+            print("Shadow DOM interaction successful")
+            await tab.sleep(3)
+            return await check_verification_success(tab)
+        
+        # Method 4: Try the nodriver template_location method for visual detection
+        try:
+            print("Trying nodriver template_location method...")
+            template_result = await tab.template_location()
+            if template_result:
+                print(f"Template location found: {template_result}")
+                await tab.mouse_click(template_result[0], template_result[1])
+                await tab.sleep(3)
+                return await check_verification_success(tab)
+        except Exception as template_error:
+            print(f"Template location method failed: {template_error}")
+        
+        # Method 5: Try the built-in verify_cf with flash
+        try:
+            print("Trying verify_cf with flash...")
+            result = await tab.verify_cf(flash=True)
+            if result:
+                print("verify_cf with flash succeeded")
+                return True
+        except Exception as verify_error:
+            print(f"verify_cf with flash failed: {verify_error}")
+        
+        return False
+        
+    except Exception as e:
+        print(f"Error in shadow DOM interaction: {e}")
         return False
 
 if __name__ == "__main__":
