@@ -73,6 +73,87 @@ async def fill_text_field(tab, keywords, value):
         print(f"Could not find or fill field for '{keywords[0]}': {e}")
     return False
 
+async def test_mouse_movement(tab):
+    """Test function to verify mouse movement is working correctly."""
+    print("=== TESTING MOUSE MOVEMENT ===")
+    
+    try:
+        # Test 1: JavaScript-based mouse event simulation
+        print("Test 1: Testing JavaScript mouse events...")
+        js_test = """
+        console.log('Creating mouse movement test...');
+        
+        // Create a visual indicator
+        const indicator = document.createElement('div');
+        indicator.style.position = 'fixed';
+        indicator.style.width = '20px';
+        indicator.style.height = '20px';
+        indicator.style.backgroundColor = 'red';
+        indicator.style.borderRadius = '50%';
+        indicator.style.zIndex = '10000';
+        indicator.style.pointerEvents = 'none';
+        indicator.style.top = '400px';
+        indicator.style.left = '500px';
+        document.body.appendChild(indicator);
+        
+        // Test mouse events at coordinates
+        const coords = [
+            {x: 300, y: 300},
+            {x: 600, y: 300}, 
+            {x: 600, y: 600},
+            {x: 300, y: 600}
+        ];
+        
+        coords.forEach((coord, i) => {
+            setTimeout(() => {
+                indicator.style.left = coord.x + 'px';
+                indicator.style.top = coord.y + 'px';
+                console.log(`Moved indicator to (${coord.x}, ${coord.y})`);
+                
+                // Dispatch mouse events
+                const mouseEvent = new MouseEvent('mousemove', {
+                    clientX: coord.x,
+                    clientY: coord.y,
+                    bubbles: true
+                });
+                document.dispatchEvent(mouseEvent);
+            }, i * 500);
+        });
+        
+        // Remove indicator after test
+        setTimeout(() => {
+            document.body.removeChild(indicator);
+            console.log('Mouse movement test completed');
+        }, 3000);
+        """
+        
+        await tab.evaluate(js_test)
+        await asyncio.sleep(4)
+        
+        # Test 2: Try CDP with correct format
+        print("Test 2: Testing CDP mouse events...")
+        try:
+            # Try the CDP approach but with better error handling
+            result = await tab.evaluate("""
+            // Test if we can get mouse position
+            let mouseX = 0, mouseY = 0;
+            document.addEventListener('mousemove', (e) => {
+                mouseX = e.clientX;
+                mouseY = e.clientY;
+            });
+            console.log('Mouse tracking enabled');
+            """)
+            print("Mouse tracking enabled via JavaScript")
+        except Exception as cdp_error:
+            print(f"CDP approach failed: {cdp_error}")
+        
+        print("=== MOUSE MOVEMENT TEST COMPLETE ===")
+        
+    except Exception as e:
+        print(f"Mouse movement test failed: {e}")
+        import traceback
+        traceback.print_exc()
+
 async def handle_cookie_banner(tab):
     """
     Finds and clicks common cookie consent buttons, then waits for page to stabilize.
@@ -172,70 +253,104 @@ async def use_llm_to_navigate(tab, llm: ChatGoogleGenerativeAI):
             if action.get('click'):
                 coords = action['click']
                 x, y = int(coords['x']), int(coords['y'])
-                print(f"LLM found element at x={x}, y={y}. Moving mouse and clicking physically.")
+                print(f"LLM found element at x={x}, y={y}. Attempting robust click.")
+                
                 try:
-                    # Use CDP to physically move the mouse cursor and click
-                    print(f"Moving mouse to coordinates ({x}, {y})...")
-                    
-                    # First, move the mouse to the target coordinates
-                    await tab.send({
-                        "method": "Input.dispatchMouseEvent",
-                        "params": {
-                            "type": "mouseMoved",
-                            "x": x,
-                            "y": y
-                        }
-                    })
-                    await asyncio.sleep(0.5)  # Wait for mouse movement to complete
-                    
-                    print("Mouse moved. Performing click...")
-                    
-                    # Then perform the actual click (press and release)
-                    await tab.send({
-                        "method": "Input.dispatchMouseEvent", 
-                        "params": {
-                            "type": "mousePressed",
-                            "x": x,
-                            "y": y,
-                            "button": "left",
-                            "clickCount": 1
-                        }
-                    })
-                    await asyncio.sleep(0.1)
-                    
-                    await tab.send({
-                        "method": "Input.dispatchMouseEvent",
-                        "params": {
-                            "type": "mouseReleased", 
-                            "x": x,
-                            "y": y,
-                            "button": "left",
-                            "clickCount": 1
-                        }
-                    })
-                    
-                    await tab.sleep(3)
-                    print("Physical click completed successfully.")
-                    return True
-                    
-                except Exception as e:
-                    print(f"CDP mouse click failed ({e}), trying JavaScript fallback...")
-                    # Fallback to JavaScript if CDP fails
-                    try:
-                        simple_click = f"""
+                    # Use comprehensive JavaScript approach with real mouse events
+                    click_script = f"""
+                    (function() {{
+                        console.log('Starting click at coordinates ({x}, {y})');
+                        
+                        // Find the element at the coordinates
                         const element = document.elementFromPoint({x}, {y});
-                        if (element) {{
-                            element.click();
-                            console.log('Fallback click on element:', element.tagName);
+                        if (!element) {{
+                            console.log('No element found at coordinates');
+                            return false;
                         }}
-                        """
-                        await tab.evaluate(simple_click)
-                        await tab.sleep(3)
-                        print("Fallback JavaScript click completed.")
+                        
+                        console.log('Found element:', element.tagName, element.className, element.id);
+                        
+                        // Scroll element into view if needed
+                        element.scrollIntoView({{behavior: 'smooth', block: 'center'}});
+                        
+                        // Wait a bit for scroll
+                        setTimeout(() => {{
+                            // Create and dispatch comprehensive mouse events
+                            const mouseEvents = ['mousedown', 'mouseup', 'click'];
+                            
+                            mouseEvents.forEach(eventType => {{
+                                const event = new MouseEvent(eventType, {{
+                                    view: window,
+                                    bubbles: true,
+                                    cancelable: true,
+                                    clientX: {x},
+                                    clientY: {y},
+                                    button: 0,
+                                    buttons: 1
+                                }});
+                                
+                                element.dispatchEvent(event);
+                                console.log('Dispatched', eventType, 'event');
+                            }});
+                            
+                            // Also try direct click
+                            element.click();
+                            console.log('Direct click executed');
+                            
+                            // Try focus and click if it's a button/link
+                            if (element.tagName === 'BUTTON' || element.tagName === 'A' || element.type === 'submit') {{
+                                element.focus();
+                                element.click();
+                                console.log('Focus and click executed for interactive element');
+                            }}
+                            
+                        }}, 500);
+                        
+                        return true;
+                    }})()
+                    """
+                    
+                    result = await tab.evaluate(click_script)
+                    await tab.sleep(4)  # Wait for any animations/navigation
+                    
+                    if result:
+                        print("Comprehensive JavaScript click completed successfully.")
                         return True
-                    except Exception as js_error:
-                        print(f"JavaScript fallback also failed: {js_error}")
-                        return False
+                    else:
+                        print("No element found at coordinates, trying alternative...")
+                        
+                        # Fallback: try to find any clickable element nearby
+                        fallback_script = f"""
+                        // Try to find clickable elements near the coordinates
+                        const searchRadius = 20;
+                        for (let offsetX = -searchRadius; offsetX <= searchRadius; offsetX += 10) {{
+                            for (let offsetY = -searchRadius; offsetY <= searchRadius; offsetY += 10) {{
+                                const testElement = document.elementFromPoint({x} + offsetX, {y} + offsetY);
+                                if (testElement && (testElement.tagName === 'BUTTON' || testElement.tagName === 'A' || testElement.onclick)) {{
+                                    console.log('Found clickable element nearby:', testElement);
+                                    testElement.click();
+                                    return true;
+                                }}
+                            }}
+                        }}
+                        return false;
+                        """
+                        
+                        fallback_result = await tab.evaluate(fallback_script)
+                        await tab.sleep(3)
+                        
+                        if fallback_result:
+                            print("Fallback nearby element click succeeded.")
+                            return True
+                        else:
+                            print("No clickable elements found nearby.")
+                            return False
+                        
+                except Exception as e:
+                    print(f"All click attempts failed: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    return False
             
             elif action.get('scroll'):
                 print("LLM advised scrolling. Scrolling down...")
@@ -298,6 +413,10 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
             tab = browser.tabs[-1] # Assume the last tab is the active one.
             await tab.bring_to_front()
             print("Switched to the most recent tab to ensure it's active.")
+
+        # --- TEST MOUSE MOVEMENT ---
+        print("Running mouse movement test...")
+        await test_mouse_movement(tab)
 
         # --- Navigate to the actual application form using LLM ---
         tasks[task_id].update({"status": "processing", "message": "Using LLM to find application form..."})
