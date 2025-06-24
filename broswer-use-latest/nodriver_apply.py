@@ -172,49 +172,69 @@ async def use_llm_to_navigate(tab, llm: ChatGoogleGenerativeAI):
             if action.get('click'):
                 coords = action['click']
                 x, y = int(coords['x']), int(coords['y'])
-                print(f"LLM found element at x={x}, y={y}. Clicking using CDP.")
+                print(f"LLM found element at x={x}, y={y}. Moving mouse and clicking physically.")
                 try:
-                    # First try JavaScript approach - more reliable for actual clicking
-                    js_click = f"""
-                    (function() {{
+                    # Use CDP to physically move the mouse cursor and click
+                    print(f"Moving mouse to coordinates ({x}, {y})...")
+                    
+                    # First, move the mouse to the target coordinates
+                    await tab.send({
+                        "method": "Input.dispatchMouseEvent",
+                        "params": {
+                            "type": "mouseMoved",
+                            "x": x,
+                            "y": y
+                        }
+                    })
+                    await asyncio.sleep(0.5)  # Wait for mouse movement to complete
+                    
+                    print("Mouse moved. Performing click...")
+                    
+                    # Then perform the actual click (press and release)
+                    await tab.send({
+                        "method": "Input.dispatchMouseEvent", 
+                        "params": {
+                            "type": "mousePressed",
+                            "x": x,
+                            "y": y,
+                            "button": "left",
+                            "clickCount": 1
+                        }
+                    })
+                    await asyncio.sleep(0.1)
+                    
+                    await tab.send({
+                        "method": "Input.dispatchMouseEvent",
+                        "params": {
+                            "type": "mouseReleased", 
+                            "x": x,
+                            "y": y,
+                            "button": "left",
+                            "clickCount": 1
+                        }
+                    })
+                    
+                    await tab.sleep(3)
+                    print("Physical click completed successfully.")
+                    return True
+                    
+                except Exception as e:
+                    print(f"CDP mouse click failed ({e}), trying JavaScript fallback...")
+                    # Fallback to JavaScript if CDP fails
+                    try:
+                        simple_click = f"""
                         const element = document.elementFromPoint({x}, {y});
                         if (element) {{
-                            console.log('Found element at coordinates:', element);
-                            element.scrollIntoView({{behavior: 'smooth', block: 'center'}});
-                            setTimeout(() => {{
-                                element.click();
-                                console.log('Clicked element successfully');
-                            }}, 500);
-                            return true;
-                        }} else {{
-                            console.log('No element found at coordinates {x}, {y}');
-                            return false;
+                            element.click();
+                            console.log('Fallback click on element:', element.tagName);
                         }}
-                    }})()
-                    """
-                    result = await tab.evaluate(js_click)
-                    await tab.sleep(3)
-                    if result:
-                        print("Click completed successfully using JavaScript.")
-                        return True
-                    else:
-                        print("No element found at coordinates, trying alternative...")
-                        # Fallback to simpler JavaScript click
-                        raise Exception("JavaScript click found no element")
-                except Exception as e:
-                    print(f"JavaScript click failed ({e}), trying simple click...")
-                    # Last resort: try simple direct click at coordinates
-                    try:
-                        # Use simple JavaScript to click at coordinates
-                        simple_click = f"""
-                        document.elementFromPoint({x}, {y})?.click();
                         """
                         await tab.evaluate(simple_click)
                         await tab.sleep(3)
-                        print("Click completed using simple JavaScript.")
+                        print("Fallback JavaScript click completed.")
                         return True
                     except Exception as js_error:
-                        print(f"Simple JavaScript click also failed: {js_error}")
+                        print(f"JavaScript fallback also failed: {js_error}")
                         return False
             
             elif action.get('scroll'):
@@ -332,14 +352,23 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
         # --- SCRIPT-BASED ACTIONS: Fill simple fields ---
         tasks[task_id].update({"status": "processing", "message": "Filling standard text fields..."})
         user_data_dict = user_data.model_dump()
-        for keywords, data_key in FIELD_MAPPING.items():
-            value = ""
-            if isinstance(data_key, tuple):
-                value = " ".join([user_data_dict.get(k, "") for k in data_key])
-            else:
-                value = user_data_dict.get(data_key)
-            await fill_text_field(tab, keywords, value)
-            await tab.sleep(0.7)
+        print(f"Starting to fill form fields. FIELD_MAPPING has {len(FIELD_MAPPING)} entries.")
+        
+        try:
+            for keywords, data_key in FIELD_MAPPING.items():
+                value = ""
+                if isinstance(data_key, tuple):
+                    value = " ".join([user_data_dict.get(k, "") for k in data_key])
+                else:
+                    value = user_data_dict.get(data_key)
+                print(f"Attempting to fill field with keywords: {keywords}, value: {value}")
+                await fill_text_field(tab, keywords, value)
+                await tab.sleep(0.7)
+        except Exception as field_error:
+            print(f"Error in field filling loop: {field_error}")
+            print(f"Error type: {type(field_error).__name__}")
+            import traceback
+            traceback.print_exc()
 
         # --- LLM-BASED ACTIONS: Fill complex fields ---
         tasks[task_id].update({"status": "processing", "message": "Answering complex questions with LLM..."})
