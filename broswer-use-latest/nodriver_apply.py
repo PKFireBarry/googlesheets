@@ -148,32 +148,32 @@ async def analyze_and_fill_all_form_elements(tab, llm, user_data):
         field_mappings = [
             {
                 'name': 'first_name',
-                'selectors': ['input[name*="first"]', 'input[placeholder*="first" i]', 'input[id*="first"]'],
+                'selectors': ['input[name*="first"]', 'input[placeholder*="first"]', 'input[id*="first"]'],
                 'value': user_data.first_name
             },
             {
                 'name': 'last_name', 
-                'selectors': ['input[name*="last"]', 'input[placeholder*="last" i]', 'input[id*="last"]'],
+                'selectors': ['input[name*="last"]', 'input[placeholder*="last"]', 'input[id*="last"]'],
                 'value': user_data.last_name
             },
             {
                 'name': 'email',
-                'selectors': ['input[type="email"]', 'input[name*="email"]', 'input[placeholder*="email" i]'],
+                'selectors': ['input[type="email"]', 'input[name*="email"]', 'input[placeholder*="email"]'],
                 'value': user_data.email
             },
             {
                 'name': 'phone',
-                'selectors': ['input[type="tel"]', 'input[name*="phone"]', 'input[placeholder*="phone" i]'],
+                'selectors': ['input[type="tel"]', 'input[name*="phone"]', 'input[placeholder*="phone"]'],
                 'value': user_data.phone
             },
             {
                 'name': 'address',
-                'selectors': ['input[name*="address"]', 'input[placeholder*="address" i]', 'textarea[name*="address"]'],
+                'selectors': ['input[name*="address"]', 'input[placeholder*="address"]', 'textarea[name*="address"]'],
                 'value': user_data.address or "Tampa, FL"
             },
             {
                 'name': 'cover_letter',
-                'selectors': ['textarea[name*="cover"]', 'textarea[placeholder*="cover" i]', 'textarea[name*="letter"]'],
+                'selectors': ['textarea[name*="cover"]', 'textarea[placeholder*="cover"]', 'textarea[name*="letter"]'],
                 'value': "I am excited to apply for this position and believe my skills and experience make me a strong candidate. I look forward to discussing how I can contribute to your team."
             }
         ]
@@ -223,23 +223,24 @@ async def analyze_and_fill_all_form_elements(tab, llm, user_data):
                                 # Clear the field completely with multiple methods
                                 print(f"Clearing {field_info['name']} field...")
                                 
-                                # Method 1: Select all and delete
+                                # Method 1: Select all and delete using JavaScript
+                                unique_var_id = f"elem_{abs(hash(selector)) % 1000000}"  # Ensure positive number
                                 await tab.evaluate(f"""
                                 (function() {{
-                                    const el = document.querySelector('{selector}');
-                                    if (el) {{
-                                        el.focus();
-                                        el.select();
-                                        el.value = '';
+                                    const {unique_var_id} = document.querySelector('{selector}');
+                                    if ({unique_var_id}) {{
+                                        {unique_var_id}.focus();
+                                        {unique_var_id}.select();
+                                        {unique_var_id}.value = '';
                                         // Trigger input events to notify the form
-                                        el.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                                        el.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                        {unique_var_id}.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                        {unique_var_id}.dispatchEvent(new Event('change', {{ bubbles: true }}));
                                     }}
                                 }})();
                                 """)
                                 await asyncio.sleep(0.3)
                                 
-                                # Method 2: Use Ctrl+A and Delete for stubborn fields
+                                # Method 2: Use keyboard shortcuts for stubborn fields
                                 await element.click()
                                 await asyncio.sleep(0.2)
                                 
@@ -254,23 +255,23 @@ async def analyze_and_fill_all_form_elements(tab, llm, user_data):
                                 # Verify field is empty
                                 current_value = await tab.evaluate(f"""
                                 (function() {{
-                                    const el = document.querySelector('{selector}');
-                                    return el ? el.value : '';
+                                    const checkEl = document.querySelector('{selector}');
+                                    return checkEl ? checkEl.value : '';
                                 }})();
                                 """)
                                 
                                 if current_value:
                                     print(f"Field still contains: '{current_value}' - trying aggressive clear...")
-                                    # Final aggressive clear
-                                    unique_var = f"elem_{hash(selector)}"
+                                    # Final aggressive clear with different variable name
+                                    clear_var_id = f"clearElem_{abs(hash(selector + 'clear')) % 1000000}"
                                     await tab.evaluate(f"""
                                     (function() {{
-                                        const {unique_var} = document.querySelector('{selector}');
-                                        if ({unique_var}) {{
-                                            {unique_var}.value = '';
-                                            {unique_var}.textContent = '';
-                                            {unique_var}.innerHTML = '';
-                                            {unique_var}.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                        const {clear_var_id} = document.querySelector('{selector}');
+                                        if ({clear_var_id}) {{
+                                            {clear_var_id}.value = '';
+                                            {clear_var_id}.textContent = '';
+                                            {clear_var_id}.innerHTML = '';
+                                            {clear_var_id}.dispatchEvent(new Event('input', {{ bubbles: true }}));
                                         }}
                                     }})();
                                     """)
@@ -343,17 +344,17 @@ async def simple_form_fill_fallback(tab, user_data):
                     await asyncio.sleep(0.2)
                     
                     # Clear field with unique variable name to avoid conflicts
-                    unique_var_name = f"elem_{abs(hash(selector))}"
+                    fallback_var_id = f"fallbackElem_{abs(hash(selector)) % 1000000}"
                     await tab.evaluate(f"""
                     (function() {{
-                        const {unique_var_name} = document.querySelector('{selector}');
-                        if ({unique_var_name}) {{
-                            {unique_var_name}.focus();
-                            {unique_var_name}.select();
-                            {unique_var_name}.value = '';
+                        const {fallback_var_id} = document.querySelector('{selector}');
+                        if ({fallback_var_id}) {{
+                            {fallback_var_id}.focus();
+                            {fallback_var_id}.select();
+                            {fallback_var_id}.value = '';
                             // Trigger events to notify the form
-                            {unique_var_name}.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                            {unique_var_name}.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                            {fallback_var_id}.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                            {fallback_var_id}.dispatchEvent(new Event('change', {{ bubbles: true }}));
                         }}
                     }})();
                     """)
