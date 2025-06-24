@@ -141,59 +141,92 @@ async def analyze_and_fill_all_form_elements(tab, llm, user_data):
     print("=== COMPREHENSIVE FORM ANALYSIS ===")
     
     try:
-        # Find all interactive form elements that are actually visible and fillable
-        all_elements = []
-        
         # Get elements using JavaScript to check visibility
         visible_elements = await tab.evaluate("""
-        const selectors = [
-            'input[type="text"]:not([hidden]):not([style*="display: none"])',
-            'input[type="email"]:not([hidden]):not([style*="display: none"])', 
-            'input[type="tel"]:not([hidden]):not([style*="display: none"])',
-            'input[type="url"]:not([hidden]):not([style*="display: none"])',
-            'input[type="number"]:not([hidden]):not([style*="display: none"])',
-            'input[type="password"]:not([hidden]):not([style*="display: none"])',
-            'input[type="search"]:not([hidden]):not([style*="display: none"])',
-            'input:not([type]):not([hidden]):not([style*="display: none"])',
-            'textarea:not([hidden]):not([style*="display: none"])',
-            'select:not([hidden]):not([style*="display: none"])',
-            'input[type="radio"]:not([hidden]):not([style*="display: none"])',
-            'input[type="checkbox"]:not([hidden]):not([style*="display: none"])'
-        ];
-        
-        const visibleElements = [];
-        selectors.forEach(selector => {
-            const elements = document.querySelectorAll(selector);
-            elements.forEach(el => {
-                const rect = el.getBoundingClientRect();
-                const style = window.getComputedStyle(el);
-                
-                // Check if element is actually visible and interactable
-                if (rect.width > 0 && rect.height > 0 && 
-                    style.display !== 'none' && 
-                    style.visibility !== 'hidden' &&
-                    style.opacity !== '0' &&
-                    !el.disabled &&
-                    !el.readOnly) {
+        (function() {
+            const selectors = [
+                'input[type="text"]:not([hidden]):not([style*="display: none"])',
+                'input[type="email"]:not([hidden]):not([style*="display: none"])', 
+                'input[type="tel"]:not([hidden]):not([style*="display: none"])',
+                'input[type="url"]:not([hidden]):not([style*="display: none"])',
+                'input[type="number"]:not([hidden]):not([style*="display: none"])',
+                'input[type="password"]:not([hidden]):not([style*="display: none"])',
+                'input[type="search"]:not([hidden]):not([style*="display: none"])',
+                'input:not([type]):not([hidden]):not([style*="display: none"])',
+                'textarea:not([hidden]):not([style*="display: none"])',
+                'select:not([hidden]):not([style*="display: none"])',
+                'input[type="radio"]:not([hidden]):not([style*="display: none"])',
+                'input[type="checkbox"]:not([hidden]):not([style*="display: none"])'
+            ];
+            
+            const visibleElements = [];
+            selectors.forEach(selector => {
+                const elements = document.querySelectorAll(selector);
+                elements.forEach(el => {
+                    const rect = el.getBoundingClientRect();
+                    const style = window.getComputedStyle(el);
                     
-                    visibleElements.push({
-                        tag: el.tagName.toLowerCase(),
-                        type: el.type || 'text',
-                        name: el.name || '',
-                        id: el.id || '',
-                        placeholder: el.placeholder || '',
-                        ariaLabel: el.getAttribute('aria-label') || '',
-                        required: el.required || false,
-                        value: el.value || ''
-                    });
-                }
+                    // Check if element is actually visible and interactable
+                    if (rect.width > 0 && rect.height > 0 && 
+                        style.display !== 'none' && 
+                        style.visibility !== 'hidden' &&
+                        style.opacity !== '0' &&
+                        !el.disabled &&
+                        !el.readOnly) {
+                        
+                        visibleElements.push({
+                            tag: el.tagName.toLowerCase(),
+                            type: el.type || 'text',
+                            name: el.name || '',
+                            id: el.id || '',
+                            placeholder: el.placeholder || '',
+                            ariaLabel: el.getAttribute('aria-label') || '',
+                            required: el.required || false,
+                            value: el.value || ''
+                        });
+                    }
+                });
             });
-        });
-        
-        return visibleElements;
+            
+            return visibleElements;
+        })();
         """)
         
         print(f"Found {len(visible_elements)} visible interactive form elements")
+        
+        # Fallback to simple element detection if JavaScript approach fails
+        if not visible_elements:
+            print("JavaScript approach found no elements, trying fallback method...")
+            
+            # Simple fallback approach
+            simple_selectors = [
+                'input[type="text"]',
+                'input[type="email"]',
+                'input[type="tel"]',
+                'textarea'
+            ]
+            
+            fallback_elements = []
+            for selector in simple_selectors:
+                try:
+                    elements = await tab.select_all(selector, timeout=2)
+                    for elem in elements:
+                        await elem.update()
+                        fallback_elements.append({
+                            'tag': elem.tag_name.lower(),
+                            'type': elem.attrs.get('type', 'text'),
+                            'name': elem.attrs.get('name', ''),
+                            'id': elem.attrs.get('id', ''),
+                            'placeholder': elem.attrs.get('placeholder', ''),
+                            'ariaLabel': elem.attrs.get('aria-label', ''),
+                            'required': elem.attrs.get('required', False),
+                            'value': ''
+                        })
+                except Exception as e:
+                    print(f"Fallback selector '{selector}' failed: {e}")
+            
+            visible_elements = fallback_elements
+            print(f"Fallback method found {len(visible_elements)} elements")
         
         # Now get the actual nodriver elements for the visible ones
         form_fields = []
@@ -248,11 +281,62 @@ async def analyze_and_fill_all_form_elements(tab, llm, user_data):
         # Use LLM to determine what to fill in each field
         if form_fields:
             await fill_fields_with_llm_intelligence(form_fields, llm, user_data, tab)
+        else:
+            print("❌ No form fields found to fill! The form may not have loaded properly.")
             
     except Exception as e:
         print(f"Error in comprehensive form analysis: {e}")
         import traceback
         traceback.print_exc()
+        
+        # Try a very simple approach as last resort
+        print("Attempting simple form filling as fallback...")
+        try:
+            await simple_form_fill_fallback(tab, user_data)
+        except Exception as fallback_error:
+            print(f"Fallback form filling also failed: {fallback_error}")
+
+async def simple_form_fill_fallback(tab, user_data):
+    """Simple fallback form filling using basic field detection."""
+    print("=== SIMPLE FALLBACK FORM FILLING ===")
+    
+    # Try to fill common fields using simple selectors
+    field_mappings = [
+        (['input[name*="first"]', 'input[placeholder*="first"]'], user_data.first_name),
+        (['input[name*="last"]', 'input[placeholder*="last"]'], user_data.last_name),
+        (['input[type="email"]', 'input[name*="email"]'], user_data.email),
+        (['input[type="tel"]', 'input[name*="phone"]'], user_data.phone),
+        (['textarea[name*="cover"]', 'textarea[placeholder*="cover"]'], "I am excited to apply for this position and believe my skills and experience make me a strong candidate."),
+    ]
+    
+    for selectors, value in field_mappings:
+        if not value:
+            continue
+            
+        for selector in selectors:
+            try:
+                element = await tab.select(selector, timeout=2)
+                if element:
+                    print(f"Filling field with selector '{selector}': {value[:30]}...")
+                    await element.click()
+                    await asyncio.sleep(0.2)
+                    
+                    # Clear field
+                    await tab.evaluate(f"""
+                    const el = document.querySelector('{selector}');
+                    if (el) {{
+                        el.focus();
+                        el.select();
+                        el.value = '';
+                    }}
+                    """)
+                    
+                    await element.send_keys(str(value))
+                    await asyncio.sleep(0.3)
+                    break
+            except Exception as e:
+                print(f"Failed to fill field with selector '{selector}': {e}")
+                continue
 
 async def fill_fields_with_llm_intelligence(form_fields, llm, user_data, tab):
     """Use LLM to intelligently fill each form field based on context."""
