@@ -172,22 +172,57 @@ async def use_llm_to_navigate(tab, llm: ChatGoogleGenerativeAI):
             if action.get('click'):
                 coords = action['click']
                 x, y = int(coords['x']), int(coords['y'])
-                print(f"LLM found element at x={x}, y={y}. Moving mouse and clicking.")
+                print(f"LLM found element at x={x}, y={y}. Clicking using CDP.")
                 try:
-                    # Try to move mouse first with explicit parameters
-                    await tab.mouse_move(x, y, steps=1)
-                    await asyncio.sleep(0.3)
-                    await tab.mouse_click(x, y)
+                    # Use CDP (Chrome DevTools Protocol) for reliable clicking
+                    # First dispatch a mousePressed event at the coordinates
+                    await tab.send({
+                        "method": "Input.dispatchMouseEvent",
+                        "params": {
+                            "type": "mousePressed",
+                            "x": x,
+                            "y": y,
+                            "button": "left",
+                            "clickCount": 1
+                        }
+                    })
+                    await asyncio.sleep(0.1)
+                    
+                    # Then dispatch a mouseReleased event to complete the click
+                    await tab.send({
+                        "method": "Input.dispatchMouseEvent",
+                        "params": {
+                            "type": "mouseReleased",
+                            "x": x,
+                            "y": y,
+                            "button": "left",
+                            "clickCount": 1
+                        }
+                    })
                     await tab.sleep(3)
-                    print("Click completed successfully.")
+                    print("Click completed successfully using CDP.")
                     return True # Success
-                except AttributeError as e:
-                    print(f"Mouse move not available ({e}), clicking directly...")
-                    # Fallback: click without moving mouse first
-                    await tab.mouse_click(x, y)
-                    await tab.sleep(3)
-                    print("Click completed successfully.")
-                    return True # Success
+                except Exception as e:
+                    print(f"CDP click failed ({e}), trying alternative approach...")
+                    # Last resort: try to find an element at those coordinates and click it
+                    try:
+                        # Use JavaScript to click at coordinates
+                        js_click = f"""
+                        const element = document.elementFromPoint({x}, {y});
+                        if (element) {{
+                            element.click();
+                            console.log('Clicked element:', element);
+                        }} else {{
+                            console.log('No element found at coordinates');
+                        }}
+                        """
+                        await tab.evaluate(js_click)
+                        await tab.sleep(3)
+                        print("Click completed using JavaScript.")
+                        return True
+                    except Exception as js_error:
+                        print(f"JavaScript click also failed: {js_error}")
+                        return False
             
             elif action.get('scroll'):
                 print("LLM advised scrolling. Scrolling down...")
