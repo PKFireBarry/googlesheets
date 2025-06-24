@@ -73,6 +73,397 @@ async def fill_text_field(tab, keywords, value):
         print(f"Could not find or fill field for '{keywords[0]}': {e}")
     return False
 
+async def get_field_context(element, tab):
+    """Extract context about a form field to help the LLM understand what it's for."""
+    try:
+        await element.update()
+        context = {}
+        
+        # Get element attributes
+        context['type'] = element.attrs.get('type', 'text')
+        context['name'] = element.attrs.get('name', '')
+        context['id'] = element.attrs.get('id', '')
+        context['placeholder'] = element.attrs.get('placeholder', '')
+        context['aria_label'] = element.attrs.get('aria-label', '')
+        context['required'] = element.attrs.get('required', False)
+        context['tag'] = element.tag_name
+        
+        # Try to find associated label
+        label_text = ""
+        if context['id']:
+            try:
+                label = await tab.select(f"label[for='{context['id']}']", timeout=1)
+                if label:
+                    await label.update()
+                    label_text = label.text.strip()
+            except:
+                pass
+        
+        # Look for nearby text (labels, headings, etc.)
+        if not label_text:
+            try:
+                # Get surrounding context using JavaScript
+                surrounding_text = await tab.evaluate(f"""
+                const element = document.querySelector('[name="{context["name"]}"], [id="{context["id"]}"]');
+                if (element) {{
+                    let text = '';
+                    // Check parent elements for text
+                    let parent = element.parentElement;
+                    while (parent && text.length < 100) {{
+                        const textNodes = Array.from(parent.childNodes)
+                            .filter(node => node.nodeType === 3)
+                            .map(node => node.textContent.trim())
+                            .filter(text => text.length > 0);
+                        if (textNodes.length > 0) {{
+                            text = textNodes.join(' ');
+                            break;
+                        }}
+                        parent = parent.parentElement;
+                    }}
+                    return text;
+                }}
+                return '';
+                """)
+                label_text = surrounding_text.strip()
+            except:
+                pass
+        
+        context['label'] = label_text
+        context['question'] = label_text or context['placeholder'] or context['aria_label'] or context['name']
+        
+        return context
+    except Exception as e:
+        print(f"Error getting field context: {e}")
+        return {}
+
+async def analyze_and_fill_all_form_elements(tab, llm, user_data):
+    """Comprehensively analyze and fill all form elements using LLM intelligence."""
+    print("=== COMPREHENSIVE FORM ANALYSIS ===")
+    
+    try:
+        # Find all interactive form elements
+        selectors = [
+            'input[type="text"]',
+            'input[type="email"]', 
+            'input[type="tel"]',
+            'input[type="url"]',
+            'input[type="number"]',
+            'input[type="password"]',
+            'input[type="search"]',
+            'input:not([type])',  # inputs without type default to text
+            'textarea',
+            'select',
+            'input[type="radio"]',
+            'input[type="checkbox"]'
+        ]
+        
+        all_elements = []
+        for selector in selectors:
+            try:
+                elements = await tab.select_all(selector)
+                all_elements.extend(elements)
+            except:
+                continue
+        
+        print(f"Found {len(all_elements)} interactive form elements")
+        
+        # Analyze each element and prepare for LLM
+        form_fields = []
+        for i, element in enumerate(all_elements):
+            try:
+                context = await get_field_context(element, tab)
+                if context and context.get('question'):
+                    form_fields.append({
+                        'element': element,
+                        'context': context,
+                        'index': i
+                    })
+                    print(f"Field {i+1}: {context['tag']}[{context['type']}] - '{context['question'][:50]}...'")
+            except Exception as e:
+                print(f"Error analyzing element {i}: {e}")
+        
+        print(f"Identified {len(form_fields)} fillable fields")
+        
+        # Use LLM to determine what to fill in each field
+        if form_fields:
+            await fill_fields_with_llm_intelligence(form_fields, llm, user_data, tab)
+            
+    except Exception as e:
+        print(f"Error in comprehensive form analysis: {e}")
+        import traceback
+        traceback.print_exc()
+
+async def fill_fields_with_llm_intelligence(form_fields, llm, user_data, tab):
+    """Use LLM to intelligently fill each form field based on context."""
+    print("=== INTELLIGENT FORM FILLING ===")
+    
+    # Prepare user data summary for LLM
+    user_summary = f"""
+    User Information:
+    - Name: {user_data.first_name} {user_data.last_name}
+    - Email: {user_data.email}
+    - Phone: {user_data.phone}
+    - LinkedIn: {user_data.linkedin or 'Not provided'}
+    - GitHub: {user_data.github or 'Not provided'}
+    - Portfolio: {user_data.portfolio or 'Not provided'}
+    - Address: {user_data.address or 'Not provided'}
+    """
+    
+    for field_info in form_fields:
+        try:
+            element = field_info['element']
+            context = field_info['context']
+            
+            # Skip file inputs and already-filled fields
+            if context['type'] in ['file', 'submit', 'button', 'hidden']:
+                continue
+                
+            # Check if field is already filled
+            try:
+                current_value = await element.evaluate("this.value")
+                if current_value and current_value.strip():
+                    print(f"Skipping field '{context['question'][:30]}...' - already filled")
+                    continue
+            except:
+                pass
+            
+            print(f"Analyzing field: {context['question'][:50]}...")
+            
+            # Create intelligent prompt for LLM
+            if context['type'] in ['radio', 'checkbox']:
+                # Handle radio buttons and checkboxes
+                await handle_choice_field(element, context, llm, user_data, tab)
+            elif context['tag'] == 'select':
+                # Handle dropdown selections
+                await handle_select_field(element, context, llm, user_data, tab)
+            else:
+                # Handle text inputs and textareas
+                await handle_text_field(element, context, llm, user_data, tab)
+                
+            await tab.sleep(0.5)  # Brief pause between fields
+            
+        except Exception as e:
+            print(f"Error filling field: {e}")
+            continue
+
+async def handle_text_field(element, context, llm, user_data, tab):
+    """Handle text inputs and textareas with LLM intelligence."""
+    try:
+        # Create context-aware prompt
+        field_prompt = f"""
+        You are filling out a job application form. Based on the user information provided, determine the best response for this field.
+        
+        Field Context:
+        - Field Type: {context['type']}
+        - Question/Label: {context['question']}
+        - Field Name: {context['name']}
+        - Required: {context['required']}
+        
+        User Information:
+        - Name: {user_data.first_name} {user_data.last_name}
+        - Email: {user_data.email}
+        - Phone: {user_data.phone}
+        - LinkedIn: {user_data.linkedin or 'Not provided'}
+        - GitHub: {user_data.github or 'Not provided'}
+        - Portfolio: {user_data.portfolio or 'Not provided'}
+        - Address: {user_data.address or 'Not provided'}
+        
+        Instructions:
+        - If this is asking for basic info (name, email, phone, etc.), provide the exact user data
+        - If this is a complex question (like "why do you want to work here", "tell us about yourself", etc.), provide a thoughtful, professional response
+        - Keep responses concise but complete
+        - Return ONLY the text to fill in the field, no explanations
+        
+        Response:
+        """
+        
+        response = await llm.ainvoke(field_prompt)
+        answer = response.content.strip()
+        
+        if answer and len(answer) > 0:
+            print(f"Filling '{context['question'][:30]}...' with: '{answer[:50]}...'")
+            
+            # Fill the field
+            await element.mouse_move()
+            await asyncio.sleep(0.2)
+            await element.click()
+            await asyncio.sleep(0.3)
+            
+            # Clear any existing content
+            await element.clear_input()
+            await asyncio.sleep(0.2)
+            
+            # Type the response
+            await element.send_keys(answer)
+            await asyncio.sleep(0.3)
+        else:
+            print(f"No response generated for field: {context['question'][:30]}...")
+            
+    except Exception as e:
+        print(f"Error handling text field: {e}")
+
+async def handle_choice_field(element, context, llm, user_data, tab):
+    """Handle radio buttons and checkboxes with LLM intelligence."""
+    try:
+        # Get all related radio buttons or checkboxes
+        if context['name']:
+            related_elements = await tab.select_all(f"input[name='{context['name']}']")
+        else:
+            related_elements = [element]
+        
+        # Get options
+        options = []
+        for elem in related_elements:
+            try:
+                await elem.update()
+                value = elem.attrs.get('value', '')
+                label_text = await get_choice_label(elem, tab)
+                options.append({
+                    'element': elem,
+                    'value': value,
+                    'label': label_text
+                })
+            except:
+                continue
+        
+        if not options:
+            return
+        
+        # Create prompt for LLM to choose
+        options_text = "\n".join([f"- {opt['value']}: {opt['label']}" for opt in options])
+        
+        choice_prompt = f"""
+        You are filling out a job application form. Choose the most appropriate option for this question.
+        
+        Question: {context['question']}
+        Field Type: {context['type']}
+        
+        Available Options:
+        {options_text}
+        
+        User Information:
+        - Name: {user_data.first_name} {user_data.last_name}
+        - Email: {user_data.email}
+        - Phone: {user_data.phone}
+        - LinkedIn: {user_data.linkedin or 'Not provided'}
+        
+        Instructions:
+        - Choose the most appropriate option based on the question and user context
+        - For checkboxes, you can choose multiple options (comma-separated)
+        - For radio buttons, choose exactly one option
+        - Return only the value(s) of your choice, no explanations
+        
+        Choice:
+        """
+        
+        response = await llm.ainvoke(choice_prompt)
+        choices = [choice.strip() for choice in response.content.split(',')]
+        
+        # Click the chosen options
+        for choice in choices:
+            for option in options:
+                if choice in option['value'] or choice in option['label']:
+                    print(f"Selecting option: {option['value']} - {option['label']}")
+                    await option['element'].mouse_move()
+                    await asyncio.sleep(0.2)
+                    await option['element'].click()
+                    await asyncio.sleep(0.3)
+                    break
+                    
+    except Exception as e:
+        print(f"Error handling choice field: {e}")
+
+async def handle_select_field(element, context, llm, user_data, tab):
+    """Handle dropdown selections with LLM intelligence."""
+    try:
+        # Get all options from the select element
+        options = await tab.select_all(f"select[name='{context['name']}'] option")
+        if not options:
+            return
+        
+        option_texts = []
+        for option in options:
+            try:
+                await option.update()
+                value = option.attrs.get('value', '')
+                text = option.text.strip()
+                if text and text.lower() not in ['select', 'choose', 'pick']:
+                    option_texts.append(f"- {value}: {text}")
+            except:
+                continue
+        
+        if not option_texts:
+            return
+        
+        options_text = "\n".join(option_texts)
+        
+        select_prompt = f"""
+        You are filling out a job application form. Choose the most appropriate option from this dropdown.
+        
+        Question: {context['question']}
+        
+        Available Options:
+        {options_text}
+        
+        User Information:
+        - Name: {user_data.first_name} {user_data.last_name}
+        - Email: {user_data.email}
+        - Address: {user_data.address or 'Not provided'}
+        
+        Instructions:
+        - Choose the most appropriate option based on the question and user context
+        - Return only the value of your choice, no explanations
+        
+        Choice:
+        """
+        
+        response = await llm.ainvoke(select_prompt)
+        choice = response.content.strip()
+        
+        # Select the chosen option
+        for option in options:
+            try:
+                await option.update()
+                if choice in option.attrs.get('value', '') or choice in option.text:
+                    print(f"Selecting dropdown option: {choice}")
+                    await option.select_option()
+                    break
+            except:
+                continue
+                
+    except Exception as e:
+        print(f"Error handling select field: {e}")
+
+async def get_choice_label(element, tab):
+    """Get the label text for a radio button or checkbox."""
+    try:
+        await element.update()
+        element_id = element.attrs.get('id', '')
+        
+        if element_id:
+            try:
+                label = await tab.select(f"label[for='{element_id}']", timeout=1)
+                if label:
+                    await label.update()
+                    return label.text.strip()
+            except:
+                pass
+        
+        # Try to find nearby text
+        nearby_text = await tab.evaluate(f"""
+        const element = document.querySelector('[id="{element_id}"]') || 
+                       document.querySelector('[value="{element.attrs.get("value", "")}"]');
+        if (element) {{
+            const parent = element.parentElement;
+            return parent ? parent.textContent.trim() : '';
+        }}
+        return '';
+        """)
+        
+        return nearby_text.strip()
+    except:
+        return ""
+
 # Removed unused debug functions - focusing on core functionality
 
 async def handle_cookie_banner(tab):
@@ -285,51 +676,112 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
             else:
                 print("Could not find a file input for the resume.")
 
-        # --- SCRIPT-BASED ACTIONS: Fill simple fields ---
-        tasks[task_id].update({"status": "processing", "message": "Filling standard text fields..."})
-        user_data_dict = user_data.model_dump()
-        print(f"Starting to fill form fields. FIELD_MAPPING has {len(FIELD_MAPPING)} entries.")
+        # --- COMPREHENSIVE FORM ANALYSIS AND INTELLIGENT FILLING ---
+        tasks[task_id].update({"status": "processing", "message": "Analyzing all form elements..."})
+        await analyze_and_fill_all_form_elements(tab, llm, user_data)
+
+        # --- SUBMIT THE FORM ---
+        tasks[task_id].update({"status": "processing", "message": "Submitting application..."})
         
-        try:
-            for keywords, data_key in FIELD_MAPPING.items():
-                value = ""
-                if isinstance(data_key, tuple):
-                    value = " ".join([user_data_dict.get(k, "") for k in data_key])
-                else:
-                    value = user_data_dict.get(data_key)
-                print(f"Attempting to fill field with keywords: {keywords}, value: {value}")
-                await fill_text_field(tab, keywords, value)
-                await tab.sleep(0.7)
-        except Exception as field_error:
-            print(f"Error in field filling loop: {field_error}")
-            print(f"Error type: {type(field_error).__name__}")
-            import traceback
-            traceback.print_exc()
-
-        # --- LLM-BASED ACTIONS: Fill complex fields ---
-        tasks[task_id].update({"status": "processing", "message": "Answering complex questions with LLM..."})
-        text_areas = await tab.select_all('textarea')
-        for text_area in text_areas:
+        # Try to find and click submit button
+        submit_keywords = [
+            "submit application",
+            "submit",
+            "send application", 
+            "apply",
+            "continue",
+            "next"
+        ]
+        
+        submitted = False
+        for keyword in submit_keywords:
             try:
-                # Attempt to find the question associated with the textarea
-                # Try to get aria-label or placeholder from the textarea attributes
-                label = text_area.attributes.get('aria-label') or text_area.attributes.get('placeholder') or "Please provide relevant information"
-                if label:
-                    answer = await get_llm_response(llm, label, user_data)
-                    # Move mouse to element before clicking
-                    await text_area.mouse_move()
-                    await asyncio.sleep(0.2)
-                    await text_area.click()
-                    await asyncio.sleep(0.3)
-                    await text_area.send_keys(answer)
-                    await tab.sleep(1)
+                print(f"Looking for submit button with text: '{keyword}'")
+                submit_button = await tab.find(keyword, best_match=True, timeout=2)
+                if submit_button:
+                    print(f"Found submit button: '{keyword}'")
+                    await submit_button.mouse_move()
+                    await tab.sleep(0.5)
+                    await submit_button.click()
+                    await tab.sleep(3)
+                    print("Submit button clicked!")
+                    submitted = True
+                    break
             except Exception as e:
-                print(f"Could not process a textarea: {e}")
+                print(f"Could not find submit button with text '{keyword}': {e}")
+        
+        if not submitted:
+            # Try CSS selectors for submit buttons
+            submit_selectors = [
+                "button[type='submit']",
+                "input[type='submit']",
+                ".submit-btn",
+                ".btn-submit",
+                "button[class*='submit']"
+            ]
+            
+            for selector in submit_selectors:
+                try:
+                    print(f"Trying submit selector: {selector}")
+                    submit_element = await tab.select(selector, timeout=2)
+                    if submit_element:
+                        print(f"Found submit element with selector: {selector}")
+                        await submit_element.mouse_move()
+                        await tab.sleep(0.5)
+                        await submit_element.click()
+                        await tab.sleep(3)
+                        print("Submit element clicked!")
+                        submitted = True
+                        break
+                except Exception as e:
+                    print(f"Submit selector '{selector}' failed: {e}")
+        
+        # --- HANDLE CLOUDFLARE VERIFICATION ---
+        if submitted:
+            tasks[task_id].update({"status": "processing", "message": "Checking for verification challenges..."})
+            await tab.sleep(3)  # Wait for any redirects/popups
+            
+            # Look for Cloudflare verification
+            try:
+                print("Checking for Cloudflare verification...")
+                # Try to find the verification checkbox/button
+                cf_selectors = [
+                    "input[type='checkbox'][id*='cf']",
+                    ".cf-turnstile",
+                    "[data-sitekey]",
+                    "iframe[src*='cloudflare']",
+                    ".challenge-form"
+                ]
+                
+                for selector in cf_selectors:
+                    try:
+                        cf_element = await tab.select(selector, timeout=2)
+                        if cf_element:
+                            print(f"Found Cloudflare element with selector: {selector}")
+                            await cf_element.mouse_move()
+                            await tab.sleep(1)
+                            await cf_element.click()
+                            print("Clicked Cloudflare verification!")
+                            await tab.sleep(5)  # Wait for verification to complete
+                            break
+                    except Exception as e:
+                        print(f"CF selector '{selector}' failed: {e}")
+                        
+                # Alternative: Use nodriver's built-in Cloudflare verification
+                try:
+                    result = await tab.verify_cf()
+                    if result:
+                        print("Cloudflare verification completed using nodriver's built-in method!")
+                except Exception as e:
+                    print(f"Built-in CF verification failed: {e}")
+                    
+            except Exception as e:
+                print(f"Error checking for Cloudflare: {e}")
 
-        tasks[task_id].update({"status": "completed", "message": "Application process finished. Please review and submit."})
-        print("--- Process Complete ---")
-        print("Review the form on the browser. The script will close in 60 seconds.")
-        await asyncio.sleep(60)
+        tasks[task_id].update({"status": "completed", "message": "Application submitted! Please check for any final confirmations."})
+        print("--- Application Process Complete ---")
+        print("Application has been submitted. Keeping browser open for 30 seconds to see results...")
+        await asyncio.sleep(30)
 
     except Exception as e:
         error_message = f"An error occurred: {e}"
