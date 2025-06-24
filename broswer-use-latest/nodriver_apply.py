@@ -244,11 +244,11 @@ async def analyze_and_fill_all_form_elements(tab, llm, user_data):
                                 await asyncio.sleep(0.2)
                                 
                                 # Send Ctrl+A to select all
-                                await tab.send_keys('\ue009a')  # Ctrl+A
+                                await element.send_keys('\ue009a')  # Ctrl+A
                                 await asyncio.sleep(0.2)
                                 
                                 # Send Delete key
-                                await tab.send_keys('\ue017')  # Delete key
+                                await element.send_keys('\ue017')  # Delete key
                                 await asyncio.sleep(0.2)
                                 
                                 # Verify field is empty
@@ -262,14 +262,15 @@ async def analyze_and_fill_all_form_elements(tab, llm, user_data):
                                 if current_value:
                                     print(f"Field still contains: '{current_value}' - trying aggressive clear...")
                                     # Final aggressive clear
+                                    unique_var = f"elem_{hash(selector)}"
                                     await tab.evaluate(f"""
                                     (function() {{
-                                        const el = document.querySelector('{selector}');
-                                        if (el) {{
-                                            el.value = '';
-                                            el.textContent = '';
-                                            el.innerHTML = '';
-                                            el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                        const {unique_var} = document.querySelector('{selector}');
+                                        if ({unique_var}) {{
+                                            {unique_var}.value = '';
+                                            {unique_var}.textContent = '';
+                                            {unique_var}.innerHTML = '';
+                                            {unique_var}.dispatchEvent(new Event('input', {{ bubbles: true }}));
                                         }}
                                     }})();
                                     """)
@@ -325,6 +326,7 @@ async def simple_form_fill_fallback(tab, user_data):
         (['input[name*="last"]', 'input[placeholder*="last"]'], user_data.last_name),
         (['input[type="email"]', 'input[name*="email"]'], user_data.email),
         (['input[type="tel"]', 'input[name*="phone"]'], user_data.phone),
+        (['input[name*="address"]', 'input[placeholder*="address"]', 'textarea[name*="address"]'], user_data.address or "Tampa, FL"),
         (['textarea[name*="cover"]', 'textarea[placeholder*="cover"]'], "I am excited to apply for this position and believe my skills and experience make me a strong candidate."),
     ]
     
@@ -340,18 +342,37 @@ async def simple_form_fill_fallback(tab, user_data):
                     await element.click()
                     await asyncio.sleep(0.2)
                     
-                    # Clear field
+                    # Clear field with unique variable name to avoid conflicts
+                    unique_var_name = f"elem_{abs(hash(selector))}"
                     await tab.evaluate(f"""
-                    const el = document.querySelector('{selector}');
-                    if (el) {{
-                        el.focus();
-                        el.select();
-                        el.value = '';
-                    }}
+                    (function() {{
+                        const {unique_var_name} = document.querySelector('{selector}');
+                        if ({unique_var_name}) {{
+                            {unique_var_name}.focus();
+                            {unique_var_name}.select();
+                            {unique_var_name}.value = '';
+                            // Trigger events to notify the form
+                            {unique_var_name}.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                            {unique_var_name}.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                        }}
+                    }})();
                     """)
+                    await asyncio.sleep(0.2)
+                    
+                    # For address fields that might be pre-filled, do additional clearing
+                    if 'address' in selector.lower():
+                        print("Detected address field - doing thorough clear...")
+                        # Use Ctrl+A and Delete for stubborn pre-filled fields
+                        await element.click()
+                        await asyncio.sleep(0.1)
+                        await element.send_keys('\ue009a')  # Ctrl+A
+                        await asyncio.sleep(0.1)
+                        await element.send_keys('\ue017')  # Delete
+                        await asyncio.sleep(0.2)
                     
                     await element.send_keys(str(value))
                     await asyncio.sleep(0.3)
+                    print(f"✅ Successfully filled field with selector '{selector}'")
                     break
             except Exception as e:
                 print(f"Failed to fill field with selector '{selector}': {e}")
