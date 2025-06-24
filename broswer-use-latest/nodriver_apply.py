@@ -173,13 +173,21 @@ async def use_llm_to_navigate(tab, llm: ChatGoogleGenerativeAI):
                 coords = action['click']
                 x, y = int(coords['x']), int(coords['y'])
                 print(f"LLM found element at x={x}, y={y}. Moving mouse and clicking.")
-                # Move mouse to the target location first
-                await tab.mouse_move(x, y)
-                await asyncio.sleep(0.3)
-                await tab.mouse_click(x, y)
-                await tab.sleep(3)
-                print("Click completed successfully.")
-                return True # Success
+                try:
+                    # Try to move mouse first with explicit parameters
+                    await tab.mouse_move(x, y, steps=1)
+                    await asyncio.sleep(0.3)
+                    await tab.mouse_click(x, y)
+                    await tab.sleep(3)
+                    print("Click completed successfully.")
+                    return True # Success
+                except AttributeError as e:
+                    print(f"Mouse move not available ({e}), clicking directly...")
+                    # Fallback: click without moving mouse first
+                    await tab.mouse_click(x, y)
+                    await tab.sleep(3)
+                    print("Click completed successfully.")
+                    return True # Success
             
             elif action.get('scroll'):
                 print("LLM advised scrolling. Scrolling down...")
