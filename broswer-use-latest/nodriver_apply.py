@@ -220,7 +220,7 @@ async def analyze_and_fill_all_form_elements(tab, llm, user_data):
                                 await element.click()
                                 await asyncio.sleep(0.3)
                                 
-                                # Clear the field completely with multiple methods
+                                # Clear the field completely using only JavaScript (no keyboard shortcuts)
                                 print(f"Clearing {field_info['name']} field...")
                                 
                                 # Method 1: Select all and delete using JavaScript
@@ -240,19 +240,7 @@ async def analyze_and_fill_all_form_elements(tab, llm, user_data):
                                 """)
                                 await asyncio.sleep(0.3)
                                 
-                                # Method 2: Use keyboard shortcuts for stubborn fields
-                                await element.click()
-                                await asyncio.sleep(0.2)
-                                
-                                # Send Ctrl+A to select all
-                                await element.send_keys('\ue009a')  # Ctrl+A
-                                await asyncio.sleep(0.2)
-                                
-                                # Send Delete key
-                                await element.send_keys('\ue017')  # Delete key
-                                await asyncio.sleep(0.2)
-                                
-                                # Verify field is empty
+                                # Verify field is empty and do additional clearing if needed
                                 current_value = await tab.evaluate(f"""
                                 (function() {{
                                     const checkEl = document.querySelector('{selector}');
@@ -272,6 +260,7 @@ async def analyze_and_fill_all_form_elements(tab, llm, user_data):
                                             {clear_var_id}.textContent = '';
                                             {clear_var_id}.innerHTML = '';
                                             {clear_var_id}.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                            {clear_var_id}.dispatchEvent(new Event('change', {{ bubbles: true }}));
                                         }}
                                     }})();
                                     """)
@@ -363,12 +352,25 @@ async def simple_form_fill_fallback(tab, user_data):
                     # For address fields that might be pre-filled, do additional clearing
                     if 'address' in selector.lower():
                         print("Detected address field - doing thorough clear...")
-                        # Use Ctrl+A and Delete for stubborn pre-filled fields
+                        # Use additional JavaScript clearing for stubborn pre-filled fields
                         await element.click()
                         await asyncio.sleep(0.1)
-                        await element.send_keys('\ue009a')  # Ctrl+A
-                        await asyncio.sleep(0.1)
-                        await element.send_keys('\ue017')  # Delete
+                        
+                        # Additional aggressive clearing for address fields
+                        addr_clear_var = f"addrClear_{abs(hash(selector + 'addr')) % 1000000}"
+                        await tab.evaluate(f"""
+                        (function() {{
+                            const {addr_clear_var} = document.querySelector('{selector}');
+                            if ({addr_clear_var}) {{
+                                {addr_clear_var}.focus();
+                                {addr_clear_var}.select();
+                                {addr_clear_var}.value = '';
+                                {addr_clear_var}.textContent = '';
+                                {addr_clear_var}.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                {addr_clear_var}.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                            }}
+                        }})();
+                        """)
                         await asyncio.sleep(0.2)
                     
                     await element.send_keys(str(value))
@@ -949,30 +951,39 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
                 for attempt in range(max_attempts):
                     print(f"Cloudflare detection attempt {attempt + 1}/{max_attempts}")
                     
-                    # Look for Cloudflare verification elements with more comprehensive selectors
+                    # Enhanced Cloudflare detection selectors
                     cf_selectors = [
-                        # Turnstile checkbox
-                        "input[type='checkbox'][id*='cf']",
-                        "input[type='checkbox'][name*='cf']",
-                        ".cf-turnstile input[type='checkbox']",
-                        "[data-sitekey] input[type='checkbox']",
-                        
-                        # Generic verification checkboxes
-                        "input[type='checkbox']",
-                        
-                        # Turnstile containers
-                        ".cf-turnstile",
-                        "[data-sitekey]",
-                        
-                        # Challenge forms
-                        ".challenge-form",
-                        "#challenge-form",
-                        
-                        # Iframes
+                        # Specific Cloudflare iframe patterns
                         "iframe[src*='challenges.cloudflare.com']",
                         "iframe[src*='turnstile']",
+                        "iframe[title*='Widget containing a Cloudflare security challenge']",
+                        "iframe[title*='Cloudflare security challenge']",
+                        "iframe[id*='cf-chl-widget']",
+                        
+                        # Turnstile containers and elements
+                        ".cf-turnstile",
+                        "[data-sitekey]",
+                        ".cf-turnstile-wrapper",
+                        
+                        # Generic verification iframes
                         "iframe[title*='verification']",
-                        "iframe[title*='challenge']"
+                        "iframe[title*='challenge']",
+                        "iframe[title*='security']",
+                        
+                        # Challenge forms and containers
+                        ".challenge-form",
+                        "#challenge-form",
+                        ".cf-challenge",
+                        ".cloudflare-challenge",
+                        
+                        # Input elements within Cloudflare contexts
+                        ".cf-turnstile input[type='checkbox']",
+                        "[data-sitekey] input[type='checkbox']",
+                        "input[type='checkbox'][id*='cf']",
+                        "input[type='checkbox'][name*='cf']",
+                        
+                        # Generic checkboxes (last resort)
+                        "input[type='checkbox']"
                     ]
                     
                     for selector in cf_selectors:
@@ -980,17 +991,99 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
                             print(f"Trying CF selector: {selector}")
                             
                             if selector.startswith('iframe'):
-                                # Handle iframes specially
+                                # Handle iframes specially - try to click on them
                                 iframes = await tab.select_all(selector, timeout=2)
                                 for iframe in iframes:
                                     try:
-                                        print(f"Found iframe, attempting to interact...")
-                                        await iframe.mouse_move()
-                                        await tab.sleep(1)
-                                        await iframe.click()
-                                        print("Clicked iframe!")
-                                        cf_found = True
-                                        break
+                                        print(f"Found Cloudflare iframe, attempting to interact...")
+                                        
+                                        # Get iframe dimensions and position
+                                        iframe_info = await tab.evaluate(f"""
+                                        (function() {{
+                                            const iframe = document.querySelector('{selector}');
+                                            if (iframe) {{
+                                                const rect = iframe.getBoundingClientRect();
+                                                return {{
+                                                    x: rect.left + rect.width / 2,
+                                                    y: rect.top + rect.height / 2,
+                                                    width: rect.width,
+                                                    height: rect.height,
+                                                    visible: rect.width > 0 && rect.height > 0
+                                                }};
+                                            }}
+                                            return null;
+                                        }})();
+                                        """)
+                                        
+                                        if iframe_info and iframe_info['visible']:
+                                            print(f"Clicking across Cloudflare iframe horizontally: width={iframe_info['width']}, height={iframe_info['height']}")
+                                            
+                                            # Click multiple times across the iframe horizontally (left to right)
+                                            # This ensures we hit the checkbox regardless of its position
+                                            center_y = iframe_info['y']  # Keep vertical center
+                                            left_x = iframe_info['x'] - (iframe_info['width'] / 2) + 20  # Start 20px from left edge
+                                            right_x = iframe_info['x'] + (iframe_info['width'] / 2) - 20  # End 20px from right edge
+                                            
+                                            # Calculate 5 click positions across the iframe
+                                            click_positions = []
+                                            for i in range(5):
+                                                x_pos = left_x + (i * (right_x - left_x) / 4)
+                                                click_positions.append((x_pos, center_y))
+                                            
+                                            print(f"Will click at positions: {click_positions}")
+                                            
+                                            # Click at each position with a small delay
+                                            for i, (click_x, click_y) in enumerate(click_positions):
+                                                try:
+                                                    print(f"Click {i+1}/5 at position ({click_x:.0f}, {click_y:.0f})")
+                                                    await tab.mouse_click(click_x, click_y)
+                                                    await tab.sleep(0.5)  # Short delay between clicks
+                                                    
+                                                    # Check if verification was successful after each click
+                                                    # Look for signs that the challenge was completed
+                                                    verification_check = await tab.evaluate("""
+                                                    (function() {
+                                                        // Look for success indicators
+                                                        const successIndicators = [
+                                                            'success', 'verified', 'complete', 'passed'
+                                                        ];
+                                                        
+                                                        const bodyText = document.body.textContent.toLowerCase();
+                                                        const hasSuccess = successIndicators.some(indicator => 
+                                                            bodyText.includes(indicator)
+                                                        );
+                                                        
+                                                        // Also check if the iframe disappeared or changed
+                                                        const cfIframe = document.querySelector('iframe[src*="challenges.cloudflare.com"]');
+                                                        const iframeGone = !cfIframe;
+                                                        
+                                                        return hasSuccess || iframeGone;
+                                                    })();
+                                                    """)
+                                                    
+                                                    if verification_check:
+                                                        print(f"✅ Verification appears successful after click {i+1}!")
+                                                        cf_found = True
+                                                        break
+                                                        
+                                                except Exception as click_error:
+                                                    print(f"Click {i+1} failed: {click_error}")
+                                                    continue
+                                            
+                                            # Also try clicking on the iframe element itself as backup
+                                            if not cf_found:
+                                                try:
+                                                    await iframe.mouse_move()
+                                                    await tab.sleep(0.5)
+                                                    await iframe.click()
+                                                    print("Also tried clicking iframe element directly")
+                                                    await tab.sleep(2)
+                                                except Exception as iframe_click_error:
+                                                    print(f"Direct iframe click failed: {iframe_click_error}")
+                                            
+                                            if cf_found:
+                                                break
+                                            
                                     except Exception as iframe_error:
                                         print(f"Iframe interaction failed: {iframe_error}")
                                         continue
@@ -1018,12 +1111,15 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
                                                     const hasVerifyText = elementText.includes('verify') || 
                                                                          elementText.includes('human') || 
                                                                          elementText.includes('robot') ||
-                                                                         elementText.includes('challenge');
+                                                                         elementText.includes('challenge') ||
+                                                                         elementText.includes('security');
                                                     
                                                     const hasVerifyAttrs = el.className.includes('cf') ||
                                                                           el.className.includes('turnstile') ||
                                                                           el.id.includes('cf') ||
-                                                                          el.hasAttribute('data-sitekey');
+                                                                          el.hasAttribute('data-sitekey') ||
+                                                                          el.closest('.cf-turnstile') ||
+                                                                          el.closest('[data-sitekey]');
                                                     
                                                     if (hasVerifyText || hasVerifyAttrs || el.type === 'checkbox') {{
                                                         return true;
