@@ -62,11 +62,8 @@ async def fill_text_field(tab, keywords, value):
 
         if element:
             print(f"Found field for '{keywords[0]}' and filling it.")
-            # Get element position and move mouse before clicking
-            position = await element.get_position()
-            center_x = position['x'] + position['width'] / 2
-            center_y = position['y'] + position['height'] / 2
-            await tab.mouse_move(center_x, center_y)
+            # Move mouse to element before clicking
+            await element.mouse_move()
             await asyncio.sleep(0.2)
             await element.click()
             await asyncio.sleep(0.3)
@@ -87,31 +84,37 @@ async def handle_cookie_banner(tab):
         try:
             cookie_button = await tab.find(keyword, best_match=True, timeout=2)
             if cookie_button:
-                print(f"Found and clicking cookie button: '{keyword}'")
-                # Get element position and move mouse before clicking
-                position = await cookie_button.get_position()
-                center_x = position['x'] + position['width'] / 2
-                center_y = position['y'] + position['height'] / 2
-                await tab.mouse_move(center_x, center_y)
-                await asyncio.sleep(0.2)
-                await cookie_button.click()
-                
-                # Wait for the page to process the click and potentially reload.
-                print("Waiting for page to stabilize after cookie consent...")
+                print(f"Found cookie button with text: '{keyword}'")
                 try:
-                    # Wait for the main load event to fire, indicating a page reload/update is complete.
-                    await tab.wait_for('Page.loadEventFired', timeout=10)
-                    print("Page load event detected.")
-                except asyncio.TimeoutError:
-                    # If the page doesn't fully reload, it's fine. We still need to wait.
-                    print("Page load event did not fire, waiting for animations.")
-                
-                # Add a final sleep for animations to finish.
-                await tab.sleep(2) 
-                print("Page should now be stable.")
-                return True # A button was clicked and we waited.
-        except Exception:
+                    # Move mouse to element before clicking
+                    print("Moving mouse to cookie button...")
+                    await cookie_button.mouse_move()
+                    await asyncio.sleep(0.2)
+                    
+                    print("Clicking cookie button...")
+                    await cookie_button.click()
+                    
+                    # Wait for the page to process the click and potentially reload.
+                    print("Waiting for page to stabilize after cookie consent...")
+                    try:
+                        # Wait for the main load event to fire, indicating a page reload/update is complete.
+                        await tab.wait_for('Page.loadEventFired', timeout=10)
+                        print("Page load event detected.")
+                    except asyncio.TimeoutError:
+                        # If the page doesn't fully reload, it's fine. We still need to wait.
+                        print("Page load event did not fire, waiting for animations.")
+                    
+                    # Add a final sleep for animations to finish.
+                    await tab.sleep(2) 
+                    print("Page should now be stable.")
+                    return True # A button was clicked and we waited.
+                except Exception as click_error:
+                    print(f"Error clicking cookie button '{keyword}': {click_error}")
+                    # Continue to try other keywords
+                    continue
+        except Exception as find_error:
             # This exception is for tab.find failing, which is normal.
+            print(f"Could not find cookie button with keyword '{keyword}': {find_error}")
             continue # Keyword not found, try the next one.
             
     print("No cookie banner found or handled.")
@@ -312,11 +315,8 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
                 label = text_area.attributes.get('aria-label') or text_area.attributes.get('placeholder') or "Please provide relevant information"
                 if label:
                     answer = await get_llm_response(llm, label, user_data)
-                    # Get element position and move mouse before clicking
-                    position = await text_area.get_position()
-                    center_x = position['x'] + position['width'] / 2
-                    center_y = position['y'] + position['height'] / 2
-                    await tab.mouse_move(center_x, center_y)
+                    # Move mouse to element before clicking
+                    await text_area.mouse_move()
                     await asyncio.sleep(0.2)
                     await text_area.click()
                     await asyncio.sleep(0.3)
