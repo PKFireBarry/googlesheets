@@ -5,7 +5,6 @@ import uuid
 import re
 import base64
 import json
-import httpx
 
 import nodriver as uc
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
@@ -13,12 +12,10 @@ from pydantic import BaseModel, Field
 from langchain_google_genai import ChatGoogleGenerativeAI
 import uvicorn
 import aiofiles
+import httpx
 from langchain_core.messages import HumanMessage
-
-# Browser-use integration imports
-from playwright.async_api import async_playwright
-from browser_use.browser import BrowserSession
 from browser_use import Agent
+from browser_use.browser import BrowserSession
 
 app = FastAPI()
 
@@ -735,125 +732,6 @@ async def get_llm_response(llm, prompt_text: str, user_data: UserData):
         print(f"LLM generation failed: {e}")
         return "Experienced and motivated professional seeking a challenging role." # Fallback answer
 
-async def handle_cloudflare_with_browser_use(job_url: str, llm, task_id: str):
-    """Use browser-use Agent to visually identify and click Cloudflare verification elements."""
-    print("=== BROWSER-USE CLOUDFLARE VERIFICATION ===")
-    pw = None
-    session = None
-    
-    try:
-        # Wait a moment for any Cloudflare challenges to appear
-        await asyncio.sleep(3)
-        
-        # Get the CDP WebSocket URL from the running Chrome instance
-        print("Connecting to existing Chrome instance via CDP...")
-        async with httpx.AsyncClient() as client:
-            try:
-                response = await client.get("http://localhost:9222/json/version", timeout=5.0)
-                data = response.json()
-                ws_url = data["webSocketDebuggerUrl"]
-                print(f"Found CDP WebSocket URL: {ws_url}")
-            except Exception as e:
-                print(f"Failed to get CDP URL: {e}")
-                return False
-        
-        # Initialize Playwright and connect to existing browser
-        print("Starting Playwright and connecting to browser...")
-        pw = await async_playwright().start()
-        session = BrowserSession(
-            cdp_url=ws_url, 
-            playwright=pw, 
-            keep_alive=True
-        )
-        await session.start()
-        
-        # Find the tab with our job URL
-        print(f"Looking for tab with URL containing: {job_url}")
-        target_page = None
-        for page in session.browser_context.pages:
-            if job_url in page.url or any(keyword in page.url.lower() for keyword in ['apply', 'job', 'career']):
-                target_page = page
-                print(f"Found target page: {page.url}")
-                break
-        
-        if not target_page:
-            # Use the first available page as fallback
-            if session.browser_context.pages:
-                target_page = session.browser_context.pages[0]
-                print(f"Using first available page: {target_page.url}")
-            else:
-                print("No pages found in browser context")
-                return False
-        
-        # Switch to the target page
-        await target_page.bring_to_front()
-        await asyncio.sleep(1)
-        
-        # Create the verification agent with a focused task
-        print("Creating browser-use Agent for Cloudflare verification...")
-        verification_task = """
-        Look at the current page and find any human verification elements that need to be clicked.
-        
-        You are looking for:
-        1. Cloudflare Turnstile checkbox (small square checkbox, often with "Verify you are human" text)
-        2. reCAPTCHA checkbox (square checkbox with "I'm not a robot" text)
-        3. hCaptcha checkbox (similar verification checkbox)
-        4. Any verification button with text like "Verify", "Continue", "I'm human", "Proceed"
-        
-        Once you find a verification element, click it once and wait for the verification to complete.
-        Do not click multiple times. Do not interact with any other elements on the page.
-        
-        If no verification elements are visible, the task is complete.
-        """
-        
-        agent = Agent(
-            task=verification_task,
-            llm=llm,
-            browser_session=session,
-            use_vision=True,
-            use_vision_for_planner=True,
-            max_actions_per_step=3,  # Keep it focused
-            max_failures=2,
-            retry_delay=5,
-            tool_calling_method="auto"
-        )
-        
-        # Run the agent with limited steps
-        print("Running verification agent...")
-        try:
-            result = await agent.run(max_steps=8)  # Limited steps to avoid over-interaction
-            print("✅ Browser-use agent completed verification task")
-            
-            # Wait for verification to process
-            await asyncio.sleep(5)
-            return True
-            
-        except Exception as agent_error:
-            print(f"Agent execution error: {agent_error}")
-            return False
-            
-    except Exception as e:
-        print(f"Error in browser-use Cloudflare handling: {e}")
-        return False
-        
-    finally:
-        # Clean up browser-use resources
-        try:
-            if session:
-                print("Stopping browser-use session...")
-                await session.stop()
-        except Exception as cleanup_error:
-            print(f"Error stopping session: {cleanup_error}")
-            
-        try:
-            if pw:
-                print("Stopping Playwright...")
-                await pw.stop()
-        except Exception as cleanup_error:
-            print(f"Error stopping Playwright: {cleanup_error}")
-        
-        print("Browser-use cleanup completed")
-
 async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_data: UserData, resume_file: UploadFile | None, file_url: str | None):
     """The main background task for the hybrid auto-apply process."""
     tasks[task_id] = {"status": "starting", "message": "Starting hybrid auto-apply process."}
@@ -865,12 +743,8 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
         tasks[task_id].update({"status": "processing", "message": "Initializing browser..."})
         llm = ChatGoogleGenerativeAI(model='gemini-2.5-flash', api_key=api_key) # For text responses only
         browser = await uc.start(
-            headless=False, 
-            browser_args=[
-                '--no-sandbox', 
-                '--window-size=1920,1080',
-                '--remote-debugging-port=9222'  # Enable CDP for browser-use integration
-            ]
+            headless=False,
+            browser_args=['--no-sandbox', '--window-size=1920,1080', '--remote-debugging-port=9223']
         )
         tab = await browser.get(job_url)
         print(f"Navigated to: {job_url}")
@@ -1065,18 +939,17 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
         
         # --- HANDLE CLOUDFLARE VERIFICATION ---
         if submitted:
-            tasks[task_id].update({"status": "processing", "message": "Running visual verification agent..."})
-            await tab.sleep(5)  # Wait longer for any redirects/popups to appear
-            
-            # Use browser-use Agent for Cloudflare verification
+            tasks[task_id].update({"status": "processing", "message": "Handling verification challenge..."})
+            await tab.sleep(3)
             try:
-                verification_success = await handle_cloudflare_with_browser_use(job_url, llm, task_id)
-                if verification_success:
-                    print("✅ Browser-use verification completed successfully!")
+                print("Launching AI agent to solve verification challenge via browser_use ...")
+                cf_solved = await verify_cloudflare_with_agent(tab, browser, llm)
+                if cf_solved:
+                    print("✅ Verification challenge solved by AI agent.")
                 else:
-                    print("⚠️  Browser-use verification completed but status unclear")
+                    print("⚠️  AI agent could not solve the verification challenge.")
             except Exception as e:
-                print(f"Error in browser-use verification: {e}")
+                print(f"Error during agent-based verification: {e}")
 
         # --- VERIFY SUBMISSION SUCCESS ---
         await tab.sleep(3)  # Wait for any final redirects
@@ -1250,6 +1123,62 @@ async def get_task_status(task_id: str):
     if task_id not in tasks:
         raise HTTPException(status_code=404, detail="Task not found")
     return tasks[task_id]
+
+# --- Agent-based Cloudflare verification using browser_use ---
+async def verify_cloudflare_with_agent(tab, browser, llm):
+    """Solve Cloudflare / CAPTCHA verification by connecting a browser_use.Agent to the **same**
+    Chrome instance via CDP so we keep the filled form state intact. Returns True if the
+    challenge appears solved, False otherwise."""
+
+    try:
+        # Derive the CDP endpoint for the running Chrome instance
+        if hasattr(browser, 'websocket_url') and browser.websocket_url:
+            cdp_url = browser.websocket_url.replace('ws://', 'http://').split('/devtools')[0]
+        else:
+            # Fallback to the explicit port used when launching Chrome
+            cdp_url = 'http://127.0.0.1:9223'
+
+        browser_session = BrowserSession(cdp_url=cdp_url, headless=False)
+        await browser_session.start()
+
+        # Try to align the session with the current page URL
+        try:
+            current_url = await tab.evaluate('window.location.href')
+        except Exception:
+            current_url = ''
+
+        if current_url and browser_session.browser_context:
+            for page in browser_session.browser_context.pages:
+                if page.url.startswith(current_url):
+                    browser_session.agent_current_page = page
+                    break
+
+        agent_task = (
+            "On the current page, locate and click any verification checkbox or button (e.g. 'Verify', "
+            "'I'm human', 'I'm not a robot'). Wait until the verification widget disappears or the "
+            "page proceeds, then stop."
+        )
+
+        agent = Agent(
+            task=agent_task,
+            llm=llm,
+            browser_session=browser_session,
+            use_vision=True,
+            use_vision_for_planner=True,
+            max_actions_per_step=5,
+            max_failures=3,
+            retry_delay=3,
+            enable_memory=False,
+            tool_calling_method='auto',
+        )
+
+        await agent.run(max_steps=12)
+        await asyncio.sleep(2)  # allow the page to update
+        await browser_session.stop()
+        return True
+    except Exception as e:
+        print(f"Agent verification failed: {e}")
+        return False
 
 if __name__ == "__main__":
     uvicorn.run("nodriver_apply:app", host="0.0.0.0", port=8000, reload=True) 
