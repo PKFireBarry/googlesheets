@@ -966,83 +966,100 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
         try:
             print("Checking for submission confirmation...")
             
-            # First check for error indicators or incomplete submission
-            error_keywords = [
-                "verify you are human",
-                "complete the verification",
-                "security check",
-                "prove you're not a robot",
-                "cloudflare",
-                "verification required",
-                "please verify",
-                "captcha",
-                "challenge"
-            ]
-            
-            page_text = await tab.get_content()
-            page_text_lower = page_text.lower()
-            
-            # Check for verification/error indicators
-            verification_needed = any(keyword in page_text_lower for keyword in error_keywords)
-            
-            if verification_needed:
-                print("⚠️  Verification challenge detected - application may not be complete")
-                tasks[task_id].update({"status": "incomplete", "message": "Application submitted but verification challenge detected. Please complete manually."})
+            # Check for success indicators
+            success_check = await tab.evaluate("""
+            (function() {
+                const bodyText = document.body.textContent.toLowerCase();
+                console.log('Current page text sample:', bodyText.substring(0, 500));
                 
-                # Try one more time to find and click verification
-                print("Making final attempt to complete verification...")
-                try:
-                    # Look for any visible checkboxes or buttons
-                    final_selectors = [
-                        "input[type='checkbox']:not([style*='display: none'])",
-                        "button:contains('Verify')",
-                        ".verify-button",
-                        "[role='checkbox']"
-                    ]
-                    
-                    for selector in final_selectors:
-                        try:
-                            elements = await tab.select_all(selector, timeout=2)
-                            for element in elements:
-                                try:
-                                    print(f"Final verification attempt with: {selector}")
-                                    await element.mouse_move()
-                                    await tab.sleep(1)
-                                    await element.click()
-                                    await tab.sleep(5)
-                                    print("Clicked final verification element!")
-                                    break
-                                except:
-                                    continue
-                        except:
-                            continue
-                            
-                except Exception as final_error:
-                    print(f"Final verification attempt failed: {final_error}")
+                // Look for success indicators
+                const successIndicators = [
+                    'success', 'verified', 'complete', 'passed', 'submitted',
+                    'thank you', 'application received', 'application submitted'
+                ];
                 
+                const hasSuccess = successIndicators.some(indicator => 
+                    bodyText.includes(indicator)
+                );
+                
+                // Look for failure indicators
+                const failureIndicators = [
+                    'verify you are human', 'security check', 'not a robot', 
+                    'please verify', 'complete the verification', 'prove you are human',
+                    'verification required', 'challenge', 'captcha'
+                ];
+                
+                const hasFailure = failureIndicators.some(indicator => 
+                    bodyText.includes(indicator)
+                );
+                
+                // Check if verification elements disappeared
+                const cfIframe = document.querySelector('iframe[src*="challenges.cloudflare.com"]');
+                const turnstileIframe = document.querySelector('iframe[src*="turnstile"]');
+                const verifyText = bodyText.includes('verify you are human');
+                const challengeText = bodyText.includes('security check');
+                const robotText = bodyText.includes('not a robot');
+                
+                const verificationGone = !cfIframe && !turnstileIframe && !verifyText && !challengeText && !robotText;
+                
+                // Check for checkboxes that might be checked now
+                const checkboxes = document.querySelectorAll('input[type="checkbox"], [role="checkbox"]');
+                let hasCheckedBox = false;
+                let checkedBoxCount = 0;
+                checkboxes.forEach(checkbox => {
+                    if (checkbox.checked || checkbox.getAttribute('aria-checked') === 'true') {
+                        hasCheckedBox = true;
+                        checkedBoxCount++;
+                        console.log('Found checked verification checkbox:', {
+                            id: checkbox.id,
+                            className: checkbox.className,
+                            type: checkbox.type,
+                            checked: checkbox.checked
+                        });
+                    }
+                });
+                
+                // Look for loading or processing indicators
+                const loadingIndicators = document.querySelectorAll('.loading, .spinner, [role="progressbar"], .cf-loading');
+                const isLoading = loadingIndicators.length > 0;
+                
+                const result = {
+                    hasSuccess: hasSuccess,
+                    hasFailure: hasFailure,
+                    verificationGone: verificationGone,
+                    hasCheckedBox: hasCheckedBox,
+                    checkedBoxCount: checkedBoxCount,
+                    cfIframe: !!cfIframe,
+                    turnstileIframe: !!turnstileIframe,
+                    verifyText: verifyText,
+                    challengeText: challengeText,
+                    robotText: robotText,
+                    isLoading: isLoading,
+                    totalCheckboxes: checkboxes.length
+                };
+                
+                console.log('Verification check result:', result);
+                
+                // Only consider it successful if we have clear success indicators
+                // and no failure indicators
+                const isSuccessful = (hasSuccess || (verificationGone && !hasFailure)) && !isLoading;
+                
+                return {
+                    success: isSuccessful,
+                    details: result
+                };
+            })();
+            """)
+            
+            print(f"Verification success check result: {success_check}")
+            
+            if success_check['success']:
+                print("✅ Application appears to have been submitted successfully!")
+                tasks[task_id].update({"status": "completed", "message": "Application submitted successfully! Confirmation detected."})
             else:
-                # Look for success indicators
-                success_keywords = [
-                    "thank you",
-                    "application submitted",
-                    "application received", 
-                    "successfully submitted",
-                    "confirmation",
-                    "we'll be in touch",
-                    "application complete",
-                    "your application has been sent",
-                    "application sent successfully"
-                ]
-                
-                success_found = any(keyword in page_text_lower for keyword in success_keywords)
-                
-                if success_found:
-                    print("✅ Application appears to have been submitted successfully!")
-                    tasks[task_id].update({"status": "completed", "message": "Application submitted successfully! Confirmation detected."})
-                else:
-                    print("⚠️  Could not confirm successful submission - please check manually")
-                    tasks[task_id].update({"status": "completed", "message": "Application submitted but confirmation unclear - please verify manually."})
-                
+                print("⚠️  Could not confirm successful submission - please check manually")
+                tasks[task_id].update({"status": "completed", "message": "Application submitted but confirmation unclear - please verify manually."})
+            
         except Exception as e:
             print(f"Error checking submission status: {e}")
             tasks[task_id].update({"status": "completed", "message": "Application submitted! Please check for any final confirmations."})
@@ -1204,102 +1221,168 @@ async def visual_cloudflare_detection(tab, llm):
                 # Click at the identified coordinates
                 print(f"Clicking at LLM-identified position: ({x}, {y})")
                 
-                # First try native nodriver mouse clicking if available
-                try:
-                    # Try different possible method names
-                    if hasattr(tab, 'mouse_click'):
-                        await tab.mouse_click(x, y)
-                        print("Used native mouse_click method")
-                        click_result = 'native_click_success'
-                    elif hasattr(tab, 'click'):
-                        await tab.click(x, y)
-                        print("Used native click method")
-                        click_result = 'native_click_success'
-                    else:
-                        raise AttributeError("No native click method found")
-                except (AttributeError, Exception) as native_error:
-                    print(f"Native clicking failed: {native_error}, using JavaScript fallback")
-                    
-                    # Use JavaScript-based clicking as fallback
-                    click_result = await tab.evaluate(f"""
+                # Use JavaScript-based clicking (more reliable than native methods)
+                print("Using JavaScript-based clicking for maximum compatibility")
+                
+                # Use JavaScript-based clicking with enhanced debugging
+                click_result = await tab.evaluate(f"""
                 (function() {{
                     try {{
+                        console.log('Attempting to click at coordinates: {x}, {y}');
+                        
                         // Method 1: Direct coordinate click using document.elementFromPoint
                         const element = document.elementFromPoint({x}, {y});
                         if (element) {{
                             console.log('Found element at coordinates:', element);
+                            console.log('Element tag:', element.tagName);
+                            console.log('Element type:', element.type);
+                            console.log('Element classes:', element.className);
+                            console.log('Element id:', element.id);
+                            console.log('Element role:', element.getAttribute('role'));
                             
-                            // Try multiple click methods
-                            element.click();
+                            // Check if this looks like a verification element
+                            const isCheckbox = element.type === 'checkbox' || element.getAttribute('role') === 'checkbox';
+                            const isButton = element.tagName === 'BUTTON' || element.getAttribute('role') === 'button';
+                            const hasVerifyText = element.textContent && element.textContent.toLowerCase().includes('verify');
+                            const isInVerifyWidget = element.closest('[data-sitekey], .cf-turnstile, iframe[src*="challenges"], iframe[src*="turnstile"]');
                             
-                            // Dispatch mouse events for more thorough interaction
-                            const mouseDownEvent = new MouseEvent('mousedown', {{
-                                bubbles: true,
-                                cancelable: true,
-                                clientX: {x},
-                                clientY: {y}
+                            console.log('Element analysis:', {{
+                                isCheckbox: isCheckbox,
+                                isButton: isButton,
+                                hasVerifyText: hasVerifyText,
+                                isInVerifyWidget: !!isInVerifyWidget,
+                                textContent: element.textContent ? element.textContent.substring(0, 100) : 'none'
                             }});
-                            element.dispatchEvent(mouseDownEvent);
                             
-                            const mouseUpEvent = new MouseEvent('mouseup', {{
-                                bubbles: true,
-                                cancelable: true,
-                                clientX: {x},
-                                clientY: {y}
-                            }});
-                            element.dispatchEvent(mouseUpEvent);
-                            
-                            const clickEvent = new MouseEvent('click', {{
-                                bubbles: true,
-                                cancelable: true,
-                                clientX: {x},
-                                clientY: {y}
-                            }});
-                            element.dispatchEvent(clickEvent);
-                            
-                            return 'clicked_element';
+                            if (isCheckbox || isButton || hasVerifyText || isInVerifyWidget) {{
+                                console.log('Element appears to be verification-related, attempting click...');
+                                
+                                // Record state before clicking
+                                const beforeState = {{
+                                    checked: element.checked,
+                                    ariaChecked: element.getAttribute('aria-checked'),
+                                    disabled: element.disabled
+                                }};
+                                console.log('Before click state:', beforeState);
+                                
+                                // Try multiple click methods
+                                element.click();
+                                
+                                // Dispatch mouse events for more thorough interaction
+                                const mouseDownEvent = new MouseEvent('mousedown', {{
+                                    bubbles: true,
+                                    cancelable: true,
+                                    clientX: {x},
+                                    clientY: {y}
+                                }});
+                                element.dispatchEvent(mouseDownEvent);
+                                
+                                const mouseUpEvent = new MouseEvent('mouseup', {{
+                                    bubbles: true,
+                                    cancelable: true,
+                                    clientX: {x},
+                                    clientY: {y}
+                                }});
+                                element.dispatchEvent(mouseUpEvent);
+                                
+                                const clickEvent = new MouseEvent('click', {{
+                                    bubbles: true,
+                                    cancelable: true,
+                                    clientX: {x},
+                                    clientY: {y}
+                                }});
+                                element.dispatchEvent(clickEvent);
+                                
+                                // Check state after clicking
+                                setTimeout(() => {{
+                                    const afterState = {{
+                                        checked: element.checked,
+                                        ariaChecked: element.getAttribute('aria-checked'),
+                                        disabled: element.disabled
+                                    }};
+                                    console.log('After click state:', afterState);
+                                }}, 100);
+                                
+                                return 'clicked_verification_element';
+                            }} else {{
+                                console.log('Element does not appear to be verification-related');
+                                return 'clicked_non_verification_element';
+                            }}
                         }}
                         
                         // Method 2: Try to find Cloudflare checkbox specifically
-                        const cfCheckboxes = document.querySelectorAll('input[type="checkbox"], [role="checkbox"]');
+                        console.log('No element found at exact coordinates, searching for nearby verification elements...');
+                        const cfCheckboxes = document.querySelectorAll('input[type="checkbox"], [role="checkbox"], button[data-sitekey], .cf-turnstile input, .cf-turnstile button');
+                        
                         for (let checkbox of cfCheckboxes) {{
                             const rect = checkbox.getBoundingClientRect();
                             const centerX = rect.left + rect.width / 2;
                             const centerY = rect.top + rect.height / 2;
                             
+                            console.log('Checking checkbox at:', centerX, centerY, 'vs target:', {x}, {y});
+                            
                             // Check if this checkbox is near our target coordinates
                             if (Math.abs(centerX - {x}) < 50 && Math.abs(centerY - {y}) < 50) {{
-                                console.log('Found nearby checkbox:', checkbox);
+                                console.log('Found nearby verification checkbox:', checkbox);
+                                console.log('Checkbox details:', {{
+                                    tag: checkbox.tagName,
+                                    type: checkbox.type,
+                                    checked: checkbox.checked,
+                                    disabled: checkbox.disabled,
+                                    className: checkbox.className,
+                                    id: checkbox.id
+                                }});
+                                
                                 checkbox.click();
                                 checkbox.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                                return 'clicked_checkbox';
+                                
+                                return 'clicked_nearby_checkbox';
                             }}
                         }}
                         
-                        return 'no_element_found';
+                        console.log('No suitable verification elements found');
+                        return 'no_verification_element_found';
                     }} catch (error) {{
                         console.error('Click error:', error);
-                            return 'error: ' + error.message;
-                     }}
-                 }})();
-                 """)
+                        return 'error: ' + error.message;
+                    }}
+                }})();
+                """)
                 
                 print(f"Click result: {click_result}")
                 await tab.sleep(3)  # Wait for verification to process
                 
-                # Verify if the click was successful
-                verification_success = await check_verification_success(tab)
-                
-                if verification_success:
-                    print("✅ Visual Cloudflare verification succeeded!")
-                    return True
-                else:
-                    print("❌ Click was made but verification may not have succeeded")
-                    # Try additional Shadow DOM-aware methods
-                    shadow_success = await try_shadow_dom_interaction(tab, x, y)
-                    if shadow_success:
-                        print("✅ Shadow DOM interaction succeeded!")
+                # Only consider it successful if we actually clicked a verification element
+                if click_result in ['clicked_verification_element', 'clicked_nearby_checkbox']:
+                    print(f"✅ Successfully clicked verification element: {click_result}")
+                    
+                    # Verify if the click was successful
+                    verification_result = await check_verification_success(tab)
+                    
+                    # Handle the new return format
+                    if isinstance(verification_result, dict) and verification_result.get('success'):
+                        print("✅ Visual Cloudflare verification succeeded!")
+                        print(f"Verification details: {verification_result.get('details', {})}")
                         return True
+                    elif isinstance(verification_result, dict):
+                        print("❌ Click was made but verification failed")
+                        print(f"Verification details: {verification_result.get('details', {})}")
+                    else:
+                        print("❌ Click was made but verification may not have succeeded")
+                        # Try additional Shadow DOM-aware methods
+                        shadow_success = await try_shadow_dom_interaction(tab, x, y)
+                        if shadow_success:
+                            print("✅ Shadow DOM interaction succeeded!")
+                            return True
+                        return False
+                elif click_result == 'clicked_non_verification_element':
+                    print("⚠️  Clicked an element but it doesn't appear to be verification-related")
+                    return False
+                elif click_result == 'no_verification_element_found':
+                    print("❌ No verification elements found at the specified coordinates")
+                    return False
+                else:
+                    print(f"❌ Unexpected click result: {click_result}")
                     return False
                     
             except ValueError as coord_error:
@@ -1346,6 +1429,17 @@ async def check_verification_success(tab):
                 bodyText.includes(indicator)
             );
             
+            // Look for failure indicators
+            const failureIndicators = [
+                'verify you are human', 'security check', 'not a robot', 
+                'please verify', 'complete the verification', 'prove you are human',
+                'verification required', 'challenge', 'captcha'
+            ];
+            
+            const hasFailure = failureIndicators.some(indicator => 
+                bodyText.includes(indicator)
+            );
+            
             // Check if verification elements disappeared
             const cfIframe = document.querySelector('iframe[src*="challenges.cloudflare.com"]');
             const turnstileIframe = document.querySelector('iframe[src*="turnstile"]');
@@ -1358,27 +1452,49 @@ async def check_verification_success(tab):
             // Check for checkboxes that might be checked now
             const checkboxes = document.querySelectorAll('input[type="checkbox"], [role="checkbox"]');
             let hasCheckedBox = false;
+            let checkedBoxCount = 0;
             checkboxes.forEach(checkbox => {
                 if (checkbox.checked || checkbox.getAttribute('aria-checked') === 'true') {
                     hasCheckedBox = true;
-                    console.log('Found checked verification checkbox');
+                    checkedBoxCount++;
+                    console.log('Found checked verification checkbox:', {
+                        id: checkbox.id,
+                        className: checkbox.className,
+                        type: checkbox.type,
+                        checked: checkbox.checked
+                    });
                 }
             });
             
+            // Look for loading or processing indicators
+            const loadingIndicators = document.querySelectorAll('.loading, .spinner, [role="progressbar"], .cf-loading');
+            const isLoading = loadingIndicators.length > 0;
+            
             const result = {
                 hasSuccess: hasSuccess,
+                hasFailure: hasFailure,
                 verificationGone: verificationGone,
                 hasCheckedBox: hasCheckedBox,
+                checkedBoxCount: checkedBoxCount,
                 cfIframe: !!cfIframe,
                 turnstileIframe: !!turnstileIframe,
                 verifyText: verifyText,
                 challengeText: challengeText,
-                robotText: robotText
+                robotText: robotText,
+                isLoading: isLoading,
+                totalCheckboxes: checkboxes.length
             };
             
             console.log('Verification check result:', result);
             
-            return hasSuccess || verificationGone || hasCheckedBox;
+            // Only consider it successful if we have clear success indicators
+            // and no failure indicators
+            const isSuccessful = (hasSuccess || (verificationGone && !hasFailure)) && !isLoading;
+            
+            return {
+                success: isSuccessful,
+                details: result
+            };
         })();
         """)
         
