@@ -1164,12 +1164,13 @@ async def verify_cloudflare_with_agent(tab, browser, llm):
             llm=llm,
             browser_session=browser_session,
             use_vision=True,
-            use_vision_for_planner=True,
-            max_actions_per_step=5,
-            max_failures=3,
-            retry_delay=3,
+            use_vision_for_planner=False,  # disable extra planner vision calls
+            max_actions_per_step=3,  # keep steps minimal
+            max_failures=2,
+            retry_delay=2,
             enable_memory=False,
-            tool_calling_method='auto',
+            tool_calling_method='raw',  # avoid expensive tool-auto-detection that hits quota
+            max_input_tokens=16000,
         )
 
         await agent.run(max_steps=12)
