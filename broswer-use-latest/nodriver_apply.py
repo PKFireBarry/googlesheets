@@ -5,6 +5,7 @@ import uuid
 import re
 import base64
 import json
+import httpx
 
 import nodriver as uc
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
@@ -12,8 +13,12 @@ from pydantic import BaseModel, Field
 from langchain_google_genai import ChatGoogleGenerativeAI
 import uvicorn
 import aiofiles
-import httpx
 from langchain_core.messages import HumanMessage
+
+# Browser-use integration imports
+from playwright.async_api import async_playwright
+from browser_use.browser import BrowserSession
+from browser_use import Agent
 
 app = FastAPI()
 
@@ -730,6 +735,125 @@ async def get_llm_response(llm, prompt_text: str, user_data: UserData):
         print(f"LLM generation failed: {e}")
         return "Experienced and motivated professional seeking a challenging role." # Fallback answer
 
+async def handle_cloudflare_with_browser_use(job_url: str, llm, task_id: str):
+    """Use browser-use Agent to visually identify and click Cloudflare verification elements."""
+    print("=== BROWSER-USE CLOUDFLARE VERIFICATION ===")
+    pw = None
+    session = None
+    
+    try:
+        # Wait a moment for any Cloudflare challenges to appear
+        await asyncio.sleep(3)
+        
+        # Get the CDP WebSocket URL from the running Chrome instance
+        print("Connecting to existing Chrome instance via CDP...")
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.get("http://localhost:9222/json/version", timeout=5.0)
+                data = response.json()
+                ws_url = data["webSocketDebuggerUrl"]
+                print(f"Found CDP WebSocket URL: {ws_url}")
+            except Exception as e:
+                print(f"Failed to get CDP URL: {e}")
+                return False
+        
+        # Initialize Playwright and connect to existing browser
+        print("Starting Playwright and connecting to browser...")
+        pw = await async_playwright().start()
+        session = BrowserSession(
+            cdp_url=ws_url, 
+            playwright=pw, 
+            keep_alive=True
+        )
+        await session.start()
+        
+        # Find the tab with our job URL
+        print(f"Looking for tab with URL containing: {job_url}")
+        target_page = None
+        for page in session.browser_context.pages:
+            if job_url in page.url or any(keyword in page.url.lower() for keyword in ['apply', 'job', 'career']):
+                target_page = page
+                print(f"Found target page: {page.url}")
+                break
+        
+        if not target_page:
+            # Use the first available page as fallback
+            if session.browser_context.pages:
+                target_page = session.browser_context.pages[0]
+                print(f"Using first available page: {target_page.url}")
+            else:
+                print("No pages found in browser context")
+                return False
+        
+        # Switch to the target page
+        await target_page.bring_to_front()
+        await asyncio.sleep(1)
+        
+        # Create the verification agent with a focused task
+        print("Creating browser-use Agent for Cloudflare verification...")
+        verification_task = """
+        Look at the current page and find any human verification elements that need to be clicked.
+        
+        You are looking for:
+        1. Cloudflare Turnstile checkbox (small square checkbox, often with "Verify you are human" text)
+        2. reCAPTCHA checkbox (square checkbox with "I'm not a robot" text)
+        3. hCaptcha checkbox (similar verification checkbox)
+        4. Any verification button with text like "Verify", "Continue", "I'm human", "Proceed"
+        
+        Once you find a verification element, click it once and wait for the verification to complete.
+        Do not click multiple times. Do not interact with any other elements on the page.
+        
+        If no verification elements are visible, the task is complete.
+        """
+        
+        agent = Agent(
+            task=verification_task,
+            llm=llm,
+            browser_session=session,
+            use_vision=True,
+            use_vision_for_planner=True,
+            max_actions_per_step=3,  # Keep it focused
+            max_failures=2,
+            retry_delay=5,
+            tool_calling_method="auto"
+        )
+        
+        # Run the agent with limited steps
+        print("Running verification agent...")
+        try:
+            result = await agent.run(max_steps=8)  # Limited steps to avoid over-interaction
+            print("✅ Browser-use agent completed verification task")
+            
+            # Wait for verification to process
+            await asyncio.sleep(5)
+            return True
+            
+        except Exception as agent_error:
+            print(f"Agent execution error: {agent_error}")
+            return False
+            
+    except Exception as e:
+        print(f"Error in browser-use Cloudflare handling: {e}")
+        return False
+        
+    finally:
+        # Clean up browser-use resources
+        try:
+            if session:
+                print("Stopping browser-use session...")
+                await session.stop()
+        except Exception as cleanup_error:
+            print(f"Error stopping session: {cleanup_error}")
+            
+        try:
+            if pw:
+                print("Stopping Playwright...")
+                await pw.stop()
+        except Exception as cleanup_error:
+            print(f"Error stopping Playwright: {cleanup_error}")
+        
+        print("Browser-use cleanup completed")
+
 async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_data: UserData, resume_file: UploadFile | None, file_url: str | None):
     """The main background task for the hybrid auto-apply process."""
     tasks[task_id] = {"status": "starting", "message": "Starting hybrid auto-apply process."}
@@ -742,7 +866,11 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
         llm = ChatGoogleGenerativeAI(model='gemini-2.5-flash', api_key=api_key) # For text responses only
         browser = await uc.start(
             headless=False, 
-            browser_args=['--no-sandbox', '--window-size=1920,1080']
+            browser_args=[
+                '--no-sandbox', 
+                '--window-size=1920,1080',
+                '--remote-debugging-port=9222'  # Enable CDP for browser-use integration
+            ]
         )
         tab = await browser.get(job_url)
         print(f"Navigated to: {job_url}")
@@ -937,28 +1065,18 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
         
         # --- HANDLE CLOUDFLARE VERIFICATION ---
         if submitted:
-            tasks[task_id].update({"status": "processing", "message": "Checking for verification challenges..."})
+            tasks[task_id].update({"status": "processing", "message": "Running visual verification agent..."})
             await tab.sleep(5)  # Wait longer for any redirects/popups to appear
             
-            # Look for Cloudflare verification using visual detection
+            # Use browser-use Agent for Cloudflare verification
             try:
-                print("Checking for Cloudflare verification using visual detection...")
-                cf_found = await visual_cloudflare_detection(tab, llm)
-                
-                if not cf_found:
-                    print("Visual detection failed, trying built-in verify_cf() method as fallback...")
-                    try:
-                        result = await tab.verify_cf()
-                        if result:
-                            print("✅ Built-in Cloudflare verification succeeded!")
-                            cf_found = True
-                        else:
-                            print("❌ Built-in verification also failed")
-                    except Exception as builtin_error:
-                        print(f"Built-in CF verification failed: {builtin_error}")
-                    
+                verification_success = await handle_cloudflare_with_browser_use(job_url, llm, task_id)
+                if verification_success:
+                    print("✅ Browser-use verification completed successfully!")
+                else:
+                    print("⚠️  Browser-use verification completed but status unclear")
             except Exception as e:
-                print(f"Error in Cloudflare verification: {e}")
+                print(f"Error in browser-use verification: {e}")
 
         # --- VERIFY SUBMISSION SUCCESS ---
         await tab.sleep(3)  # Wait for any final redirects
@@ -1059,7 +1177,7 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
             else:
                 print("⚠️  Could not confirm successful submission - please check manually")
                 tasks[task_id].update({"status": "completed", "message": "Application submitted but confirmation unclear - please verify manually."})
-            
+                
         except Exception as e:
             print(f"Error checking submission status: {e}")
             tasks[task_id].update({"status": "completed", "message": "Application submitted! Please check for any final confirmations."})
@@ -1132,515 +1250,6 @@ async def get_task_status(task_id: str):
     if task_id not in tasks:
         raise HTTPException(status_code=404, detail="Task not found")
     return tasks[task_id]
-
-async def visual_cloudflare_detection(tab, llm):
-    """Use visual detection with LLM to find and click Cloudflare verification elements."""
-    try:
-        print("Taking screenshot for visual Cloudflare detection...")
-        
-        # Take a screenshot of the current page
-        screenshot_path = f"/tmp/cf_detection_{uuid.uuid4().hex}.png"
-        await tab.save_screenshot(screenshot_path)
-        print(f"Screenshot saved to: {screenshot_path}")
-        
-        # Read the screenshot and encode it for the LLM
-        with open(screenshot_path, 'rb') as img_file:
-            screenshot_data = base64.b64encode(img_file.read()).decode('utf-8')
-        
-        # Create a prompt for the LLM to analyze the screenshot
-        visual_prompt = """
-        You are analyzing a screenshot of a web page to find Cloudflare verification elements that need to be clicked.
-
-        TASK: Find any of these verification elements and return their EXACT center coordinates:
-
-        1. **Cloudflare Turnstile checkbox** - A small square checkbox (usually 15-25px) that may be:
-           - Empty square with border
-           - Square with checkmark
-           - Square with loading spinner
-           - Located near text like "Verify you are human" or "I'm not a robot"
-
-        2. **reCAPTCHA checkbox** - Similar small square checkbox near "I'm not a robot" text
-
-        3. **hCaptcha checkbox** - Square verification checkbox
-
-        4. **Any verification button** - Buttons with text like:
-           - "Verify"
-           - "Continue" 
-           - "I'm human"
-           - "Proceed"
-
-        CRITICAL REQUIREMENTS:
-        - Return coordinates for the CENTER of the actual clickable element
-        - Look for small square checkboxes (typically 15-25 pixels wide/high)
-        - Ignore large containers, iframes, or text labels
-        - Focus on the actual interactive element that responds to clicks
-
-        RESPONSE FORMAT:
-        If you find a verification element, respond with:
-        COORDINATES: x,y
-
-        If no verification elements are visible, respond with:
-        NO_VERIFICATION_FOUND
-
-        EXAMPLES of what to look for:
-        - Small empty square next to "Verify you are human"
-        - Small checkbox with checkmark in verification widget
-        - Small square with loading animation
-        - Buttons labeled "Verify" or "Continue"
-
-        Focus on precision - return the exact center coordinates of the clickable element.
-        """
-        
-        # Send the screenshot to the LLM for analysis
-        message = HumanMessage(
-            content=[
-                {"type": "text", "text": visual_prompt},
-                {
-                    "type": "image_url", 
-                    "image_url": {"url": f"data:image/png;base64,{screenshot_data}"}
-                }
-            ]
-        )
-        
-        print("Sending screenshot to LLM for analysis...")
-        response = await llm.ainvoke([message])
-        analysis_result = response.content.strip()
-        
-        print(f"LLM analysis result: {analysis_result}")
-        
-        # Parse the LLM response
-        if "COORDINATES:" in analysis_result:
-            # Extract coordinates
-            coord_line = [line for line in analysis_result.split('\n') if 'COORDINATES:' in line][0]
-            coords_str = coord_line.split('COORDINATES:')[1].strip()
-            
-            try:
-                x, y = map(float, coords_str.split(','))
-                print(f"LLM identified verification element at coordinates: ({x}, {y})")
-                
-                # Click at the identified coordinates
-                print(f"Clicking at LLM-identified position: ({x}, {y})")
-                
-                # Use JavaScript-based clicking (more reliable than native methods)
-                print("Using JavaScript-based clicking for maximum compatibility")
-                
-                # Use JavaScript-based clicking with enhanced debugging
-                click_result = await tab.evaluate(f"""
-                (function() {{
-                    try {{
-                        console.log('Attempting to click at coordinates: {x}, {y}');
-                        
-                        // Method 1: Direct coordinate click using document.elementFromPoint
-                        const element = document.elementFromPoint({x}, {y});
-                        if (element) {{
-                            console.log('Found element at coordinates:', element);
-                            console.log('Element tag:', element.tagName);
-                            console.log('Element type:', element.type);
-                            console.log('Element classes:', element.className);
-                            console.log('Element id:', element.id);
-                            console.log('Element role:', element.getAttribute('role'));
-                            
-                            // Check if this looks like a verification element
-                            const isCheckbox = element.type === 'checkbox' || element.getAttribute('role') === 'checkbox';
-                            const isButton = element.tagName === 'BUTTON' || element.getAttribute('role') === 'button';
-                            const hasVerifyText = element.textContent && element.textContent.toLowerCase().includes('verify');
-                            const isInVerifyWidget = element.closest('[data-sitekey], .cf-turnstile, iframe[src*="challenges"], iframe[src*="turnstile"]');
-                            
-                            console.log('Element analysis:', {{
-                                isCheckbox: isCheckbox,
-                                isButton: isButton,
-                                hasVerifyText: hasVerifyText,
-                                isInVerifyWidget: !!isInVerifyWidget,
-                                textContent: element.textContent ? element.textContent.substring(0, 100) : 'none'
-                            }});
-                            
-                            if (isCheckbox || isButton || hasVerifyText || isInVerifyWidget) {{
-                                console.log('Element appears to be verification-related, attempting click...');
-                                
-                                // Record state before clicking
-                                const beforeState = {{
-                                    checked: element.checked,
-                                    ariaChecked: element.getAttribute('aria-checked'),
-                                    disabled: element.disabled
-                                }};
-                                console.log('Before click state:', beforeState);
-                                
-                                // Try multiple click methods
-                                element.click();
-                                
-                                // Dispatch mouse events for more thorough interaction
-                                const mouseDownEvent = new MouseEvent('mousedown', {{
-                                    bubbles: true,
-                                    cancelable: true,
-                                    clientX: {x},
-                                    clientY: {y}
-                                }});
-                                element.dispatchEvent(mouseDownEvent);
-                                
-                                const mouseUpEvent = new MouseEvent('mouseup', {{
-                                    bubbles: true,
-                                    cancelable: true,
-                                    clientX: {x},
-                                    clientY: {y}
-                                }});
-                                element.dispatchEvent(mouseUpEvent);
-                                
-                                const clickEvent = new MouseEvent('click', {{
-                                    bubbles: true,
-                                    cancelable: true,
-                                    clientX: {x},
-                                    clientY: {y}
-                                }});
-                                element.dispatchEvent(clickEvent);
-                                
-                                // Check state after clicking
-                                setTimeout(() => {{
-                                    const afterState = {{
-                                        checked: element.checked,
-                                        ariaChecked: element.getAttribute('aria-checked'),
-                                        disabled: element.disabled
-                                    }};
-                                    console.log('After click state:', afterState);
-                                }}, 100);
-                                
-                                return 'clicked_verification_element';
-                            }} else {{
-                                console.log('Element does not appear to be verification-related');
-                                return 'clicked_non_verification_element';
-                            }}
-                        }}
-                        
-                        // Method 2: Try to find Cloudflare checkbox specifically
-                        console.log('No element found at exact coordinates, searching for nearby verification elements...');
-                        const cfCheckboxes = document.querySelectorAll('input[type="checkbox"], [role="checkbox"], button[data-sitekey], .cf-turnstile input, .cf-turnstile button');
-                        
-                        for (let checkbox of cfCheckboxes) {{
-                            const rect = checkbox.getBoundingClientRect();
-                            const centerX = rect.left + rect.width / 2;
-                            const centerY = rect.top + rect.height / 2;
-                            
-                            console.log('Checking checkbox at:', centerX, centerY, 'vs target:', {x}, {y});
-                            
-                            // Check if this checkbox is near our target coordinates
-                            if (Math.abs(centerX - {x}) < 50 && Math.abs(centerY - {y}) < 50) {{
-                                console.log('Found nearby verification checkbox:', checkbox);
-                                console.log('Checkbox details:', {{
-                                    tag: checkbox.tagName,
-                                    type: checkbox.type,
-                                    checked: checkbox.checked,
-                                    disabled: checkbox.disabled,
-                                    className: checkbox.className,
-                                    id: checkbox.id
-                                }});
-                                
-                                checkbox.click();
-                                checkbox.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                                
-                                return 'clicked_nearby_checkbox';
-                            }}
-                        }}
-                        
-                        console.log('No suitable verification elements found');
-                        return 'no_verification_element_found';
-                    }} catch (error) {{
-                        console.error('Click error:', error);
-                        return 'error: ' + error.message;
-                    }}
-                }})();
-                """)
-                
-                print(f"Click result: {click_result}")
-                await tab.sleep(3)  # Wait for verification to process
-                
-                # Only consider it successful if we actually clicked a verification element
-                if click_result in ['clicked_verification_element', 'clicked_nearby_checkbox']:
-                    print(f"✅ Successfully clicked verification element: {click_result}")
-                    
-                    # Verify if the click was successful
-                    verification_result = await check_verification_success(tab)
-                    
-                    # Handle the new return format
-                    if isinstance(verification_result, dict) and verification_result.get('success'):
-                        print("✅ Visual Cloudflare verification succeeded!")
-                        print(f"Verification details: {verification_result.get('details', {})}")
-                        return True
-                    elif isinstance(verification_result, dict):
-                        print("❌ Click was made but verification failed")
-                        print(f"Verification details: {verification_result.get('details', {})}")
-                    else:
-                        print("❌ Click was made but verification may not have succeeded")
-                        # Try additional Shadow DOM-aware methods
-                        shadow_success = await try_shadow_dom_interaction(tab, x, y)
-                        if shadow_success:
-                            print("✅ Shadow DOM interaction succeeded!")
-                            return True
-                        return False
-                elif click_result == 'clicked_non_verification_element':
-                    print("⚠️  Clicked an element but it doesn't appear to be verification-related")
-                    return False
-                elif click_result == 'no_verification_element_found':
-                    print("❌ No verification elements found at the specified coordinates")
-                    return False
-                else:
-                    print(f"❌ Unexpected click result: {click_result}")
-                    return False
-                    
-            except ValueError as coord_error:
-                print(f"Error parsing coordinates '{coords_str}': {coord_error}")
-                return False
-                
-        elif "NO_VERIFICATION_FOUND" in analysis_result:
-            print("LLM analysis: No verification elements found in screenshot")
-            return False
-        else:
-            print(f"Unexpected LLM response format: {analysis_result}")
-            return False
-            
-    except Exception as e:
-        print(f"Error in visual Cloudflare detection: {e}")
-        return False
-    finally:
-        # Clean up screenshot file
-        try:
-            if 'screenshot_path' in locals() and os.path.exists(screenshot_path):
-                os.remove(screenshot_path)
-        except:
-            pass
-
-async def check_verification_success(tab):
-    """Check if Cloudflare verification was successful."""
-    try:
-        # Wait a moment for any changes to take effect
-        await tab.sleep(3)
-        
-        # Check for success indicators
-        success_check = await tab.evaluate("""
-        (function() {
-            const bodyText = document.body.textContent.toLowerCase();
-            console.log('Current page text sample:', bodyText.substring(0, 500));
-            
-            // Look for success indicators
-            const successIndicators = [
-                'success', 'verified', 'complete', 'passed', 'submitted',
-                'thank you', 'application received', 'application submitted'
-            ];
-            
-            const hasSuccess = successIndicators.some(indicator => 
-                bodyText.includes(indicator)
-            );
-            
-            // Look for failure indicators
-            const failureIndicators = [
-                'verify you are human', 'security check', 'not a robot', 
-                'please verify', 'complete the verification', 'prove you are human',
-                'verification required', 'challenge', 'captcha'
-            ];
-            
-            const hasFailure = failureIndicators.some(indicator => 
-                bodyText.includes(indicator)
-            );
-            
-            // Check if verification elements disappeared
-            const cfIframe = document.querySelector('iframe[src*="challenges.cloudflare.com"]');
-            const turnstileIframe = document.querySelector('iframe[src*="turnstile"]');
-            const verifyText = bodyText.includes('verify you are human');
-            const challengeText = bodyText.includes('security check');
-            const robotText = bodyText.includes('not a robot');
-            
-            const verificationGone = !cfIframe && !turnstileIframe && !verifyText && !challengeText && !robotText;
-            
-            // Check for checkboxes that might be checked now
-            const checkboxes = document.querySelectorAll('input[type="checkbox"], [role="checkbox"]');
-            let hasCheckedBox = false;
-            let checkedBoxCount = 0;
-            checkboxes.forEach(checkbox => {
-                if (checkbox.checked || checkbox.getAttribute('aria-checked') === 'true') {
-                    hasCheckedBox = true;
-                    checkedBoxCount++;
-                    console.log('Found checked verification checkbox:', {
-                        id: checkbox.id,
-                        className: checkbox.className,
-                        type: checkbox.type,
-                        checked: checkbox.checked
-                    });
-                }
-            });
-            
-            // Look for loading or processing indicators
-            const loadingIndicators = document.querySelectorAll('.loading, .spinner, [role="progressbar"], .cf-loading');
-            const isLoading = loadingIndicators.length > 0;
-            
-            const result = {
-                hasSuccess: hasSuccess,
-                hasFailure: hasFailure,
-                verificationGone: verificationGone,
-                hasCheckedBox: hasCheckedBox,
-                checkedBoxCount: checkedBoxCount,
-                cfIframe: !!cfIframe,
-                turnstileIframe: !!turnstileIframe,
-                verifyText: verifyText,
-                challengeText: challengeText,
-                robotText: robotText,
-                isLoading: isLoading,
-                totalCheckboxes: checkboxes.length
-            };
-            
-            console.log('Verification check result:', result);
-            
-            // Only consider it successful if we have clear success indicators
-            // and no failure indicators
-            const isSuccessful = (hasSuccess || (verificationGone && !hasFailure)) && !isLoading;
-            
-            return {
-                success: isSuccessful,
-                details: result
-            };
-        })();
-        """)
-        
-        print(f"Verification success check result: {success_check}")
-        return success_check
-        
-    except Exception as e:
-        print(f"Error checking verification success: {e}")
-        return False
-
-async def try_shadow_dom_interaction(tab, x, y):
-    """Try to interact with Cloudflare elements hidden in Shadow DOM."""
-    try:
-        print("Attempting Shadow DOM-aware Cloudflare interaction...")
-        
-        # Method 1: Try to find and interact with shadow roots
-        shadow_interaction = await tab.evaluate(f"""
-        (async function() {{
-            try {{
-                // Look for elements that might contain shadow roots
-                const potentialHosts = document.querySelectorAll('div[id*="cf"], iframe, [data-sitekey], .cf-turnstile');
-                
-                for (let host of potentialHosts) {{
-                    if (host.shadowRoot) {{
-                        console.log('Found shadow root on:', host);
-                        
-                        // Look for checkboxes or clickable elements in shadow root
-                        const shadowCheckboxes = host.shadowRoot.querySelectorAll('input[type="checkbox"], [role="checkbox"], button, .checkbox');
-                        
-                        for (let checkbox of shadowCheckboxes) {{
-                            console.log('Found shadow checkbox:', checkbox);
-                            
-                            // Try to click it
-                            checkbox.click();
-                            
-                            // Also dispatch mouse events
-                            checkbox.dispatchEvent(new MouseEvent('mousedown', {{ bubbles: true }}));
-                            checkbox.dispatchEvent(new MouseEvent('mouseup', {{ bubbles: true }}));
-                            checkbox.dispatchEvent(new MouseEvent('click', {{ bubbles: true }}));
-                            
-                            return true;
-                        }}
-                    }}
-                }}
-                
-                // Method 2: Try to find iframe and access its content
-                const cfIframes = document.querySelectorAll('iframe[src*="challenges.cloudflare.com"], iframe[src*="turnstile"]');
-                
-                for (let iframe of cfIframes) {{
-                    try {{
-                        // Try to access iframe content (may be blocked by CORS)
-                        const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-                        if (iframeDoc) {{
-                            const iframeCheckboxes = iframeDoc.querySelectorAll('input[type="checkbox"], [role="checkbox"], button');
-                            
-                            for (let checkbox of iframeCheckboxes) {{
-                                console.log('Found iframe checkbox:', checkbox);
-                                checkbox.click();
-                                return true;
-                            }}
-                        }}
-                    }} catch (e) {{
-                        console.log('Iframe access blocked:', e);
-                    }}
-                }}
-                
-                // Method 3: Try coordinate-based clicking with JavaScript
-                const elementAtPoint = document.elementFromPoint({x}, {y});
-                if (elementAtPoint) {{
-                    console.log('Element at coordinates:', elementAtPoint);
-                    
-                    // Try various click methods
-                    elementAtPoint.click();
-                    elementAtPoint.dispatchEvent(new MouseEvent('click', {{ bubbles: true }}));
-                    
-                    // If it's part of a shadow tree, try to find the host
-                    let current = elementAtPoint;
-                    while (current && current.parentNode) {{
-                        if (current.parentNode.nodeType === 11) {{ // DOCUMENT_FRAGMENT_NODE (shadow root)
-                            console.log('Found shadow root parent');
-                            current.click();
-                            return true;
-                        }}
-                        current = current.parentNode;
-                    }}
-                    
-                    return true;
-                }}
-                
-                return false;
-                
-            }} catch (error) {{
-                console.error('Shadow DOM interaction error:', error);
-                return false;
-            }}
-        }})();
-        """)
-        
-        if shadow_interaction:
-            print("Shadow DOM interaction successful")
-            await tab.sleep(3)
-            return await check_verification_success(tab)
-        
-        # Method 4: Try the nodriver template_location method for visual detection
-        try:
-            print("Trying nodriver template_location method...")
-            template_result = await tab.template_location()
-            if template_result:
-                print(f"Template location found: {template_result}")
-                # Use JavaScript clicking instead of mouse_click
-                template_click_result = await tab.evaluate(f"""
-                (function() {{
-                    try {{
-                        const element = document.elementFromPoint({template_result[0]}, {template_result[1]});
-                        if (element) {{
-                            element.click();
-                            element.dispatchEvent(new MouseEvent('click', {{ bubbles: true }}));
-                            return 'template_clicked';
-                        }}
-                        return 'no_template_element';
-                    }} catch (error) {{
-                        return 'template_error: ' + error.message;
-                    }}
-                }})();
-                """)
-                print(f"Template click result: {template_click_result}")
-                await tab.sleep(3)
-                return await check_verification_success(tab)
-        except Exception as template_error:
-            print(f"Template location method failed: {template_error}")
-        
-        # Method 5: Try the built-in verify_cf with flash
-        try:
-            print("Trying verify_cf with flash...")
-            result = await tab.verify_cf(flash=True)
-            if result:
-                print("verify_cf with flash succeeded")
-                return True
-        except Exception as verify_error:
-            print(f"verify_cf with flash failed: {verify_error}")
-        
-        return False
-        
-    except Exception as e:
-        print(f"Error in shadow DOM interaction: {e}")
-        return False
 
 if __name__ == "__main__":
     uvicorn.run("nodriver_apply:app", host="0.0.0.0", port=8000, reload=True) 
