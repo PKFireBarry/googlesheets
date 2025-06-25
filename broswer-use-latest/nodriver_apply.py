@@ -22,6 +22,9 @@ app = FastAPI()
 # In-memory task storage for status tracking
 tasks = {}
 
+# Disable browser_use telemetry calls to avoid network failures
+os.environ["BROWSER_USE_DISABLE_TELEMETRY"] = "1"
+
 # --- Pydantic Models for API Request ---
 class UserData(BaseModel):
     first_name: str = Field(..., example="John")
@@ -942,14 +945,14 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
             tasks[task_id].update({"status": "processing", "message": "Handling verification challenge..."})
             await tab.sleep(3)
             try:
-                print("Launching AI agent to solve verification challenge via browser_use ...")
-                cf_solved = await verify_cloudflare_with_agent(tab, browser, llm)
+                print("Attempting visual solve of verification challenge ...")
+                cf_solved = await solve_verification_visually(tab, llm)
                 if cf_solved:
-                    print("✅ Verification challenge solved by AI agent.")
+                    print("✅ Verification challenge solved visually.")
                 else:
-                    print("⚠️  AI agent could not solve the verification challenge.")
+                    print("⚠️  Verification challenge could not be solved visually.")
             except Exception as e:
-                print(f"Error during agent-based verification: {e}")
+                print(f"Error during visual verification: {e}")
 
         # --- VERIFY SUBMISSION SUCCESS ---
         await tab.sleep(3)  # Wait for any final redirects
@@ -1124,62 +1127,28 @@ async def get_task_status(task_id: str):
         raise HTTPException(status_code=404, detail="Task not found")
     return tasks[task_id]
 
-# --- Agent-based Cloudflare verification using browser_use ---
-async def verify_cloudflare_with_agent(tab, browser, llm):
-    """Solve Cloudflare / CAPTCHA verification by connecting a browser_use.Agent to the **same**
-    Chrome instance via CDP so we keep the filled form state intact. Returns True if the
-    challenge appears solved, False otherwise."""
+# --- Lightweight vision-only verification ---
+async def solve_verification_visually(tab, llm):
+    """Try to solve Cloudflare/Turnstile/reCAPTCHA using nodriver's built-in CV helper first,
+    then fall back to a single-shot LLM vision prompt that returns coordinates to click."""
 
+    # 1) try nodriver template matching (no LLM cost)
     try:
-        # Derive the CDP endpoint for the running Chrome instance
-        if hasattr(browser, 'websocket_url') and browser.websocket_url:
-            cdp_url = browser.websocket_url.replace('ws://', 'http://').split('/devtools')[0]
-        else:
-            # Fallback to the explicit port used when launching Chrome
-            cdp_url = 'http://127.0.0.1:9223'
-
-        browser_session = BrowserSession(cdp_url=cdp_url, headless=False)
-        await browser_session.start()
-
-        # Try to align the session with the current page URL
-        try:
-            current_url = await tab.evaluate('window.location.href')
-        except Exception:
-            current_url = ''
-
-        if current_url and browser_session.browser_context:
-            for page in browser_session.browser_context.pages:
-                if page.url.startswith(current_url):
-                    browser_session.agent_current_page = page
-                    break
-
-        agent_task = (
-            "On the current page, locate and click any verification checkbox or button (e.g. 'Verify', "
-            "'I'm human', 'I'm not a robot'). Wait until the verification widget disappears or the "
-            "page proceeds, then stop."
-        )
-
-        agent = Agent(
-            task=agent_task,
-            llm=llm,
-            browser_session=browser_session,
-            use_vision=True,
-            use_vision_for_planner=False,  # disable extra planner vision calls
-            max_actions_per_step=3,  # keep steps minimal
-            max_failures=2,
-            retry_delay=2,
-            enable_memory=False,
-            tool_calling_method='raw',  # avoid expensive tool-auto-detection that hits quota
-            max_input_tokens=16000,
-        )
-
-        await agent.run(max_steps=12)
-        await asyncio.sleep(2)  # allow the page to update
-        await browser_session.stop()
-        return True
+        if await tab.verify_cf(flash=True):
+            print("✅ nodriver verify_cf succeeded")
+            return True
     except Exception as e:
-        print(f"Agent verification failed: {e}")
-        return False
+        print(f"nodriver verify_cf failed: {e}")
+
+    # 2) LLM vision (one request)
+    try:
+        detection_ok = await visual_cloudflare_detection(tab, llm)
+        if detection_ok:
+            return True
+    except Exception as e:
+        print(f"visual_cloudflare_detection failed: {e}")
+
+    return False
 
 if __name__ == "__main__":
     uvicorn.run("nodriver_apply:app", host="0.0.0.0", port=8000, reload=True) 
