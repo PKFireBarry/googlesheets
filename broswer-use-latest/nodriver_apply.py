@@ -1,6 +1,8 @@
 import asyncio
 import os
+import subprocess
 import tempfile
+import time
 import uuid
 import re
 import base64
@@ -15,8 +17,6 @@ import uvicorn
 import aiofiles
 import httpx
 from langchain_core.messages import HumanMessage
-from browser_use import Agent
-from browser_use.browser import BrowserSession
 
 app = FastAPI()
 
@@ -25,6 +25,19 @@ tasks = {}
 
 # Disable browser_use telemetry calls to avoid network failures
 os.environ["BROWSER_USE_DISABLE_TELEMETRY"] = "1"
+
+def kill_existing_brave_instances():
+    """Kill any existing Brave browser instances to ensure clean start."""
+    try:
+        print("🔍 Checking for existing Brave browser instances...")
+        # Kill all brave-browser processes
+        subprocess.run(['pkill', '-f', 'brave-browser'], capture_output=True)
+        # Also kill any chrome processes that might be related
+        subprocess.run(['pkill', '-f', 'chrome'], capture_output=True)
+        time.sleep(2)  # Give processes time to close
+        print("✅ Cleaned up existing browser instances")
+    except Exception as e:
+        print(f"⚠️  Note: Could not clean up existing instances: {e}")
 
 # --- Pydantic Models for API Request ---
 class UserData(BaseModel):
@@ -447,194 +460,6 @@ async def simple_form_fill_fallback(tab, user_data):
                 print(f"Failed to fill field with selector '{selector}': {e}")
                 continue
 
-async def intelligent_form_completion(tab, llm, user_data, task_id):
-    """Use browser_use to handle complex form elements via CDP connection to existing nodriver session."""
-    print("=== INTELLIGENT FORM COMPLETION WITH BROWSER_USE CDP ===")
-    
-    try:
-        # Get the debug port from the existing nodriver session
-        debug_port = await get_active_debug_port()
-        
-        if not debug_port:
-            print("⚠️  Could not find debug port, skipping intelligent form completion")
-            return
-        
-        print(f"🔗 Connecting browser_use to existing nodriver session on port {debug_port}")
-        
-        # Get current page URL to ensure we stay on the same page
-        current_url = await tab.evaluate("window.location.href")
-        print(f"📍 Current page URL: {current_url}")
-        
-        # Create user data summary for the agent
-        user_summary = f"""
-        User Information:
-        - Name: {user_data.first_name} {user_data.last_name}
-        - Email: {user_data.email}
-        - Phone: {user_data.phone}
-        - Address: {user_data.address or 'Tampa, FL'}
-        - LinkedIn: {user_data.linkedin or 'Not provided'}
-        - GitHub: {user_data.github or 'Not provided'}
-        - Portfolio: {user_data.portfolio or 'Not provided'}
-        
-        Professional Profile:
-        - Experienced software developer
-        - Skills: TypeScript, React, Python, AI/ML, Full-stack development
-        - Looking for: Remote or Tampa, FL area positions
-        - Salary expectations: $60,000 USD annually
-        - Availability: Immediately available
-        - Work authorization: Authorized to work in the US
-        - Relocation: No relocation required for remote positions
-        - Experience level: Mid-level (3-5 years)
-        """
-        
-        # Create the task for browser_use agent
-        agent_task = f"""
-        You are completing a job application form. The basic text fields (name, email, phone, address) have already been filled out by a previous system.
-        
-        Your task is to:
-        1. Look at the current form and identify any remaining unfilled interactive elements such as:
-           - Yes/No questions (radio buttons)
-           - Dropdown menus/select boxes
-           - Checkboxes that need to be selected
-           - Salary expectation fields
-           - Experience level selections
-           - Work authorization questions
-           - Availability questions
-           - Any other interactive form elements that appear unfilled or require selection
-        
-        2. Answer these questions appropriately using this user information:
-        {user_summary}
-        
-        3. Guidelines for answering:
-           - For salary questions: Use "$60,000" or select "Competitive" if available
-           - For work authorization: Select "Yes" - authorized to work in US
-           - For experience level: Select "Mid-level" or "3-5 years" if available
-           - For availability: Select "Immediately" or "2 weeks notice"
-           - For remote work: Select "Yes" if asked about remote work preference
-           - For relocation: Select "No" for relocation questions
-           - For yes/no questions about skills: Be honest but positive
-           - For dropdown selections: Choose the most appropriate option based on user profile
-        
-        4. IMPORTANT RESTRICTIONS:
-           - DO NOT submit the form (leave that for the final verification step)
-           - DO NOT modify text fields that are already filled (name, email, phone, address)
-           - DO NOT interact with file upload fields (resume upload is handled separately)
-           - DO NOT click submit buttons
-        
-        5. When all interactive elements are properly answered, consider the task complete.
-        
-        Act like a human user - take time to read questions, scroll through the form if needed, and make thoughtful selections.
-        """
-        
-        # Import browser_use components
-        from browser_use import Agent
-        from browser_use.browser import BrowserSession
-        
-        # Create browser session that connects to existing nodriver browser via CDP
-        print("🔧 Creating browser_use session with CDP connection...")
-        
-        # Create browser profile to maintain consistent viewport
-        from browser_use.browser import BrowserProfile
-        browser_profile = BrowserProfile(
-            viewport_expansion=0,  # Don't expand viewport
-            headless=False,
-            keep_alive=True,
-            disable_security=False,
-            deterministic_rendering=False,
-            device_scale_factor=1.0,
-            is_mobile=False,
-            # Set explicit viewport size to match nodriver
-            extra_chromium_args=[
-                "--window-size=1280,720",
-                "--start-maximized"
-            ]
-        )
-        
-        browser_session = BrowserSession(
-            cdp_url=f"http://127.0.0.1:{debug_port}",
-            keep_alive=True,  # Don't close the browser when done
-            browser_profile=browser_profile
-        )
-        
-        # Start the browser session (this will connect to the existing browser)
-        print(f"🔌 Attempting to connect to CDP at: http://127.0.0.1:{debug_port}")
-        await browser_session.start()
-        print("✅ Successfully connected to existing browser session via CDP")
-        
-        # Set viewport size to match nodriver configuration
-        try:
-            page = await browser_session.get_current_page()
-            await page.set_viewport_size(width=1280, height=720)
-            print("📐 Set browser_use viewport to 1920x1080 to match nodriver")
-        except Exception as viewport_error:
-            print(f"⚠️  Could not set viewport size: {viewport_error}")
-        
-        # Verify the connection
-        if browser_session.is_connected():
-            print("🔗 Browser session connection verified")
-            print(f"📊 Browser session details: browser_pid={browser_session.browser_pid}, cdp_url={browser_session.cdp_url}")
-        else:
-            print("⚠️  Browser session connection could not be verified")
-        
-        # Create the browser_use agent with the same LLM that has the API key
-        form_agent = Agent(
-            task=agent_task,
-            llm=llm,  # This already has the API key from the main function
-            max_actions_per_step=2,  # Be conservative to avoid overwhelming the form
-            browser_session=browser_session,
-            use_vision=True,
-            use_vision_for_planner=True,
-            max_failures=3,
-            retry_delay=5,
-            enable_memory=True,
-            extend_system_message='Focus on filling interactive form elements (radio buttons, dropdowns, checkboxes) that are not basic text fields. Do not submit the form or modify already-filled text fields.'
-        )
-        
-        print("🤖 Starting intelligent form completion agent...")
-        tasks[task_id].update({"status": "processing", "message": "AI agent analyzing and filling complex form elements..."})
-        
-        # Run the agent to complete complex form elements
-        try:
-            # Ensure we're on the right page
-            print(f"🌐 Navigating browser_use agent to: {current_url}")
-            await browser_session.navigate_to(current_url)
-            await asyncio.sleep(2)
-            
-            print("🤖 Starting browser_use agent to handle complex form elements...")
-            print(f"🎯 Agent task: {agent_task[:200]}...")
-            
-            # Run the agent
-            result = await form_agent.run(max_steps=15)
-            
-            print("✅ Intelligent form completion agent finished successfully")
-            print(f"📋 Agent result summary: {result}")
-            
-            tasks[task_id].update({"status": "processing", "message": "AI agent completed complex form elements successfully"})
-            
-        except Exception as agent_error:
-            print(f"⚠️  Browser_use agent encountered an error: {agent_error}")
-            import traceback
-            traceback.print_exc()
-            print("Continuing with form submission...")
-            tasks[task_id].update({"status": "processing", "message": "AI agent completed with some issues, proceeding..."})
-        
-        finally:
-            # Clean up browser_use session (but keep the browser running for nodriver)
-            try:
-                await browser_session.stop()
-                print("🧹 Cleaned up browser_use session")
-            except Exception as cleanup_error:
-                print(f"⚠️  Error cleaning up browser_use session: {cleanup_error}")
-        
-        # Wait a moment for any form changes to settle
-        await asyncio.sleep(2)
-        print("🔄 Returning control to nodriver for final submission steps")
-        
-    except Exception as e:
-        print(f"Error in intelligent form completion: {e}")
-        print("Continuing with standard form submission...")
-        tasks[task_id].update({"status": "processing", "message": "Proceeding with form submission..."})
-
 async def fill_fields_with_llm_intelligence(form_fields, llm, user_data, tab):
     """Use LLM to intelligently fill each form field based on context."""
     print("=== INTELLIGENT FORM FILLING ===")
@@ -994,35 +819,106 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
         # --- Setup Browser ---
         tasks[task_id].update({"status": "processing", "message": "Initializing browser..."})
         llm = ChatGoogleGenerativeAI(model='gemini-2.5-flash', api_key=api_key) # For text responses only
+        
+        # Kill any existing browser instances first
+        kill_existing_brave_instances()
+        
+        # Setup profile paths
+        brave_executable_path = "/usr/bin/brave-browser"
+        main_profile_dir = os.path.expanduser("~/.config/BraveSoftware/Brave-Browser/")
+        
+        print("⚠️  IMPORTANT: Using your main Brave profile directly.")
+        print("   Any existing Brave instances have been automatically closed.")
+        print("   ADVANTAGES:")
+        print("   ✅ All your real cookies, logins, and extensions are active")
+        print("   ✅ Faster startup (no copying required)")
+        print("   ✅ Authentic browser fingerprint")
+        print("   RISKS:")
+        print("   ⚠️  Your main profile is being used directly")
+        print("   ⚠️  If script crashes, it might affect your browser data")
+        print("   ⚠️  Make sure not to open main Brave while this is running")
+        
+        # Check if profile directory exists
+        if not os.path.exists(main_profile_dir):
+            print(f"❌ Profile directory not found: {main_profile_dir}")
+            raise Exception(f"Brave profile directory not found: {main_profile_dir}")
+        
+        # Remove any lingering lock files
+        lock_files = ['SingletonLock', 'SingletonSocket', 'SingletonCookie']
+        for lock_file in lock_files:
+            lock_path = os.path.join(main_profile_dir, lock_file)
+            if os.path.exists(lock_path):
+                try:
+                    os.remove(lock_path)
+                    print(f"🧹 Removed lock file: {lock_file}")
+                except Exception as e:
+                    print(f"⚠️  Could not remove lock file {lock_file}: {e}")
+        
+        # Use a unique debugging port
+        debug_port = 9237
+        
+        print("🚀 Starting Brave browser with your main profile...")
+        print(f"   Using native executable: {brave_executable_path}")
+        print(f"   Using main profile: {main_profile_dir}")
+        print(f"   Using debugging port: {debug_port}")
+        
+        # Enhanced browser arguments for better compatibility with main profile
+        browser_args = [
+            f'--remote-debugging-port={debug_port}',
+            '--window-size=1920,1080',
+            '--start-maximized',
+            '--no-first-run',
+            '--no-default-browser-check',
+            '--disable-background-timer-throttling',  # Prevent background issues
+            '--disable-renderer-backgrounding',       # Prevent tab backgrounding issues
+            '--disable-backgrounding-occluded-windows',  # Prevent window management issues
+            '--disable-features=SameSiteByDefaultCookies',  # Allow third-party cookies for Turnstile
+            '--disable-blink-features=AutomationControlled',  # Hide automation
+            '--disable-web-security',  # Disable web security for iframe access
+            '--disable-features=VizDisplayCompositor',  # Improve rendering
+        ]
+
+        # Use NATIVE Brave browser with main profile for Cloudflare compatibility
         browser = await uc.start(
             headless=False,
-            browser_args=[
-                '--no-sandbox', 
-                '--window-size=1920,1080',
-                '--start-maximized',
-                '--remote-debugging-port=9223',
-                '--disable-features=SameSiteByDefaultCookies',  # Allow third-party cookies for Turnstile
-                '--disable-blink-features=AutomationControlled',  # Hide automation
-                '--disable-web-security',  # Disable web security for iframe access
-                '--disable-features=VizDisplayCompositor',  # Improve rendering
-                '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            ]
+            browser_executable_path=brave_executable_path,
+            user_data_dir=main_profile_dir,
+            browser_args=browser_args,
         )
+        
+        # Navigate to target URL immediately after browser starts
+        print("📍 Navigating to target URL...")
         tab = await browser.get(job_url)
-        print(f"Navigated to: {job_url}")
+        print(f"✅ Navigated to: {job_url}")
         
         # Wait for page to fully load and stabilize
         print("⏳ Waiting for page to fully load...")
-        await tab.sleep(3)
+        await tab.sleep(5)
         
         # Wait for any dynamic content to load
         try:
-            await tab.wait_for('Page.loadEventFired', timeout=10)
+            await tab.wait_for('Page.loadEventFired', timeout=3)
             print("✅ Page load event detected")
         except:
             print("⚠️  Page load event timeout, continuing...")
         
         await tab.sleep(2) # Additional wait for dynamic content
+        
+        # Verify we're on the right page
+        try:
+            current_url = await tab.evaluate("window.location.href")
+            print(f"📍 Final URL: {current_url}")
+            
+            if job_url.split('/')[-1] in current_url or job_url.split('/')[-2] in current_url:
+                print("✅ Successfully navigated to target!")
+            else:
+                print(f"⚠️  Navigation may not have completed fully")
+                print(f"   Expected: {job_url}")
+                print(f"   Actual: {current_url}")
+                
+        except Exception as verify_error:
+            print(f"⚠️  Could not verify final URL: {verify_error}")
+            print("   Browser is open - check manually if navigation worked")
 
         # --- Handle Cookie Banner on Initial Load ---
         await handle_cookie_banner(tab)
@@ -1062,7 +958,7 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
                     
                     print("Clicking apply button...")
                     await apply_button.click()
-                    await tab.sleep(3)
+                    await tab.sleep(1)
                     
                     print("Apply button clicked successfully!")
                     button_found = True
@@ -1095,7 +991,7 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
                         await element.mouse_move()
                         await tab.sleep(0.5)
                         await element.click()
-                        await tab.sleep(3)
+                        await tab.sleep(2)
                         print("Element clicked successfully!")
                         button_found = True
                         break
@@ -1141,24 +1037,173 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
                         temp_file_path = tmp.name
 
         if temp_file_path:
-            # Find the file input on the page and upload
-            file_input = await tab.select('input[type=file]', timeout=5)
-            if file_input:
-                print(f"Found file input. Uploading resume from {temp_file_path}...")
-                # CORRECTED: Use send_file method for elements
-                await file_input.send_file(temp_file_path)
-                await tab.sleep(1)
+            print(f"📄 Looking for resume upload field...")
+            
+            # Find ALL file inputs on the page
+            all_file_inputs = await tab.select_all('input[type=file]', timeout=5)
+            
+            if not all_file_inputs:
+                print("❌ No file inputs found on the page")
             else:
-                print("Could not find a file input for the resume.")
+                print(f"🔍 Found {len(all_file_inputs)} file input(s), analyzing each one...")
+                
+                resume_input = None
+                
+                for i, file_input in enumerate(all_file_inputs):
+                    try:
+                        await file_input.update()
+                        
+                        # Get element attributes
+                        input_id = file_input.attrs.get('id', '')
+                        input_name = file_input.attrs.get('name', '')
+                        input_class = file_input.attrs.get('class', '')
+                        input_accept = file_input.attrs.get('accept', '')
+                        input_placeholder = file_input.attrs.get('placeholder', '')
+                        
+                        print(f"📋 File input {i+1}:")
+                        print(f"   ID: {input_id}")
+                        print(f"   Name: {input_name}")
+                        print(f"   Class: {input_class}")
+                        print(f"   Accept: {input_accept}")
+                        print(f"   Placeholder: {input_placeholder}")
+                        
+                        # Look for associated label
+                        label_text = ""
+                        if input_id:
+                            try:
+                                label = await tab.select(f"label[for='{input_id}']", timeout=1)
+                                if label:
+                                    await label.update()
+                                    label_text = label.text.strip().lower()
+                                    print(f"   Label: {label_text}")
+                            except:
+                                pass
+                        
+                        # Get surrounding context using JavaScript
+                        context_info = await tab.evaluate(f"""
+                        (function() {{
+                            const input = document.querySelector('input[id="{input_id}"], input[name="{input_name}"]');
+                            if (!input) return {{}};
+                            
+                            let contextText = '';
+                            let parent = input.parentElement;
+                            
+                            // Look for text in parent elements
+                            for (let i = 0; i < 3 && parent; i++) {{
+                                const textNodes = Array.from(parent.childNodes)
+                                    .filter(node => node.nodeType === 3)
+                                    .map(node => node.textContent.trim())
+                                    .filter(text => text.length > 0);
+                                    
+                                if (textNodes.length > 0) {{
+                                    contextText += textNodes.join(' ') + ' ';
+                                }}
+                                
+                                // Also check for text in sibling elements
+                                const siblings = Array.from(parent.children);
+                                siblings.forEach(sibling => {{
+                                    if (sibling !== input && sibling.textContent.trim()) {{
+                                        contextText += sibling.textContent.trim() + ' ';
+                                    }}
+                                }});
+                                
+                                parent = parent.parentElement;
+                            }}
+                            
+                            return {{
+                                contextText: contextText.toLowerCase(),
+                                parentClasses: input.parentElement ? input.parentElement.className : '',
+                                grandparentClasses: input.parentElement && input.parentElement.parentElement ? 
+                                                  input.parentElement.parentElement.className : ''
+                            }};
+                        }})();
+                        """)
+                        
+                        context_text = context_info.get('contextText', '').lower()
+                        parent_classes = context_info.get('parentClasses', '').lower()
+                        grandparent_classes = context_info.get('grandparentClasses', '').lower()
+                        
+                        print(f"   Context: {context_text[:100]}...")
+                        print(f"   Parent classes: {parent_classes}")
+                        
+                        # Score this input based on resume-related keywords
+                        resume_score = 0
+                        photo_score = 0
+                        
+                        # Resume indicators (positive scoring)
+                        resume_keywords = [
+                            'resume', 'cv', 'curriculum', 'vitae', 'document', 'upload resume',
+                            'attach resume', 'resume file', 'your resume', 'upload cv', 'attach cv'
+                        ]
+                        
+                        # Photo/image indicators (negative scoring for resume)
+                        photo_keywords = [
+                            'photo', 'image', 'picture', 'avatar', 'profile picture', 'headshot',
+                            'upload photo', 'attach photo', 'profile image', 'your photo'
+                        ]
+                        
+                        # Check all text sources for keywords
+                        all_text = f"{input_id} {input_name} {input_class} {input_accept} {input_placeholder} {label_text} {context_text} {parent_classes} {grandparent_classes}"
+                        
+                        for keyword in resume_keywords:
+                            if keyword in all_text:
+                                resume_score += 2
+                                print(f"   ✅ Found resume keyword: '{keyword}' (+2 points)")
+                        
+                        for keyword in photo_keywords:
+                            if keyword in all_text:
+                                photo_score += 2
+                                print(f"   ❌ Found photo keyword: '{keyword}' (+2 photo points)")
+                        
+                        # File type scoring
+                        if input_accept:
+                            if any(ext in input_accept.lower() for ext in ['.pdf', '.doc', '.docx', 'application/pdf']):
+                                resume_score += 3
+                                print(f"   ✅ Accepts document formats (+3 points)")
+                            if any(ext in input_accept.lower() for ext in ['.jpg', '.jpeg', '.png', '.gif', 'image/']):
+                                photo_score += 3
+                                print(f"   ❌ Accepts image formats (+3 photo points)")
+                        
+                        final_score = resume_score - photo_score
+                        print(f"   📊 Final score: {final_score} (resume: {resume_score}, photo penalty: -{photo_score})")
+                        
+                        # Select the input with the highest resume score (and lowest photo score)
+                        if final_score > 0 and (resume_input is None or final_score > getattr(resume_input, '_score', 0)):
+                            resume_input = file_input
+                            resume_input._score = final_score
+                            print(f"   🎯 This is currently the best resume input candidate!")
+                        
+                        print()  # Empty line for readability
+                        
+                    except Exception as e:
+                        print(f"   ❌ Error analyzing file input {i+1}: {e}")
+                        continue
+                
+                # Upload to the selected resume input
+                if resume_input:
+                    print(f"✅ Selected resume input with score {getattr(resume_input, '_score', 0)}")
+                    print(f"📤 Uploading resume from {temp_file_path}...")
+                    try:
+                        await resume_input.send_file(temp_file_path)
+                        await tab.sleep(2)
+                        print("✅ Resume uploaded successfully!")
+                    except Exception as upload_error:
+                        print(f"❌ Error uploading resume: {upload_error}")
+                else:
+                    print("❌ Could not identify a suitable resume upload field")
+                    print("🔄 Falling back to first file input...")
+                    try:
+                        await all_file_inputs[0].send_file(temp_file_path)
+                        await tab.sleep(2)
+                        print("✅ Resume uploaded to first file input as fallback")
+                    except Exception as fallback_error:
+                        print(f"❌ Fallback upload also failed: {fallback_error}")
+        else:
+            print("⚠️  No resume file provided")
 
         # --- SIMPLE FORM FILLING ---
         tasks[task_id].update({"status": "processing", "message": "Filling out basic form fields..."})
         await analyze_and_fill_all_form_elements(tab, llm, user_data)
-        
-        # --- INTELLIGENT FORM COMPLETION WITH BROWSER_USE ---
-        # COMMENTED OUT FOR TESTING - Check if browser_use is causing Cloudflare issues
-        # tasks[task_id].update({"status": "processing", "message": "Analyzing complex form elements with AI agent..."})
-        # await intelligent_form_completion(tab, llm, user_data, task_id)
         
         # --- DIRECT NODRIVER FORM COMPLETION FOR TESTING ---
         tasks[task_id].update({"status": "processing", "message": "Filling additional form elements with nodriver..."})
@@ -1238,101 +1283,167 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
         await tab.sleep(3)  # Wait for any final redirects
         
         try:
-            print("Checking for submission confirmation...")
+            print("🔍 Performing comprehensive submission verification...")
             
-            # Check for success indicators
+            # More thorough success check
             success_check = await tab.evaluate("""
             (function() {
                 const bodyText = document.body.textContent.toLowerCase();
+                const currentUrl = window.location.href.toLowerCase();
+                
+                console.log('Current URL:', currentUrl);
                 console.log('Current page text sample:', bodyText.substring(0, 500));
                 
-                // Look for success indicators
+                // Look for success indicators in text
                 const successIndicators = [
                     'success', 'verified', 'complete', 'passed', 'submitted',
-                    'thank you', 'application received', 'application submitted'
+                    'thank you', 'application received', 'application submitted',
+                    'congratulations', 'we have received', 'successfully submitted',
+                    'your application has been', 'application complete'
                 ];
                 
-                const hasSuccess = successIndicators.some(indicator => 
+                const hasSuccessText = successIndicators.some(indicator => 
                     bodyText.includes(indicator)
+                );
+                
+                // Look for success indicators in URL
+                const urlSuccessIndicators = [
+                    'success', 'complete', 'submitted', 'thank', 'confirmation'
+                ];
+                
+                const hasSuccessUrl = urlSuccessIndicators.some(indicator => 
+                    currentUrl.includes(indicator)
                 );
                 
                 // Look for failure indicators
                 const failureIndicators = [
                     'verify you are human', 'security check', 'not a robot', 
                     'please verify', 'complete the verification', 'prove you are human',
-                    'verification required', 'challenge', 'captcha'
+                    'verification required', 'challenge', 'captcha', 'blocked',
+                    'access denied', 'error occurred', 'something went wrong'
                 ];
                 
-                const hasFailure = failureIndicators.some(indicator => 
+                const hasFailureText = failureIndicators.some(indicator => 
                     bodyText.includes(indicator)
                 );
                 
-                // Check if verification elements disappeared
+                // Check for verification elements still present
                 const cfIframe = document.querySelector('iframe[src*="challenges.cloudflare.com"]');
                 const turnstileIframe = document.querySelector('iframe[src*="turnstile"]');
-                const verifyText = bodyText.includes('verify you are human');
-                const challengeText = bodyText.includes('security check');
-                const robotText = bodyText.includes('not a robot');
+                const verifyElements = document.querySelectorAll('[data-turnstile], [data-cf-turnstile], [id*="turnstile"], [class*="turnstile"]');
                 
-                const verificationGone = !cfIframe && !turnstileIframe && !verifyText && !challengeText && !robotText;
+                const hasVerificationElements = cfIframe || turnstileIframe || verifyElements.length > 0;
                 
-                // Check for checkboxes that might be checked now
-                const checkboxes = document.querySelectorAll('input[type="checkbox"], [role="checkbox"]');
-                let hasCheckedBox = false;
-                let checkedBoxCount = 0;
-                checkboxes.forEach(checkbox => {
-                    if (checkbox.checked || checkbox.getAttribute('aria-checked') === 'true') {
-                        hasCheckedBox = true;
-                        checkedBoxCount++;
-                        console.log('Found checked verification checkbox:', {
-                            id: checkbox.id,
-                            className: checkbox.className,
-                            type: checkbox.type,
-                            checked: checkbox.checked
-                        });
+                // Check for Turnstile tokens (indicates successful verification)
+                const turnstileTokens = document.querySelectorAll('input[name="cf-turnstile-response"]');
+                let hasValidToken = false;
+                let tokenInfo = [];
+                
+                turnstileTokens.forEach((token, index) => {
+                    const value = token.value || '';
+                    tokenInfo.push({
+                        index: index,
+                        hasValue: value.length > 0,
+                        valueLength: value.length,
+                        isValid: value.length > 50  // Turnstile tokens are typically long
+                    });
+                    
+                    if (value.length > 50) {
+                        hasValidToken = true;
                     }
                 });
                 
-                // Look for loading or processing indicators
-                const loadingIndicators = document.querySelectorAll('.loading, .spinner, [role="progressbar"], .cf-loading');
+                // Check for form submission indicators
+                const submitButtons = document.querySelectorAll('button[type="submit"], input[type="submit"]');
+                let submitButtonStates = [];
+                
+                submitButtons.forEach((btn, index) => {
+                    submitButtonStates.push({
+                        index: index,
+                        disabled: btn.disabled,
+                        text: btn.textContent || btn.value || '',
+                        visible: btn.offsetWidth > 0 && btn.offsetHeight > 0
+                    });
+                });
+                
+                // Check for loading or processing indicators
+                const loadingIndicators = document.querySelectorAll('.loading, .spinner, [role="progressbar"], .cf-loading, .submitting');
                 const isLoading = loadingIndicators.length > 0;
                 
+                // Look for redirect indicators
+                const hasRedirectMeta = document.querySelector('meta[http-equiv="refresh"]');
+                const hasRedirectScript = bodyText.includes('window.location') || bodyText.includes('redirect');
+                
                 const result = {
-                    hasSuccess: hasSuccess,
-                    hasFailure: hasFailure,
-                    verificationGone: verificationGone,
-                    hasCheckedBox: hasCheckedBox,
-                    checkedBoxCount: checkedBoxCount,
-                    cfIframe: !!cfIframe,
-                    turnstileIframe: !!turnstileIframe,
-                    verifyText: verifyText,
-                    challengeText: challengeText,
-                    robotText: robotText,
+                    currentUrl: currentUrl,
+                    hasSuccessText: hasSuccessText,
+                    hasSuccessUrl: hasSuccessUrl,
+                    hasFailureText: hasFailureText,
+                    hasVerificationElements: hasVerificationElements,
+                    hasValidToken: hasValidToken,
+                    tokenInfo: tokenInfo,
+                    submitButtonStates: submitButtonStates,
                     isLoading: isLoading,
-                    totalCheckboxes: checkboxes.length
+                    hasRedirectMeta: !!hasRedirectMeta,
+                    hasRedirectScript: hasRedirectScript,
+                    verificationElementCount: verifyElements.length,
+                    pageTitle: document.title
                 };
                 
-                console.log('Verification check result:', result);
+                console.log('Comprehensive verification check result:', result);
                 
-                // Only consider it successful if we have clear success indicators
-                // and no failure indicators
-                const isSuccessful = (hasSuccess || (verificationGone && !hasFailure)) && !isLoading;
+                // Determine success based on multiple factors
+                let isSuccessful = false;
+                let confidence = 'low';
+                let reason = '';
+                
+                if (hasSuccessText || hasSuccessUrl) {
+                    isSuccessful = true;
+                    confidence = 'high';
+                    reason = 'Success indicators found in text/URL';
+                } else if (hasValidToken && !hasVerificationElements && !hasFailureText) {
+                    isSuccessful = true;
+                    confidence = 'medium';
+                    reason = 'Valid Turnstile token present, no verification elements';
+                } else if (!hasVerificationElements && !hasFailureText && !isLoading) {
+                    isSuccessful = true;
+                    confidence = 'medium';
+                    reason = 'No verification elements or failure indicators';
+                } else if (hasFailureText || hasVerificationElements) {
+                    isSuccessful = false;
+                    confidence = 'high';
+                    reason = 'Failure indicators or verification elements still present';
+                }
                 
                 return {
                     success: isSuccessful,
+                    confidence: confidence,
+                    reason: reason,
                     details: result
                 };
             })();
             """)
             
-            print(f"Verification success check result: {success_check}")
+            print(f"📊 Comprehensive verification result:")
+            print(f"   Success: {success_check['success']}")
+            print(f"   Confidence: {success_check['confidence']}")
+            print(f"   Reason: {success_check['reason']}")
+            print(f"   Current URL: {success_check['details']['currentUrl']}")
+            print(f"   Page Title: {success_check['details']['pageTitle']}")
+            print(f"   Valid Token: {success_check['details']['hasValidToken']}")
+            print(f"   Verification Elements: {success_check['details']['hasVerificationElements']}")
             
             if success_check['success']:
-                print("✅ Application appears to have been submitted successfully!")
-                tasks[task_id].update({"status": "completed", "message": "Application submitted successfully! Confirmation detected."})
+                if success_check['confidence'] == 'high':
+                    print("✅ Application submitted successfully with high confidence!")
+                    tasks[task_id].update({"status": "completed", "message": "Application submitted successfully! Strong confirmation detected."})
+                else:
+                    print("✅ Application likely submitted successfully!")
+                    tasks[task_id].update({"status": "completed", "message": "Application submitted successfully! Moderate confirmation detected."})
             else:
-                print("⚠️  Could not confirm successful submission - please check manually")
-                tasks[task_id].update({"status": "completed", "message": "Application submitted but confirmation unclear - please verify manually."})
+                print("⚠️  Application submission unclear or failed")
+                print(f"   Reason: {success_check['reason']}")
+                tasks[task_id].update({"status": "completed", "message": f"Application status unclear: {success_check['reason']} - please verify manually."})
                 
         except Exception as e:
             print(f"Error checking submission status: {e}")
@@ -1345,10 +1456,44 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
     except Exception as e:
         error_message = f"An error occurred: {e}"
         print(error_message)
+        print("\n🔧 TROUBLESHOOTING:")
+        print("   - Make sure your main Brave browser is completely closed")
+        print("   - Check if any Brave processes are still running: ps aux | grep brave")
+        print("   - The profile might be corrupted or have permission issues")
+        print("   - Verify that the Brave profile directory exists and is accessible")
+        import traceback
+        traceback.print_exc()
         tasks[task_id].update({"status": "failed", "message": error_message})
     finally:
         if browser:
-            browser.stop()
+            print("🛑 Closing browser...")
+            try:
+                # Try multiple methods to ensure browser closes
+                await browser.stop()
+                print("✅ Browser.stop() called")
+                
+                # Give it a moment to close
+                await asyncio.sleep(2)
+                
+                # Force kill any remaining processes as backup
+                try:
+                    subprocess.run(['pkill', '-f', 'brave-browser'], capture_output=True)
+                    subprocess.run(['pkill', '-f', f'remote-debugging-port=9237'], capture_output=True)
+                    print("✅ Backup process cleanup completed")
+                except Exception as cleanup_error:
+                    print(f"⚠️  Backup cleanup failed: {cleanup_error}")
+                    
+            except Exception as close_error:
+                print(f"⚠️  Error closing browser: {close_error}")
+                # Force kill as fallback
+                try:
+                    subprocess.run(['pkill', '-f', 'brave-browser'], capture_output=True)
+                    print("✅ Force killed browser processes")
+                except:
+                    print("⚠️  Could not force kill browser processes")
+            
+            print("✅ Browser cleanup completed.")
+            
         if temp_file_path and os.path.exists(temp_file_path):
             os.remove(temp_file_path)
 
@@ -1409,243 +1554,680 @@ async def get_task_status(task_id: str):
 
 # --- LLM + Playwright Verification System ---
 async def solve_verification_visually(tab, llm):
-    """Use LLM to analyze screenshots and Playwright to click verification popups."""
+    """Use DOM inspection and coordinate guessing to solve Turnstile verification."""
 
-    # 1) try nodriver template matching first (fastest)
+    print("🔍 DOM Inspection and Coordinate Guessing Method...")
     try:
-        if await tab.verify_cf():
-            print("✅ nodriver verify_cf succeeded")
-            return True
+        # Inspect DOM and create visual highlights
+        turnstile_info, best_target = await inspect_and_highlight_turnstile(tab)
+        
+        # Wait a moment for highlights to be visible
+        await tab.sleep(3)
+        
+        # Try coordinate guessing method if we found containers
+        if turnstile_info and turnstile_info.get('containers'):
+            print("🎯 Using coordinate guessing method based on detected Turnstile elements...")
+            guessing_success = await try_coordinate_guessing_method(tab, turnstile_info, llm)
+            if guessing_success:
+                print("✅ Coordinate guessing succeeded!")
+                return True
+            else:
+                print("❌ Coordinate guessing failed")
+        else:
+            print("❌ No Turnstile containers found for coordinate guessing")
+        
     except Exception as e:
-        print(f"nodriver verify_cf failed: {e}")
+        print(f"❌ DOM inspection and coordinate guessing failed: {e}")
 
-    # 2) LLM + Playwright approach
-    try:
-        print("🎭 Using LLM + Playwright for verification popup detection...")
-        playwright_success = await llm_playwright_verification(tab, llm)
-        if playwright_success:
-            return True
-    except Exception as e:
-        print(f"LLM + Playwright verification failed: {e}")
-
+    print("❌ All verification methods failed")
     return False
 
 async def get_active_debug_port():
-    """Find the active Chrome debug port by checking running processes."""
+    """Find the active Chrome/Brave debug port by checking running processes."""
     try:
         import psutil
         import re
         
+        print("🔍 Searching for active Brave/Chrome debug ports...")
+        
         for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
             try:
-                if proc.info['name'] and 'chrome' in proc.info['name'].lower():
+                if proc.info['name'] and ('brave' in proc.info['name'].lower() or 'chrome' in proc.info['name'].lower()):
                     cmdline = ' '.join(proc.info['cmdline'] or [])
                     if '--remote-debugging-port=' in cmdline:
                         port_match = re.search(r'--remote-debugging-port=(\d+)', cmdline)
                         if port_match:
                             port = int(port_match.group(1))
+                            print(f"🔍 Found process {proc.info['name']} (PID: {proc.info['pid']}) with debug port: {port}")
+                            
                             # Test if port is actually listening
                             import socket
                             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                            sock.settimeout(1)
                             result = sock.connect_ex(('127.0.0.1', port))
                             sock.close()
+                            
                             if result == 0:  # Port is open
-                                print(f"Found active Chrome debug port: {port}")
-                                return port
-            except:
+                                print(f"✅ Port {port} is active and listening")
+                                
+                                # Test if we can actually connect to the debug endpoint
+                                try:
+                                    import httpx
+                                    async with httpx.AsyncClient(timeout=5.0) as client:
+                                        response = await client.get(f"http://127.0.0.1:{port}/json/version")
+                                        if response.status_code == 200:
+                                            version_info = response.json()
+                                            print(f"✅ Debug endpoint responding: {version_info.get('Browser', 'Unknown')}")
+                                            return port
+                                        else:
+                                            print(f"⚠️  Port {port} not responding to debug requests")
+                                except Exception as e:
+                                    print(f"⚠️  Port {port} connection test failed: {e}")
+                            else:
+                                print(f"⚠️  Port {port} not listening")
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                 continue
+            except Exception as e:
+                print(f"Error checking process: {e}")
+                continue
+                
     except ImportError:
-        print("psutil not available for port detection")
+        print("❌ psutil not available for port detection")
     except Exception as e:
-        print(f"Error detecting debug port: {e}")
+        print(f"❌ Error detecting debug port: {e}")
     
+    print("❌ No active debug ports found")
     return None
 
-async def limited_container_clicking(page, tab):
-    """Limited container-based clicking to avoid spam detection."""
+
+
+
+
+async def inspect_and_highlight_turnstile(tab):
+    """Inspect the DOM for Turnstile elements and create visual highlights around them."""
+    print("🔍 Inspecting DOM for Turnstile/Cloudflare verification elements...")
+    
     try:
-        # Find Turnstile containers
-        iframe_info = await tab.evaluate("""
+        # Comprehensive DOM inspection for Turnstile elements
+        turnstile_info = await tab.evaluate("""
         (function() {
-            const turnstileContainers = document.querySelectorAll('[id*="turnstile"], [class*="turnstile"], [data-turnstile], [data-cf-turnstile]');
-            const containers = [];
+            const results = {
+                iframes: [],
+                containers: [],
+                checkboxes: [],
+                textElements: [],
+                allElements: []
+            };
             
-            turnstileContainers.forEach((container, index) => {
-                const rect = container.getBoundingClientRect();
+            // 1. Find all iframes (Turnstile often uses iframes)
+            const iframes = document.querySelectorAll('iframe');
+            iframes.forEach((iframe, index) => {
+                const rect = iframe.getBoundingClientRect();
+                const src = iframe.src || '';
+                const id = iframe.id || '';
+                const className = iframe.className || '';
+                
                 if (rect.width > 0 && rect.height > 0) {
-                    containers.push({
-                        type: 'turnstile-container',
+                    results.iframes.push({
                         index: index,
-                        x: rect.x,
-                        y: rect.y,
-                        width: rect.width,
-                        height: rect.height,
-                        id: container.id,
-                        className: container.className,
-                        tagName: container.tagName
+                        src: src,
+                        id: id,
+                        className: className,
+                        x: Math.round(rect.x),
+                        y: Math.round(rect.y),
+                        width: Math.round(rect.width),
+                        height: Math.round(rect.height),
+                        isTurnstile: src.includes('turnstile') || src.includes('cloudflare') || 
+                                   id.includes('turnstile') || className.includes('turnstile'),
+                        isVisible: rect.width > 0 && rect.height > 0
                     });
                 }
             });
             
-            return { containers: containers };
+            // 2. Find containers with Turnstile-related attributes AND actual Turnstile widgets
+            const turnstileSelectors = [
+                '[id*="turnstile"]', '[class*="turnstile"]', '[data-turnstile]', 
+                '[data-cf-turnstile]', '[id*="cloudflare"]', '[class*="cloudflare"]'
+            ];
+            
+            turnstileSelectors.forEach(selector => {
+                try {
+                    const elements = document.querySelectorAll(selector);
+                    elements.forEach((element, index) => {
+                        const rect = element.getBoundingClientRect();
+                        if (rect.width > 0 && rect.height > 0) {
+                            // Check if this looks like an actual Turnstile widget (small size)
+                            const isTurnstileWidget = rect.width < 400 && rect.height < 200;
+                            const isLargeContainer = rect.width > 400 || rect.height > 200;
+                            
+                            // Look for actual Turnstile widgets inside large containers
+                            let actualWidget = null;
+                            if (isLargeContainer) {
+                                // Search for smaller elements that might be the actual widget
+                                const childElements = element.querySelectorAll('*');
+                                for (let child of childElements) {
+                                    const childRect = child.getBoundingClientRect();
+                                    const childText = child.textContent || '';
+                                    
+                                    // Look for elements with verification text and reasonable size
+                                    if (childText.toLowerCase().includes('verify') || 
+                                        childText.toLowerCase().includes('human') ||
+                                        child.querySelector('input[type="checkbox"]') ||
+                                        (childRect.width > 200 && childRect.width < 400 && 
+                                         childRect.height > 50 && childRect.height < 150)) {
+                                        actualWidget = {
+                                            element: child,
+                                            x: Math.round(childRect.x),
+                                            y: Math.round(childRect.y),
+                                            width: Math.round(childRect.width),
+                                            height: Math.round(childRect.height)
+                                        };
+                                        break;
+                                    }
+                                }
+                            }
+                            
+                            results.containers.push({
+                                selector: selector,
+                                index: index,
+                                tagName: element.tagName,
+                                id: element.id || '',
+                                className: element.className || '',
+                                x: Math.round(rect.x),
+                                y: Math.round(rect.y),
+                                width: Math.round(rect.width),
+                                height: Math.round(rect.height),
+                                innerHTML: element.innerHTML.substring(0, 200),
+                                isVisible: rect.width > 0 && rect.height > 0,
+                                isTurnstileWidget: isTurnstileWidget,
+                                isLargeContainer: isLargeContainer,
+                                actualWidget: actualWidget
+                            });
+                        }
+                    });
+                } catch (e) {
+                    console.log('Error with selector:', selector, e);
+                }
+            });
+            
+            // 3. Find all checkboxes and checkbox-like elements
+            const checkboxSelectors = [
+                'input[type="checkbox"]', '[role="checkbox"]', 
+                '[aria-checked]', '.checkbox', '.check-box'
+            ];
+            
+            checkboxSelectors.forEach(selector => {
+                try {
+                    const elements = document.querySelectorAll(selector);
+                    elements.forEach((element, index) => {
+                        const rect = element.getBoundingClientRect();
+                        if (rect.width > 0 && rect.height > 0) {
+                            results.checkboxes.push({
+                                selector: selector,
+                                index: index,
+                                tagName: element.tagName,
+                                type: element.type || '',
+                                id: element.id || '',
+                                className: element.className || '',
+                                x: Math.round(rect.x),
+                                y: Math.round(rect.y),
+                                width: Math.round(rect.width),
+                                height: Math.round(rect.height),
+                                checked: element.checked || element.getAttribute('aria-checked') === 'true',
+                                isVisible: rect.width > 0 && rect.height > 0,
+                                outerHTML: element.outerHTML.substring(0, 300)
+                            });
+                        }
+                    });
+                } catch (e) {
+                    console.log('Error with checkbox selector:', selector, e);
+                }
+            });
+            
+            // 4. Find text elements containing verification text
+            const verificationTexts = [
+                'verify you are human', 'verify you are not a robot', 'i am human',
+                'security check', 'prove you are human', 'complete verification'
+            ];
+            
+            verificationTexts.forEach(searchText => {
+                const walker = document.createTreeWalker(
+                    document.body,
+                    NodeFilter.SHOW_TEXT,
+                    null,
+                    false
+                );
+                
+                let node;
+                while (node = walker.nextNode()) {
+                    if (node.textContent.toLowerCase().includes(searchText)) {
+                        const parent = node.parentElement;
+                        if (parent) {
+                            const rect = parent.getBoundingClientRect();
+                            if (rect.width > 0 && rect.height > 0) {
+                                results.textElements.push({
+                                    text: searchText,
+                                    content: node.textContent.trim(),
+                                    parentTag: parent.tagName,
+                                    parentId: parent.id || '',
+                                    parentClass: parent.className || '',
+                                    x: Math.round(rect.x),
+                                    y: Math.round(rect.y),
+                                    width: Math.round(rect.width),
+                                    height: Math.round(rect.height)
+                                });
+                            }
+                        }
+                    }
+                }
+            });
+            
+            // 5. Find ALL clickable elements in the verification area
+            const allClickable = document.querySelectorAll('*');
+            allClickable.forEach((element, index) => {
+                const rect = element.getBoundingClientRect();
+                const text = element.textContent || '';
+                const hasVerifyText = text.toLowerCase().includes('verify') || 
+                                    text.toLowerCase().includes('human') ||
+                                    text.toLowerCase().includes('robot');
+                
+                if (hasVerifyText && rect.width > 0 && rect.height > 0 && rect.width < 500 && rect.height < 200) {
+                    results.allElements.push({
+                        index: index,
+                        tagName: element.tagName,
+                        id: element.id || '',
+                        className: element.className || '',
+                        text: text.substring(0, 100),
+                        x: Math.round(rect.x),
+                        y: Math.round(rect.y),
+                        width: Math.round(rect.width),
+                        height: Math.round(rect.height),
+                        clickable: element.onclick !== null || element.style.cursor === 'pointer' ||
+                                 element.tagName === 'BUTTON' || element.tagName === 'A' ||
+                                 element.type === 'checkbox' || element.role === 'checkbox'
+                    });
+                }
+            });
+            
+            return results;
         })();
         """)
         
-        if iframe_info['containers'] and len(iframe_info['containers']) > 0:
-            container = iframe_info['containers'][0]  # Use first container
-            print(f"🎯 Found Turnstile container: {container['tagName']} id='{container['id']}'")
+        print(f"📊 DOM Inspection Results:")
+        print(f"   - Found {len(turnstile_info['iframes'])} iframes")
+        print(f"   - Found {len(turnstile_info['containers'])} Turnstile containers")
+        print(f"   - Found {len(turnstile_info['checkboxes'])} checkboxes")
+        print(f"   - Found {len(turnstile_info['textElements'])} verification text elements")
+        print(f"   - Found {len(turnstile_info['allElements'])} verification-related elements")
+        
+        # Create visual highlights for all found elements
+        highlight_id = f"highlight_{uuid.uuid4().hex[:8]}"
+        
+        # Convert Python booleans to JavaScript booleans
+        turnstile_info_js = json.dumps(turnstile_info)
+        
+        await tab.evaluate(f"""
+        (function() {{
+            // Remove any existing highlights
+            const existingHighlights = document.querySelectorAll('[id^="highlight_"]');
+            existingHighlights.forEach(h => h.remove());
             
-            # Try only 5 strategic positions to avoid spam detection
-            container_center_y = container['y'] + container['height'] // 2
+            const results = {turnstile_info_js};
+            let highlightIndex = 0;
             
-            strategic_positions = [
-                (container['x'] + 20, container_center_y, "Left-20"),
-                (container['x'] + 30, container_center_y, "Left-30"), 
-                (container['x'] + 40, container_center_y, "Left-40"),
-                (container['x'] + 25, container_center_y - 5, "Left-25-Up"),
-                (container['x'] + 25, container_center_y + 5, "Left-25-Down")
-            ]
-            
-            for i, (x, y, position_name) in enumerate(strategic_positions):
-                print(f"🎯 Strategic click {i+1}: {position_name} at ({x:.0f}, {y:.0f})")
+            // Helper function to create highlight outline (no fill)
+            function createHighlight(x, y, width, height, color, label, zIndex = 999999) {{
+                const highlight = document.createElement('div');
+                highlight.id = '{highlight_id}_' + highlightIndex++;
+                highlight.style.position = 'fixed';
+                highlight.style.left = x + 'px';
+                highlight.style.top = y + 'px';
+                highlight.style.width = width + 'px';
+                highlight.style.height = height + 'px';
+                highlight.style.border = '2px solid ' + color;
+                highlight.style.backgroundColor = 'transparent';  // No fill - outline only
+                highlight.style.zIndex = zIndex;
+                highlight.style.pointerEvents = 'none';
+                highlight.style.boxSizing = 'border-box';
+                highlight.style.boxShadow = '0 0 0 1px rgba(255,255,255,0.8)';  // White outline for visibility
                 
-                # Add visual marker
-                await tab.evaluate(f"""
-                (function() {{
-                    const marker = document.createElement('div');
-                    marker.style.position = 'fixed';
-                    marker.style.left = '{x - 8}px';
-                    marker.style.top = '{y - 8}px';
-                    marker.style.width = '16px';
-                    marker.style.height = '16px';
-                    marker.style.backgroundColor = 'orange';
-                    marker.style.border = '2px solid red';
-                    marker.style.borderRadius = '50%';
-                    marker.style.zIndex = '999999';
-                    marker.style.pointerEvents = 'none';
-                    marker.style.boxShadow = '0 0 10px rgba(255,165,0,0.8)';
-                    document.body.appendChild(marker);
+                // Add label
+                const labelDiv = document.createElement('div');
+                labelDiv.style.position = 'absolute';
+                labelDiv.style.top = '-25px';
+                labelDiv.style.left = '0px';
+                labelDiv.style.backgroundColor = color;
+                labelDiv.style.color = 'white';
+                labelDiv.style.padding = '2px 6px';
+                labelDiv.style.fontSize = '12px';
+                labelDiv.style.fontWeight = 'bold';
+                labelDiv.style.borderRadius = '3px';
+                labelDiv.style.whiteSpace = 'nowrap';
+                labelDiv.textContent = label;
+                highlight.appendChild(labelDiv);
+                
+                document.body.appendChild(highlight);
+                return highlight;
+            }}
+            
+            // Highlight iframes (red)
+            results.iframes.forEach((iframe, index) => {{
+                const label = iframe.isTurnstile ? `TURNSTILE IFRAME ${{index + 1}}` : `IFRAME ${{index + 1}}`;
+                const color = iframe.isTurnstile ? 'red' : 'orange';
+                createHighlight(iframe.x, iframe.y, iframe.width, iframe.height, color, label);
+                console.log('Highlighted iframe:', label, iframe);
+            }});
+            
+            // Highlight Turnstile containers (blue for large, green for widgets)
+            results.containers.forEach((container, index) => {{
+                if (container.isTurnstileWidget) {{
+                    // Small widget - highlight in bright green
+                    createHighlight(container.x, container.y, container.width, container.height, 
+                                  'lime', `WIDGET ${{index + 1}}`);
+                    console.log('Highlighted Turnstile widget:', container);
+                }} else if (container.isLargeContainer) {{
+                    // Large container - highlight in blue with transparency
+                    createHighlight(container.x, container.y, container.width, container.height, 
+                                  'blue', `LARGE CONTAINER ${{index + 1}}`, 999990);
+                    console.log('Highlighted large container:', container);
                     
-                    setTimeout(() => {{
-                        if (marker.parentNode) {{
-                            marker.parentNode.removeChild(marker);
-                        }}
-                    }}, 2000);
-                }})();
-                """)
-                
-                await asyncio.sleep(0.5)
-                await page.mouse.click(x, y)
-                await asyncio.sleep(1.5)  # Longer delay between attempts
-                
-                # Check for token after each click
-                try:
-                    token_input = await page.wait_for_selector(
-                        'input[name="cf-turnstile-response"][value]:not([value=""])',
-                        timeout=3000
-                    )
-                    if token_input:
-                        token = await token_input.get_attribute("value")
-                        if token and len(token) > 10:
-                            print(f"✅ Strategic click {i+1} succeeded! Token received ({len(token)} chars)")
-                            return True
-                except:
-                    pass  # Continue to next position
+                    // If we found an actual widget inside, highlight it in bright green
+                    if (container.actualWidget) {{
+                        createHighlight(container.actualWidget.x, container.actualWidget.y, 
+                                      container.actualWidget.width, container.actualWidget.height, 
+                                      'lime', `ACTUAL WIDGET ${{index + 1}}`, 999995);
+                        console.log('Highlighted actual widget inside container:', container.actualWidget);
+                    }}
+                }} else {{
+                    // Regular container
+                    createHighlight(container.x, container.y, container.width, container.height, 
+                                  'blue', `CONTAINER ${{index + 1}}`);
+                    console.log('Highlighted container:', container);
+                }}
+            }});
             
-            print("⚠️ All strategic positions tried, no token received")
-            return False
+            // Highlight checkboxes (green)
+            results.checkboxes.forEach((checkbox, index) => {{
+                const label = `CHECKBOX ${{index + 1}}${{checkbox.checked ? ' ✓' : ''}}`;
+                createHighlight(checkbox.x, checkbox.y, checkbox.width, checkbox.height, 
+                              'green', label);
+                console.log('Highlighted checkbox:', label, checkbox);
+            }});
+            
+            // Highlight verification text (purple)
+            results.textElements.forEach((textEl, index) => {{
+                createHighlight(textEl.x, textEl.y, textEl.width, textEl.height, 
+                              'purple', `TEXT ${{index + 1}}`);
+                console.log('Highlighted text:', textEl);
+            }});
+            
+            // Highlight all verification elements (yellow)
+            results.allElements.forEach((element, index) => {{
+                if (element.clickable) {{
+                    createHighlight(element.x, element.y, element.width, element.height, 
+                                  'yellow', `CLICKABLE ${{index + 1}}`);
+                    console.log('Highlighted clickable element:', element);
+                }}
+            }});
+            
+            console.log('All highlights created. Check the page for colored boxes.');
+            return {{
+                totalHighlights: highlightIndex,
+                iframes: results.iframes.length,
+                containers: results.containers.length,
+                checkboxes: results.checkboxes.length,
+                textElements: results.textElements.length,
+                clickableElements: results.allElements.filter(e => e.clickable).length
+            }};
+        }})();
+        """)
+        
+        # Print detailed information about found elements
+        if turnstile_info['iframes']:
+            print("\n🖼️  IFRAMES FOUND:")
+            for i, iframe in enumerate(turnstile_info['iframes']):
+                print(f"   {i+1}. {'🎯 TURNSTILE' if iframe['isTurnstile'] else '📄 REGULAR'} - "
+                      f"Position: ({iframe['x']}, {iframe['y']}) Size: {iframe['width']}x{iframe['height']}")
+                print(f"      SRC: {iframe['src'][:100]}...")
+                print(f"      ID: {iframe['id']}, Class: {iframe['className']}")
+        
+        if turnstile_info['containers']:
+            print("\n📦 TURNSTILE CONTAINERS FOUND:")
+            for i, container in enumerate(turnstile_info['containers']):
+                container_type = "🎯 WIDGET" if container.get('isTurnstileWidget') else ("📦 LARGE CONTAINER" if container.get('isLargeContainer') else "📦 CONTAINER")
+                print(f"   {i+1}. {container_type} - {container['tagName']} - Position: ({container['x']}, {container['y']}) "
+                      f"Size: {container['width']}x{container['height']}")
+                print(f"      ID: {container['id']}, Class: {container['className']}")
+                
+                if container.get('actualWidget'):
+                    widget = container['actualWidget']
+                    print(f"      🎯 ACTUAL WIDGET INSIDE: Position: ({widget['x']}, {widget['y']}) "
+                          f"Size: {widget['width']}x{widget['height']}")
+                    print(f"         This will be used for coordinate guessing!")
+        
+        if turnstile_info['checkboxes']:
+            print("\n☑️  CHECKBOXES FOUND:")
+            for i, checkbox in enumerate(turnstile_info['checkboxes']):
+                status = "✅ CHECKED" if checkbox['checked'] else "⬜ UNCHECKED"
+                print(f"   {i+1}. {status} - Position: ({checkbox['x']}, {checkbox['y']}) "
+                      f"Size: {checkbox['width']}x{checkbox['height']}")
+                print(f"      Type: {checkbox['type']}, ID: {checkbox['id']}")
+                print(f"      HTML: {checkbox['outerHTML'][:100]}...")
+        
+        if turnstile_info['textElements']:
+            print("\n📝 VERIFICATION TEXT FOUND:")
+            for i, text_el in enumerate(turnstile_info['textElements']):
+                print(f"   {i+1}. Text: '{text_el['content'][:50]}...'")
+                print(f"      Position: ({text_el['x']}, {text_el['y']}) Size: {text_el['width']}x{text_el['height']}")
+        
+        # Return the most promising element for clicking
+        best_target = None
+        
+        # Priority 1: Turnstile iframes
+        turnstile_iframes = [iframe for iframe in turnstile_info['iframes'] if iframe['isTurnstile']]
+        if turnstile_iframes:
+            best_target = {
+                'type': 'turnstile_iframe',
+                'element': turnstile_iframes[0],
+                'click_x': turnstile_iframes[0]['x'] + 20,  # Click near left edge
+                'click_y': turnstile_iframes[0]['y'] + turnstile_iframes[0]['height'] // 2
+            }
+        
+        # Priority 2: Unchecked checkboxes near verification text
+        elif turnstile_info['checkboxes']:
+            unchecked_boxes = [cb for cb in turnstile_info['checkboxes'] if not cb['checked']]
+            if unchecked_boxes:
+                best_target = {
+                    'type': 'checkbox',
+                    'element': unchecked_boxes[0],
+                    'click_x': unchecked_boxes[0]['x'] + unchecked_boxes[0]['width'] // 2,
+                    'click_y': unchecked_boxes[0]['y'] + unchecked_boxes[0]['height'] // 2
+                }
+        
+        # Priority 3: Turnstile containers
+        elif turnstile_info['containers']:
+            best_target = {
+                'type': 'container',
+                'element': turnstile_info['containers'][0],
+                'click_x': turnstile_info['containers'][0]['x'] + 20,
+                'click_y': turnstile_info['containers'][0]['y'] + turnstile_info['containers'][0]['height'] // 2
+            }
+        
+        if best_target:
+            print(f"\n🎯 BEST TARGET IDENTIFIED:")
+            print(f"   Type: {best_target['type']}")
+            print(f"   Click coordinates: ({best_target['click_x']}, {best_target['click_y']})")
+            print(f"   Element details: {best_target['element']}")
         else:
-            print("⚠️ No Turnstile containers found for strategic clicking")
-            return False
-            
+            print("\n❌ No suitable target found for clicking")
+        
+        return turnstile_info, best_target
+        
     except Exception as e:
-        print(f"❌ Error in limited container clicking: {e}")
-        return False
+        print(f"❌ Error inspecting DOM: {e}")
+        import traceback
+        traceback.print_exc()
+        return None, None
 
-async def llm_playwright_verification(tab, llm):
-    """Use LLM to analyze screenshot and get coordinates, then Playwright to click."""
-    playwright = None
-    browser = None
-    page = None
+async def guess_checkbox_coordinates_from_container(turnstile_info):
+    """Guess checkbox coordinates based on Turnstile container position."""
+    if not turnstile_info or not turnstile_info.get('containers'):
+        return []
     
+    print("🎯 Guessing checkbox coordinates from Turnstile container...")
+    
+    container = turnstile_info['containers'][0]  # Use first container
+    
+    # Use actual widget coordinates if available, otherwise use container
+    if container.get('actualWidget'):
+        widget = container['actualWidget']
+        widget_x = widget['x']
+        widget_y = widget['y'] 
+        widget_width = widget['width']
+        widget_height = widget['height']
+        print(f"🎯 Using actual widget: ({widget_x}, {widget_y}) Size: {widget_width}x{widget_height}")
+        reference_element = widget
+    else:
+        widget_x = container['x']
+        widget_y = container['y'] 
+        widget_width = container['width']
+        widget_height = container['height']
+        print(f"📦 Using container: ({widget_x}, {widget_y}) Size: {widget_width}x{widget_height}")
+        reference_element = container
+    
+    # For large containers without detected widgets, focus on likely areas
+    if widget_width > 400 and not container.get('actualWidget'):
+        print("⚠️  Large container detected - using focused search strategy")
+        # Focus on the center area where Turnstile widgets are typically placed
+        center_x = widget_x + (widget_width // 2)
+        center_y = widget_y + (widget_height // 2)
+        
+        guessed_positions = []
+        
+        # Search around the center area
+        for offset_x in [-50, -25, 0, 25, 50]:
+            for offset_y in [-20, 0, 20]:
+                guess_x = center_x + offset_x
+                guess_y = center_y + offset_y
+                
+                # Make sure we're still within the container
+                if (widget_x <= guess_x <= widget_x + widget_width and 
+                    widget_y <= guess_y <= widget_y + widget_height):
+                    
+                    confidence = 'high' if abs(offset_x) <= 25 and abs(offset_y) <= 10 else 'medium'
+                    guessed_positions.append({
+                        'x': guess_x,
+                        'y': guess_y,
+                        'description': f'Center area ({offset_x:+d}, {offset_y:+d})',
+                        'confidence': confidence
+                    })
+    else:
+        # Normal strategy for smaller widgets or detected actual widgets
+        guessed_positions = []
+        
+        # Position 1: Left side, vertically centered (most common)
+        guess1_x = widget_x + 20
+        guess1_y = widget_y + (widget_height // 2)
+        guessed_positions.append({
+            'x': guess1_x,
+            'y': guess1_y,
+            'description': 'Left side, vertically centered',
+            'confidence': 'high'
+        })
+        
+        # Position 2: Upper-left area (typical checkbox position)
+        guess2_x = widget_x + 15
+        guess2_y = widget_y + (widget_height // 3)
+        guessed_positions.append({
+            'x': guess2_x,
+            'y': guess2_y,
+            'description': 'Upper-left area',
+            'confidence': 'medium'
+        })
+        
+        # Position 3: Lower-left area
+        guess3_x = widget_x + 25
+        guess3_y = widget_y + (2 * widget_height // 3)
+        guessed_positions.append({
+            'x': guess3_x,
+            'y': guess3_y,
+            'description': 'Lower-left area',
+            'confidence': 'medium'
+        })
+        
+        # Position 4: Far left edge
+        guess4_x = widget_x + 10
+        guess4_y = widget_y + (widget_height // 2)
+        guessed_positions.append({
+            'x': guess4_x,
+            'y': guess4_y,
+            'description': 'Far left edge',
+            'confidence': 'low'
+        })
+        
+        # Position 5: Center-left (for wider widgets)
+        if widget_width > 200:
+            guess5_x = widget_x + 40
+            guess5_y = widget_y + (widget_height // 2)
+            guessed_positions.append({
+                'x': guess5_x,
+                'y': guess5_y,
+                'description': 'Center-left area',
+                'confidence': 'low'
+            })
+    
+    print(f"🎯 Generated {len(guessed_positions)} coordinate guesses:")
+    for i, pos in enumerate(guessed_positions):
+        print(f"   {i+1}. ({pos['x']}, {pos['y']}) - {pos['description']} ({pos['confidence']} confidence)")
+    
+    return guessed_positions
+
+async def check_turnstile_with_llm(tab, llm):
+    """Use LLM to check if Turnstile verification is still visible on the page."""
     try:
-        # Find the active debug port
-        debug_port = await get_active_debug_port()
+        print("👁️  Using LLM to check if Turnstile is still visible...")
         
-        if not debug_port:
-            print("❌ Could not find Chrome debug port")
-            return False
-        
-        print(f"📸 Taking screenshot with nodriver...")
-        
-        # Take screenshot using nodriver's save_screenshot method
-        screenshot_path = f"/tmp/verification_screenshot_{uuid.uuid4().hex}.png"
+        # Take screenshot
+        screenshot_path = f"/tmp/turnstile_check_{uuid.uuid4().hex}.png"
         await tab.save_screenshot(screenshot_path)
         
-        # Get image dimensions using PIL
-        from PIL import Image
-        with Image.open(screenshot_path) as img:
-            image_width, image_height = img.size
-        print(f"📐 Screenshot dimensions: {image_width}x{image_height}")
-        
-        # Read the screenshot file and convert to base64
+        # Read screenshot and convert to base64
         with open(screenshot_path, 'rb') as f:
             screenshot_bytes = f.read()
         screenshot_base64 = base64.b64encode(screenshot_bytes).decode()
         
-        # Clean up the temporary file
+        # Clean up
         os.remove(screenshot_path)
         
-        print("🤖 Asking LLM to analyze verification popup...")
-        
-        # Create LLM prompt for verification detection
-        verification_prompt = f"""
-        You are an expert at analyzing web page screenshots to find verification challenges like Cloudflare, Turnstile, reCAPTCHA, or hCaptcha.
+        # Create LLM prompt
+        check_prompt = """
+        You are analyzing a web page to determine if a Cloudflare Turnstile verification challenge is still visible.
 
-        IMAGE INFORMATION:
-        - Screenshot dimensions: {image_width} x {image_height} pixels
-        - You are analyzing the FULL PAGE screenshot
+        Look for these indicators that Turnstile is STILL PRESENT:
+        1. Text "Verify you are human" 
+        2. An unchecked checkbox with Cloudflare branding
+        3. Cloudflare logo with verification elements
+        4. Any visible verification challenge UI
 
-        TASK:
-        1. Find any verification popup, checkbox, or challenge that needs to be clicked
-        2. CRITICAL: Look for the actual CHECKBOX or clickable element, not just text
-        3. Provide exact pixel coordinates (x, y) of the CENTER of the clickable element
-        4. Focus on small interactive elements that need to be clicked
+        Look for these indicators that verification is COMPLETE:
+        1. No "Verify you are human" text visible
+        2. Checked checkbox or checkmark
+        3. Success messages like "Verified", "Complete", "Thank you"
+        4. The verification widget has disappeared
+        5. Page has moved to next step/form
 
-        SPECIFIC CLOUDFLARE TURNSTILE DETECTION:
-        - Look for a small square checkbox (typically 16x16 to 24x24 pixels)
-        - Usually positioned to the LEFT of "Verify you are human" text
-        - Has a subtle border or background that makes it stand out
-        - Often has the Cloudflare logo nearby
-        - The checkbox itself is the clickable area, NOT the text
-
-        COORDINATE PRECISION:
-        - Provide coordinates for the CENTER of the checkbox
-        - If you see a checkbox at the left edge of verification text, the checkbox center is typically 10-15 pixels to the left of the text
-        - Be very precise - a few pixels off means missing the target
-
-        VISUAL CLUES:
-        - Checkboxes have borders, backgrounds, or subtle visual differences
-        - Look for small square or rectangular elements that appear interactive
-        - The clickable area is much smaller than the entire verification widget
-
-        Respond in this exact JSON format:
-        {{
-            "found_verification": true/false,
-            "verification_type": "description of what you found",
-            "click_coordinates": {{"x": 123, "y": 456}},
+        Respond with this exact JSON format:
+        {
+            "turnstile_still_visible": true/false,
+            "verification_complete": true/false,
             "confidence": "high/medium/low",
-            "element_description": "describe the visual appearance and exact location of the clickable element",
-            "checkbox_size_estimate": "estimated width x height in pixels"
-        }}
-
-        If no verification is found, set found_verification to false.
+            "reason": "Brief explanation of what you see"
+        }
         """
         
-        # Send image to LLM
         message = HumanMessage(
             content=[
-                {"type": "text", "text": verification_prompt},
+                {"type": "text", "text": check_prompt},
                 {
                     "type": "image_url",
                     "image_url": {"url": f"data:image/png;base64,{screenshot_base64}"}
@@ -1654,270 +2236,140 @@ async def llm_playwright_verification(tab, llm):
         )
         
         response = await llm.ainvoke([message])
-        print(f"🤖 LLM Response: {response.content}")
         
-        # Parse LLM response
-        try:
-            # Clean the response to extract JSON
-            response_text = response.content.strip()
-            if "```json" in response_text:
-                response_text = response_text.split("```json")[1].split("```")[0].strip()
-            elif "```" in response_text:
-                response_text = response_text.split("```")[1].split("```")[0].strip()
+        # Parse response
+        response_text = response.content.strip()
+        if "```json" in response_text:
+            response_text = response_text.split("```json")[1].split("```")[0].strip()
+        elif "```" in response_text:
+            response_text = response_text.split("```")[1].split("```")[0].strip()
+        
+        result = json.loads(response_text)
+        
+        print(f"👁️  LLM Check Result:")
+        print(f"   Turnstile still visible: {result.get('turnstile_still_visible')}")
+        print(f"   Verification complete: {result.get('verification_complete')}")
+        print(f"   Confidence: {result.get('confidence')}")
+        print(f"   Reason: {result.get('reason')}")
+        
+        return result
+        
+    except Exception as e:
+        print(f"❌ Error in LLM Turnstile check: {e}")
+        return {"turnstile_still_visible": True, "verification_complete": False, "confidence": "low", "reason": "Error occurred"}
+
+async def try_coordinate_guessing_method(tab, turnstile_info, llm):
+    """Try clicking on guessed coordinates based on container position - LIMITED TO 2 ATTEMPTS."""
+    print("🎯 Attempting coordinate guessing method (max 2 attempts)...")
+    
+    guessed_positions = await guess_checkbox_coordinates_from_container(turnstile_info)
+    
+    if not guessed_positions:
+        print("❌ No coordinates to guess from")
+        return False
+    
+    # Limit to top 2 guesses (highest confidence)
+    top_guesses = sorted(guessed_positions, key=lambda x: {'high': 3, 'medium': 2, 'low': 1}.get(x['confidence'], 0), reverse=True)[:2]
+    
+    try:
+        # Connect to browser for clicking
+        playwright = await async_playwright().start()
+        debug_port = await get_active_debug_port()
+        
+        if not debug_port:
+            print("❌ Could not find debug port for coordinate guessing, trying default port 9237")
+            debug_port = 9237  # Use our known debug port as fallback
             
-            analysis = json.loads(response_text)
+        browser = await playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{debug_port}")
+        context = browser.contexts[0]
+        page = context.pages[-1]
+        
+        # Try only the top 2 guesses
+        for i, pos in enumerate(top_guesses):
+            print(f"🎯 Attempt {i+1}/2: Clicking ({pos['x']}, {pos['y']}) - {pos['description']} ({pos['confidence']} confidence)")
             
-            if analysis.get("found_verification", False):
-                coords = analysis.get("click_coordinates", {})
-                verification_type = analysis.get("verification_type", "unknown")
-                confidence = analysis.get("confidence", "unknown")
+            # Add visual marker for this guess
+            await tab.evaluate(f"""
+            (function() {{
+                // Create a bright cyan outline marker for guessed position
+                const marker = document.createElement('div');
+                marker.id = 'guess-marker-{i}';
+                marker.style.position = 'fixed';
+                marker.style.left = '{pos['x'] - 12}px';
+                marker.style.top = '{pos['y'] - 12}px';
+                marker.style.width = '24px';
+                marker.style.height = '24px';
+                marker.style.backgroundColor = 'transparent';  // No fill - outline only
+                marker.style.border = '3px solid cyan';
+                marker.style.borderRadius = '50%';
+                marker.style.zIndex = '999999';
+                marker.style.pointerEvents = 'none';
+                marker.style.opacity = '0.9';
+                marker.style.boxShadow = '0 0 15px rgba(0,255,255,0.8), inset 0 0 0 1px rgba(255,255,255,0.8)';
                 
-                print(f"🎯 LLM found {verification_type} (confidence: {confidence})")
-                print(f"🎯 Click coordinates: x={coords.get('x')}, y={coords.get('y')}")
+                // Add number label
+                const label = document.createElement('div');
+                label.style.position = 'absolute';
+                label.style.top = '-30px';
+                label.style.left = '50%';
+                label.style.transform = 'translateX(-50%)';
+                label.style.backgroundColor = 'magenta';
+                label.style.color = 'white';
+                label.style.padding = '2px 6px';
+                label.style.fontSize = '12px';
+                label.style.fontWeight = 'bold';
+                label.style.borderRadius = '3px';
+                label.textContent = 'ATTEMPT {i+1}';
+                marker.appendChild(label);
                 
-                if coords.get('x') and coords.get('y'):
-                    # Connect Playwright to nodriver session
-                    print(f"🎭 Connecting Playwright to debug port {debug_port}...")
-                    playwright = await async_playwright().start()
-                    browser = await playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{debug_port}")
-                    
-                    # Get the active page
-                    contexts = browser.contexts
-                    if contexts:
-                        context = contexts[0]
-                        pages = context.pages
-                        if pages:
-                            page = pages[-1]  # Get the most recent page
-                            print("✅ Successfully connected Playwright to nodriver session")
-                            
-                            print("🎭 Using Playwright to click verification element...")
-                            
-                            # VISUAL DEBUGGING: Create debug directory and take screenshot before clicking
-                            import datetime
-                            debug_timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                            debug_dir = f"/tmp/verification_debug_{debug_timestamp}"
-                            os.makedirs(debug_dir, exist_ok=True)
-                            
-                            pre_click_screenshot = f"{debug_dir}/01_pre_click.png"
-                            await tab.save_screenshot(pre_click_screenshot)
-                            print(f"📸 Pre-click screenshot saved: {pre_click_screenshot}")
-                            
-                            # VISUAL DEBUGGING: Add a visual marker at click coordinates using JavaScript
-                            print(f"🎯 Adding visual marker at coordinates ({coords['x']}, {coords['y']})")
-                            element_info = await tab.evaluate(f"""
-                            (function() {{
-                                // Create a red dot marker
-                                const marker = document.createElement('div');
-                                marker.id = 'debug-click-marker';
-                                marker.style.position = 'fixed';
-                                marker.style.left = '{coords['x'] - 10}px';
-                                marker.style.top = '{coords['y'] - 10}px';
-                                marker.style.width = '20px';
-                                marker.style.height = '20px';
-                                marker.style.backgroundColor = 'red';
-                                marker.style.borderRadius = '50%';
-                                marker.style.zIndex = '999999';
-                                marker.style.border = '3px solid yellow';
-                                marker.style.pointerEvents = 'none';
-                                document.body.appendChild(marker);
-                                
-                                // Log what element is at these coordinates
-                                const elementAtCoords = document.elementFromPoint({coords['x']}, {coords['y']});
-                                console.log('Element at click coordinates:', elementAtCoords);
-                                console.log('Element HTML:', elementAtCoords ? elementAtCoords.outerHTML : 'null');
-                                
-                                return {{
-                                    elementTag: elementAtCoords ? elementAtCoords.tagName : 'null',
-                                    elementClass: elementAtCoords ? elementAtCoords.className : 'null',
-                                    elementId: elementAtCoords ? elementAtCoords.id : 'null',
-                                    elementHTML: elementAtCoords ? elementAtCoords.outerHTML.substring(0, 200) : 'null'
-                                }};
-                            }})();
-                            """)
-                            
-                            # Print element information
-                            print(f"🔍 Element at click coordinates:")
-                            print(f"   Tag: {element_info.get('elementTag', 'unknown')}")
-                            print(f"   Class: {element_info.get('elementClass', 'none')}")
-                            print(f"   ID: {element_info.get('elementId', 'none')}")
-                            print(f"   HTML: {element_info.get('elementHTML', 'none')[:100]}...")
-                            
-                            # Take screenshot with marker
-                            marked_screenshot = f"{debug_dir}/02_marked_click.png"
-                            await tab.save_screenshot(marked_screenshot)
-                            print(f"📍 Screenshot with marker saved: {marked_screenshot}")
-                            
-                            print(f"🖱️  Moving mouse to coordinates ({coords['x']}, {coords['y']})...")
-                            # Human-like mouse movement with slight randomness
-                            import random
-                            
-                            # Add small random offset to appear more human
-                            human_x = coords['x'] + random.randint(-2, 2)
-                            human_y = coords['y'] + random.randint(-2, 2)
-                            
-                            # Move mouse in stages for more human-like behavior
-                            current_x, current_y = coords['x'] - 50, coords['y'] - 50
-                            await page.mouse.move(current_x, current_y)
-                            await asyncio.sleep(0.1)
-                            
-                            # Move closer
-                            await page.mouse.move(human_x - 10, human_y - 10) 
-                            await asyncio.sleep(0.1)
-                            
-                            # Final precise movement
-                            await page.mouse.move(human_x, human_y)
-                            await asyncio.sleep(0.3)
-                            
-                            # Take screenshot showing mouse position
-                            mouse_pos_screenshot = f"{debug_dir}/03_mouse_position.png"
-                            await tab.save_screenshot(mouse_pos_screenshot)
-                            print(f"🖱️  Mouse position screenshot saved: {mouse_pos_screenshot}")
-                            
-                            print(f"🎭 Using iframe-aware Turnstile verification...")
-                            
-                            # Try iframe-aware clicking for better success rate
-                            try:
-                                # Method 1: Find and click Turnstile checkbox in iframe
-                                print("🔍 Method 1: Looking for Turnstile iframe and checkbox...")
-                                
-                                # Find Turnstile iframe
-                                turnstile_frame = None
-                                for frame in page.frames:
-                                    frame_url = frame.url or ""
-                                    if "turnstile" in frame_url.lower() or "challenges.cloudflare.com" in frame_url:
-                                        turnstile_frame = frame
-                                        print(f"✅ Found Turnstile iframe: {frame_url}")
-                                        break
-                                
-                                if turnstile_frame:
-                                    try:
-                                        # Look for checkbox in the iframe
-                                        checkbox = await turnstile_frame.wait_for_selector(
-                                            'input[type="checkbox"], [role="checkbox"]', 
-                                            timeout=5000
-                                        )
-                                        if checkbox:
-                                            print("✅ Found checkbox in Turnstile iframe - clicking it")
-                                            await checkbox.click()
-                                            await asyncio.sleep(2)
-                                            
-                                            # Wait for token to appear
-                                            print("⏳ Waiting for Turnstile token...")
-                                            try:
-                                                token_input = await page.wait_for_selector(
-                                                    'input[name="cf-turnstile-response"][value]:not([value=""])',
-                                                    timeout=8000
-                                                )
-                                                if token_input:
-                                                    token = await token_input.get_attribute("value")
-                                                    if token and len(token) > 10:
-                                                        print(f"✅ Method 1: Turnstile token received! ({len(token)} chars)")
-                                                        return True
-                                            except Exception as token_error:
-                                                print(f"⚠️  Token wait failed: {token_error}")
-                                        
-                                    except Exception as iframe_error:
-                                        print(f"⚠️  Iframe interaction failed: {iframe_error}")
-                                else:
-                                    print("⚠️  No Turnstile iframe found")
-                                
-                                # Method 2: Fallback to limited container-based clicking
-                                print("🔍 Method 2: Fallback to limited container-based clicking...")
-                                return await limited_container_clicking(page, tab)
-                                
-                                # Final check: Wait for Turnstile token
-                                print("⏳ Final check: Waiting for Turnstile token...")
-                                try:
-                                    token_input = await page.wait_for_selector(
-                                        'input[name="cf-turnstile-response"][value]:not([value=""])',
-                                        timeout=5000
-                                    )
-                                    if token_input:
-                                        token = await token_input.get_attribute("value")
-                                        if token and len(token) > 10:
-                                            print(f"✅ Turnstile token found! ({len(token)} chars)")
-                                            return True
-                                except:
-                                    print("⚠️ No token received - verification may have failed")
-                            except Exception as click_error:
-                                print(f"❌ Click methods failed: {click_error}")
-                                
-                            print(f"🔄 All clicking methods attempted")
-                            
-                            # Wait for verification to process
-                            await asyncio.sleep(3)
-                            
-                            # Final verification check - look for Turnstile token
-                            print("🔍 Final verification check - looking for Turnstile token...")
-                            try:
-                                token_input = await page.wait_for_selector(
-                                    'input[name="cf-turnstile-response"][value]:not([value=""])',
-                                    timeout=5000
-                                )
-                                if token_input:
-                                    token = await token_input.get_attribute("value")
-                                    if token and len(token) > 10:
-                                        print(f"✅ Verification successful! Turnstile token received ({len(token)} chars)")
-                                        return True
-                            except:
-                                pass
-                            
-                            # Fallback: Check for other success indicators
-                            verification_gone = await tab.evaluate("""
-                            (function() {
-                                const bodyText = document.body.textContent.toLowerCase();
-                                
-                                const hasVerifyText = bodyText.includes('verify you are human') || 
-                                                    bodyText.includes('security check') || 
-                                                    bodyText.includes('not a robot');
-                                
-                                const hasSuccess = bodyText.includes('success') || 
-                                                 bodyText.includes('verified') || 
-                                                 bodyText.includes('complete');
-                                
-                                return {
-                                    verificationGone: !hasVerifyText,
-                                    hasSuccess: hasSuccess
-                                };
-                            })();
-                            """)
-                            
-                            if verification_gone['verificationGone'] or verification_gone['hasSuccess']:
-                                print("✅ Verification appears successful!")
-                                return True
-                            else:
-                                print("⚠️  Verification status unclear")
-                                return False
-                else:
-                    print("❌ LLM didn't provide valid coordinates")
+                document.body.appendChild(marker);
+                
+                // Remove after 4 seconds
+                setTimeout(() => {{
+                    if (marker.parentNode) {{
+                        marker.parentNode.removeChild(marker);
+                    }}
+                }}, 4000);
+            }})();
+            """)
+            
+            await asyncio.sleep(0.5)  # Let marker appear
+            
+            # Click the guessed position
+            await page.mouse.click(pos['x'], pos['y'])
+            print(f"   🖱️  Clicked at ({pos['x']}, {pos['y']})")
+            
+            # Wait 2 seconds as requested
+            print("   ⏳ Waiting 2 seconds...")
+            await asyncio.sleep(2)
+            
+            # Use LLM to check if Turnstile is still visible
+            llm_check = await check_turnstile_with_llm(tab, llm)
+            
+            if llm_check.get('verification_complete') or not llm_check.get('turnstile_still_visible'):
+                print(f"✅ SUCCESS on attempt {i+1}! LLM detected verification completion")
+                print(f"   Reason: {llm_check.get('reason')}")
+                await browser.close()
+                await playwright.stop()
+                return True
             else:
-                print("ℹ️  LLM didn't find any verification elements")
+                print(f"   ❌ Attempt {i+1} failed - Turnstile still visible")
+                print(f"   Reason: {llm_check.get('reason')}")
                 
-        except json.JSONDecodeError as e:
-            print(f"❌ Could not parse LLM response as JSON: {e}")
-            print(f"Raw response: {response.content}")
-        except Exception as e:
-            print(f"❌ Error processing LLM response: {e}")
+                # Don't continue if this was the last attempt
+                if i == len(top_guesses) - 1:
+                    break
+                    
+                print(f"   🔄 Preparing for attempt {i+2}...")
         
+        print("❌ All coordinate guessing attempts failed")
+        await browser.close()
+        await playwright.stop()
         return False
         
     except Exception as e:
-        print(f"❌ Error in LLM + Playwright verification: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"❌ Error in coordinate guessing: {e}")
         return False
-    finally:
-        # Clean up Playwright resources
-        if browser:
-            try:
-                await browser.close()
-            except:
-                pass
-        if playwright:
-            try:
-                await playwright.stop()
-            except:
-                pass
 
 if __name__ == "__main__":
-    uvicorn.run("nodriver_apply:app", host="0.0.0.0", port=8000, reload=True) 
+    uvicorn.run("nodrive_appy_test:app", host="0.0.0.0", port=8000, reload=True)

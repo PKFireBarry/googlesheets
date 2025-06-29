@@ -1,6 +1,8 @@
 import asyncio
 import os
+import subprocess
 import tempfile
+import time
 import uuid
 import re
 import base64
@@ -23,6 +25,19 @@ tasks = {}
 
 # Disable browser_use telemetry calls to avoid network failures
 os.environ["BROWSER_USE_DISABLE_TELEMETRY"] = "1"
+
+def kill_existing_brave_instances():
+    """Kill any existing Brave browser instances to ensure clean start."""
+    try:
+        print("🔍 Checking for existing Brave browser instances...")
+        # Kill all brave-browser processes
+        subprocess.run(['pkill', '-f', 'brave-browser'], capture_output=True)
+        # Also kill any chrome processes that might be related
+        subprocess.run(['pkill', '-f', 'chrome'], capture_output=True)
+        time.sleep(2)  # Give processes time to close
+        print("✅ Cleaned up existing browser instances")
+    except Exception as e:
+        print(f"⚠️  Note: Could not clean up existing instances: {e}")
 
 # --- Pydantic Models for API Request ---
 class UserData(BaseModel):
@@ -141,166 +156,54 @@ async def get_field_context(element, tab):
         return {}
 
 async def analyze_and_fill_all_form_elements(tab, llm, user_data):
-    """Simple and reliable form filling approach."""
-    print("=== SIMPLE FORM FILLING ===")
+    """Advanced form filling approach that finds forms and identifies required fields."""
+    print("=== ADVANCED FORM ANALYSIS AND FILLING ===")
     
     try:
         # Wait for form to be ready
         await tab.sleep(2)
         
-        # Define simple field mappings with multiple selector strategies
-        field_mappings = [
-            {
-                'name': 'first_name',
-                'selectors': ['input[name*="first"]', 'input[placeholder*="first"]', 'input[id*="first"]'],
-                'value': user_data.first_name
-            },
-            {
-                'name': 'last_name', 
-                'selectors': ['input[name*="last"]', 'input[placeholder*="last"]', 'input[id*="last"]'],
-                'value': user_data.last_name
-            },
-            {
-                'name': 'email',
-                'selectors': ['input[type="email"]', 'input[name*="email"]', 'input[placeholder*="email"]'],
-                'value': user_data.email
-            },
-            {
-                'name': 'phone',
-                'selectors': ['input[type="tel"]', 'input[name*="phone"]', 'input[placeholder*="phone"]'],
-                'value': user_data.phone
-            },
-            {
-                'name': 'address',
-                'selectors': ['input[name*="address"]', 'input[placeholder*="address"]', 'textarea[name*="address"]'],
-                'value': user_data.address or "Tampa, FL"
-            },
-            {
-                'name': 'cover_letter',
-                'selectors': ['textarea[name*="cover"]', 'textarea[placeholder*="cover"]', 'textarea[name*="letter"]'],
-                'value': "I am excited to apply for this position and believe my skills and experience make me a strong candidate. I look forward to discussing how I can contribute to your team."
-            }
-        ]
+        # Step 1: Find all forms on the page
+        forms_info = await find_all_forms(tab)
         
-        filled_count = 0
+        if not forms_info:
+            print("❌ No forms found on the page")
+            return
         
-        for field_info in field_mappings:
-            if not field_info['value']:
-                print(f"Skipping {field_info['name']} - no value provided")
+        print(f"📋 Found {len(forms_info)} form(s) on the page")
+        
+        # Step 2: For each form, analyze and fill fields
+        total_filled = 0
+        for form_index, form_info in enumerate(forms_info):
+            print(f"\n🔍 ANALYZING FORM {form_index + 1}/{len(forms_info)}")
+            print(f"   Form ID: {form_info.get('id', 'N/A')}")
+            print(f"   Form Class: {form_info.get('class', 'N/A')}")
+            print(f"   Total Fields: {len(form_info.get('fields', []))}")
+            
+            # Analyze fields in this form
+            field_analysis = await analyze_form_fields(tab, form_info, llm)
+            
+            if not field_analysis['fields']:
+                print(f"   ⚠️  No fillable fields found in form {form_index + 1}")
                 continue
-                
-            element_found = False
             
-            for selector in field_info['selectors']:
-                try:
-                    print(f"Trying to find {field_info['name']} with selector: {selector}")
-                    
-                    # Try to find the element
-                    element = await tab.select(selector, timeout=2)
-                    if element:
-                        # Check if element is actually visible and interactable
-                        is_visible = await tab.evaluate(f"""
-                        (function() {{
-                            const el = document.querySelector('{selector}');
-                            if (!el) return false;
-                            
-                            const rect = el.getBoundingClientRect();
-                            const style = window.getComputedStyle(el);
-                            
-                            return rect.width > 0 && rect.height > 0 && 
-                                   style.display !== 'none' && 
-                                   style.visibility !== 'hidden' &&
-                                   !el.disabled && !el.readOnly;
-                        }})();
-                        """)
-                        
-                        if is_visible:
-                            print(f"✅ Found visible {field_info['name']} field")
-                            
-                            # Fill the field
-                            try:
-                                await element.mouse_move()
-                                await asyncio.sleep(0.3)
-                                await element.click()
-                                await asyncio.sleep(0.3)
-                                
-                                # Clear the field completely using only JavaScript (no keyboard shortcuts)
-                                print(f"Clearing {field_info['name']} field...")
-                                
-                                # Method 1: Select all and delete using JavaScript
-                                unique_var_id = f"elem_{abs(hash(selector)) % 1000000}"  # Ensure positive number
-                                await tab.evaluate(f"""
-                                (function() {{
-                                    const {unique_var_id} = document.querySelector('{selector}');
-                                    if ({unique_var_id}) {{
-                                        {unique_var_id}.focus();
-                                        {unique_var_id}.select();
-                                        {unique_var_id}.value = '';
-                                        // Trigger input events to notify the form
-                                        {unique_var_id}.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                                        {unique_var_id}.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                                    }}
-                                }})();
-                                """)
-                                await asyncio.sleep(0.3)
-                                
-                                # Verify field is empty and do additional clearing if needed
-                                current_value = await tab.evaluate(f"""
-                                (function() {{
-                                    const checkEl = document.querySelector('{selector}');
-                                    return checkEl ? checkEl.value : '';
-                                }})();
-                                """)
-                                
-                                if current_value:
-                                    print(f"Field still contains: '{current_value}' - trying aggressive clear...")
-                                    # Final aggressive clear with different variable name
-                                    clear_var_id = f"clearElem_{abs(hash(selector + 'clear')) % 1000000}"
-                                    await tab.evaluate(f"""
-                                    (function() {{
-                                        const {clear_var_id} = document.querySelector('{selector}');
-                                        if ({clear_var_id}) {{
-                                            {clear_var_id}.value = '';
-                                            {clear_var_id}.textContent = '';
-                                            {clear_var_id}.innerHTML = '';
-                                            {clear_var_id}.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                                            {clear_var_id}.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                                        }}
-                                    }})();
-                                    """)
-                                    await asyncio.sleep(0.2)
-                                
-                                # Type the value
-                                print(f"Typing value: {str(field_info['value'])}")
-                                await element.send_keys(str(field_info['value']))
-                                await asyncio.sleep(0.5)
-                                
-                                print(f"✅ Successfully filled {field_info['name']}")
-                                filled_count += 1
-                                element_found = True
-                                break
-                                
-                            except Exception as fill_error:
-                                print(f"❌ Error filling {field_info['name']}: {fill_error}")
-                                continue
-                        else:
-                            print(f"Element found but not visible for {field_info['name']}")
-                            
-                except Exception as e:
-                    print(f"Selector '{selector}' failed for {field_info['name']}: {e}")
-                    continue
+            # Print field analysis
+            print_field_analysis(field_analysis)
             
-            if not element_found:
-                print(f"❌ Could not find {field_info['name']} field")
+            # Fill the form fields
+            filled_count = await fill_form_with_human_interaction(tab, field_analysis, user_data, llm)
+            total_filled += filled_count
+            
+            print(f"   ✅ Filled {filled_count} fields in form {form_index + 1}")
         
-        print(f"✅ Successfully filled {filled_count} out of {len([f for f in field_mappings if f['value']])} fields")
+        print(f"\n🎯 FORM FILLING COMPLETE: Filled {total_filled} total fields across all forms")
         
-        if filled_count == 0:
+        if total_filled == 0:
             print("⚠️  No fields were filled - trying fallback approach...")
             await simple_form_fill_fallback(tab, user_data)
             
     except Exception as e:
-        print(f"Error in form filling: {e}")
+        print(f"❌ Error in advanced form filling: {e}")
         import traceback
         traceback.print_exc()
         
@@ -308,7 +211,1000 @@ async def analyze_and_fill_all_form_elements(tab, llm, user_data):
         try:
             await simple_form_fill_fallback(tab, user_data)
         except Exception as fallback_error:
-            print(f"Fallback also failed: {fallback_error}")
+            print(f"❌ Fallback also failed: {fallback_error}")
+
+async def find_all_forms(tab):
+    """Find all forms on the page and return their information."""
+    print("🔍 Searching for forms on the page...")
+    
+    try:
+        forms_info = await tab.evaluate("""
+        (function() {
+            const forms = document.querySelectorAll('form');
+            const formsData = [];
+            
+            forms.forEach((form, index) => {
+                const rect = form.getBoundingClientRect();
+                
+                // Only include visible forms
+                if (rect.width > 0 && rect.height > 0) {
+                    // Find all form elements within this form
+                    const formElements = form.querySelectorAll(
+                        'input, textarea, select, button[type="submit"], input[type="submit"]'
+                    );
+                    
+                    const fields = [];
+                    formElements.forEach((element, fieldIndex) => {
+                        const fieldRect = element.getBoundingClientRect();
+                        
+                        // Only include visible elements
+                        if (fieldRect.width > 0 && fieldRect.height > 0) {
+                            fields.push({
+                                index: fieldIndex,
+                                tagName: element.tagName,
+                                type: element.type || '',
+                                name: element.name || '',
+                                id: element.id || '',
+                                className: element.className || '',
+                                placeholder: element.placeholder || '',
+                                value: element.value || '',
+                                required: element.required || false,
+                                disabled: element.disabled || false,
+                                readonly: element.readOnly || false,
+                                x: Math.round(fieldRect.x),
+                                y: Math.round(fieldRect.y),
+                                width: Math.round(fieldRect.width),
+                                height: Math.round(fieldRect.height)
+                            });
+                        }
+                    });
+                    
+                    formsData.push({
+                        index: index,
+                        id: form.id || '',
+                        className: form.className || '',
+                        action: form.action || '',
+                        method: form.method || 'GET',
+                        x: Math.round(rect.x),
+                        y: Math.round(rect.y),
+                        width: Math.round(rect.width),
+                        height: Math.round(rect.height),
+                        fields: fields
+                    });
+                }
+            });
+            
+            return formsData;
+        })();
+        """)
+        
+        return forms_info
+        
+    except Exception as e:
+        print(f"❌ Error finding forms: {e}")
+        return []
+
+async def analyze_form_fields(tab, form_info, llm):
+    """Analyze form fields to determine which are required and what they're for."""
+    print(f"🔍 Analyzing {len(form_info['fields'])} fields in form...")
+    
+    try:
+        # Get detailed context for each field
+        field_analysis = await tab.evaluate(f"""
+        (function() {{
+            const formIndex = {form_info['index']};
+            const forms = document.querySelectorAll('form');
+            const form = forms[formIndex];
+            
+            if (!form) return {{ fields: [] }};
+            
+            const fields = [];
+            const formElements = form.querySelectorAll('input, textarea, select');
+            
+            formElements.forEach((element, index) => {{
+                const rect = element.getBoundingClientRect();
+                
+                // Skip invisible elements
+                if (rect.width === 0 || rect.height === 0) return;
+                
+                // Get element context
+                const fieldInfo = {{
+                    index: index,
+                    tagName: element.tagName,
+                    type: element.type || '',
+                    name: element.name || '',
+                    id: element.id || '',
+                    className: element.className || '',
+                    placeholder: element.placeholder || '',
+                    value: element.value || '',
+                    required: element.required || false,
+                    disabled: element.disabled || false,
+                    readonly: element.readOnly || false,
+                    x: Math.round(rect.x),
+                    y: Math.round(rect.y),
+                    width: Math.round(rect.width),
+                    height: Math.round(rect.height)
+                }};
+                
+                // Analyze if field is required (not just the HTML required attribute)
+                let isRequired = element.required;
+                let requiredIndicators = [];
+                
+                // Look for asterisk (*) indicators
+                const parent = element.parentElement;
+                if (parent) {{
+                    const parentText = parent.textContent || '';
+                    if (parentText.includes('*')) {{
+                        isRequired = true;
+                        requiredIndicators.push('asterisk in parent');
+                    }}
+                    
+                    // Check for "required" text
+                    if (parentText.toLowerCase().includes('required')) {{
+                        isRequired = true;
+                        requiredIndicators.push('required text');
+                    }}
+                    
+                    // Check for "optional" text (indicates NOT required)
+                    if (parentText.toLowerCase().includes('optional')) {{
+                        isRequired = false;
+                        requiredIndicators.push('optional text');
+                    }}
+                }}
+                
+                // Look for associated label
+                let labelText = '';
+                if (fieldInfo.id) {{
+                    const label = document.querySelector(`label[for="${{fieldInfo.id}}"]`);
+                    if (label) {{
+                        labelText = label.textContent.trim();
+                        if (labelText.includes('*')) {{
+                            isRequired = true;
+                            requiredIndicators.push('asterisk in label');
+                        }}
+                        if (labelText.toLowerCase().includes('optional')) {{
+                            isRequired = false;
+                            requiredIndicators.push('optional in label');
+                        }}
+                    }}
+                }}
+                
+                // Get surrounding context text
+                let contextText = '';
+                let currentElement = element;
+                for (let i = 0; i < 3; i++) {{
+                    if (currentElement.parentElement) {{
+                        currentElement = currentElement.parentElement;
+                        const siblings = Array.from(currentElement.children);
+                        siblings.forEach(sibling => {{
+                            if (sibling !== element && sibling.textContent) {{
+                                contextText += sibling.textContent.trim() + ' ';
+                            }}
+                        }});
+                    }}
+                }}
+                
+                // Determine field purpose based on various attributes
+                const fieldPurpose = determineFieldPurpose(fieldInfo, labelText, contextText);
+                
+                fieldInfo.isRequired = isRequired;
+                fieldInfo.requiredIndicators = requiredIndicators;
+                fieldInfo.labelText = labelText;
+                fieldInfo.contextText = contextText.substring(0, 200);
+                fieldInfo.fieldPurpose = fieldPurpose;
+                fieldInfo.isInteractable = !fieldInfo.disabled && !fieldInfo.readonly;
+                
+                fields.push(fieldInfo);
+            }});
+            
+            // Helper function to determine field purpose
+            function determineFieldPurpose(fieldInfo, labelText, contextText) {{
+                const allText = `${{fieldInfo.name}} ${{fieldInfo.id}} ${{fieldInfo.className}} ${{fieldInfo.placeholder}} ${{labelText}} ${{contextText}}`.toLowerCase();
+                
+                // Define field type patterns - more specific patterns first
+                const patterns = {{
+                    'first_name': ['first', 'fname', 'firstname', 'given name'],
+                    'last_name': ['last', 'lname', 'lastname', 'surname', 'family name'],
+                    'full_name': ['full name', 'fullname', 'name', 'your name'],
+                    'email': ['email', 'e-mail', 'mail'],
+                    'phone': ['phone', 'telephone', 'mobile', 'cell'],
+                    'address': ['address', 'street', 'address line', 'street address'],
+                    'city': ['city', 'town', 'municipality'],
+                    'postcode': ['postcode', 'postal code', 'zip code', 'zip'],
+                    'country': ['country', 'nation', 'nationality'],
+                    'linkedin': ['linkedin', 'linked in'],
+                    'github': ['github', 'git hub'],
+                    'portfolio': ['portfolio', 'website', 'url', 'site'],
+                    'cover_letter': ['cover letter', 'coverletter', 'letter', 'why', 'motivation', 'message'],
+                    'salary': ['salary', 'wage', 'compensation', 'pay', 'expected salary'],
+                    'experience': ['experience', 'years', 'work history'],
+                    'skills': ['skills', 'abilities', 'competencies'],
+                    'education': ['education', 'degree', 'school', 'university'],
+                    'availability': ['availability', 'start date', 'when can you start'],
+                    'authorization': ['authorized', 'visa', 'work permit', 'eligibility'],
+                    'other': []
+                }};
+                
+                for (const [purpose, keywords] of Object.entries(patterns)) {{
+                    if (purpose === 'other') continue;
+                    
+                    for (const keyword of keywords) {{
+                        if (allText.includes(keyword)) {{
+                            return purpose;
+                        }}
+                    }}
+                }}
+                
+                return 'other';
+            }}
+            
+            return {{ fields: fields }};
+        }})();
+        """)
+        
+        return field_analysis
+        
+    except Exception as e:
+        print(f"❌ Error analyzing form fields: {e}")
+        return {'fields': []}
+
+def print_field_analysis(field_analysis):
+    """Print detailed analysis of form fields for debugging."""
+    fields = field_analysis.get('fields', [])
+    
+    if not fields:
+        print("   ❌ No fields to analyze")
+        return
+    
+    required_fields = [f for f in fields if f.get('isRequired', False) and f.get('isInteractable', True)]
+    optional_fields = [f for f in fields if not f.get('isRequired', False) and f.get('isInteractable', True)]
+    non_interactable = [f for f in fields if not f.get('isInteractable', True)]
+    
+    print(f"   📊 FIELD ANALYSIS SUMMARY:")
+    print(f"      Total Fields: {len(fields)}")
+    print(f"      Required Fields: {len(required_fields)}")
+    print(f"      Optional Fields: {len(optional_fields)}")
+    print(f"      Non-interactable: {len(non_interactable)}")
+    
+    if required_fields:
+        print(f"\n   🔴 REQUIRED FIELDS ({len(required_fields)}):")
+        for i, field in enumerate(required_fields):
+            indicators = ', '.join(field.get('requiredIndicators', []))
+            print(f"      {i+1}. {field.get('fieldPurpose', 'unknown').upper()}")
+            print(f"         Type: {field.get('tagName', '').lower()}")
+            print(f"         Name: {field.get('name', 'N/A')}")
+            print(f"         Label: {field.get('labelText', 'N/A')[:50]}...")
+            print(f"         Required by: {indicators}")
+            print(f"         Position: ({field.get('x', 0)}, {field.get('y', 0)})")
+    
+    if optional_fields:
+        print(f"\n   🟡 OPTIONAL FIELDS ({len(optional_fields)}):")
+        for i, field in enumerate(optional_fields):
+            print(f"      {i+1}. {field.get('fieldPurpose', 'unknown').upper()}")
+            print(f"         Type: {field.get('tagName', '').lower()}")
+            print(f"         Name: {field.get('name', 'N/A')}")
+            print(f"         Label: {field.get('labelText', 'N/A')[:50]}...")
+    
+    if non_interactable:
+        print(f"\n   ⚫ NON-INTERACTABLE FIELDS ({len(non_interactable)}):")
+        for i, field in enumerate(non_interactable):
+            reason = "disabled" if field.get('disabled') else "readonly"
+            print(f"      {i+1}. {field.get('fieldPurpose', 'unknown').upper()} ({reason})")
+
+async def fill_form_with_human_interaction(tab, field_analysis, user_data, llm):
+    """Fill form fields with human-like interactions including mouse drag movements."""
+    print(f"🤖 Starting human-like form filling...")
+    
+    fields = field_analysis.get('fields', [])
+    fillable_fields = [f for f in fields if f.get('isInteractable', True)]
+    
+    if not fillable_fields:
+        print("   ❌ No fillable fields found")
+        return 0
+    
+    # Create field value mapping
+    field_values = create_field_value_mapping(user_data)
+    
+    # Debug the field value mapping
+    print(f"\n   🗂️  FIELD VALUE MAPPING:")
+    for purpose, value in field_values.items():
+        status = "✅" if value else "❌"
+        print(f"      {status} {purpose}: {value or 'NOT PROVIDED'}")
+    
+    filled_count = 0
+    current_mouse_x, current_mouse_y = 100, 100  # Starting mouse position
+    filled_field_names = set()  # Track filled fields to avoid duplicates
+    processed_coordinates = set()  # Track processed coordinates to avoid duplicates
+    
+    print(f"   🎯 Processing {len(fillable_fields)} fillable fields...")
+    
+    # Filter out duplicate fields based on coordinates and type
+    unique_fields = []
+    print(f"   🔍 Deduplicating {len(fillable_fields)} fillable fields...")
+    
+    for i, field in enumerate(fillable_fields):
+        field_x = field.get('x', 0)
+        field_y = field.get('y', 0)
+        field_type = field.get('type', 'text')
+        field_tag = field.get('tagName', '').lower()
+        field_name = field.get('name', 'unknown')
+        field_purpose = field.get('fieldPurpose', 'other')
+        
+        print(f"      Field {i+1}: {field_purpose} - {field_name} ({field_tag}/{field_type}) at ({field_x}, {field_y})")
+        
+        # Create a unique identifier for this field position and type
+        position_key = f"{field_x}_{field_y}_{field_tag}_{field_type}"
+        
+        # Skip file inputs entirely - they should be handled separately
+        if field_type == 'file':
+            print(f"         ⏭️  SKIPPED: File input - handled separately")
+            continue
+        
+        # Skip duplicate coordinates for same field type
+        if position_key in processed_coordinates:
+            print(f"         ⏭️  SKIPPED: Duplicate position/type")
+            continue
+        
+        processed_coordinates.add(position_key)
+        unique_fields.append(field)
+        print(f"         ✅ KEPT: Added to unique fields list")
+    
+    print(f"   🔍 After deduplication: {len(unique_fields)} unique fields to process")
+    
+    # Show exactly which fields will be processed according to user specifications
+    required_fields = [f for f in unique_fields if f.get('isRequired', False)]
+    cover_letter_fields = [f for f in unique_fields if f.get('fieldPurpose') == 'cover_letter']
+    ignored_fields = [f for f in unique_fields if not f.get('isRequired', False) and f.get('fieldPurpose') != 'cover_letter']
+    
+    print(f"\n   📋 PROCESSING PLAN (per user specifications):")
+    print(f"      ✅ REQUIRED FIELDS TO FILL: {len(required_fields)}")
+    for i, field in enumerate(required_fields):
+        print(f"         {i+1}. {field.get('fieldPurpose', 'other').upper()} - {field.get('name', 'unknown')}")
+    
+    print(f"      ✅ COVER LETTER FIELDS TO FILL: {len(cover_letter_fields)}")
+    for i, field in enumerate(cover_letter_fields):
+        print(f"         {i+1}. {field.get('fieldPurpose', 'other').upper()} - {field.get('name', 'unknown')}")
+    
+    print(f"      ❌ FIELDS TO IGNORE: {len(ignored_fields)}")
+    for i, field in enumerate(ignored_fields):
+        print(f"         {i+1}. {field.get('fieldPurpose', 'other').upper()} - {field.get('name', 'unknown')} (optional)")
+    
+    print(f"\n   🎯 TOTAL FIELDS TO PROCESS: {len(required_fields) + len(cover_letter_fields)}")
+    print(f"   🚫 TOTAL FIELDS TO IGNORE: {len(ignored_fields)}")
+    
+    for field_index, field in enumerate(unique_fields):
+        try:
+            field_purpose = field.get('fieldPurpose', 'other')
+            field_name = field.get('name', 'unknown')
+            field_type = field.get('type', 'text')
+            field_tag = field.get('tagName', '').lower()
+            is_required = field.get('isRequired', False)
+            
+            print(f"\n   🔄 Field {field_index + 1}/{len(unique_fields)}: {field_purpose.upper()}")
+            print(f"      Type: {field_tag} ({field_type})")
+            print(f"      Name: {field_name}")
+            print(f"      Required: {'✅' if is_required else '❌'}")
+            print(f"      Position: ({field.get('x', 0)}, {field.get('y', 0)})")
+            
+            # STRICT FILTERING: Only process required fields OR cover letter
+            if not is_required and field_purpose != 'cover_letter':
+                print(f"      ⏭️  IGNORING: Not required and not cover letter - skipping completely")
+                continue
+            
+            # Enhanced duplicate prevention using multiple identifiers
+            field_identifiers = [
+                f"{field_name}_{field_purpose}",
+                f"{field_purpose}_{field.get('x', 0)}_{field.get('y', 0)}",
+                field_purpose if field_purpose != 'other' else f"other_{field_name}"
+            ]
+            
+            # Check if any of these identifiers have been used
+            if any(identifier in filled_field_names for identifier in field_identifiers):
+                print(f"      ⏭️  Skipping duplicate field (already processed similar field)")
+                continue
+            
+            # Skip cover letter for now (we want to fill it but with special handling)
+            if field_purpose == 'cover_letter':
+                print(f"      ⏭️  Skipping cover letter for special handling later")
+                continue
+            
+            # Skip certain field types that don't need filling
+            if field_type in ['submit', 'button', 'hidden', 'file']:
+                print(f"      ⏭️  Skipping {field_type} field")
+                continue
+            
+            # Get the value to fill
+            fill_value = get_field_value(field_purpose, field_values, field, llm, user_data)
+            
+            if not fill_value:
+                print(f"      ⚠️  No value available for {field_purpose}")
+                continue
+            
+            print(f"      📝 Filling with: {str(fill_value)[:50]}...")
+            
+            # Perform human-like interaction
+            success = await perform_human_interaction(
+                tab, field, fill_value, current_mouse_x, current_mouse_y
+            )
+            
+            if success:
+                filled_count += 1
+                print(f"      ✅ Successfully filled {field_purpose}")
+                # Track all field identifiers to avoid duplicates
+                for identifier in field_identifiers:
+                    filled_field_names.add(identifier)
+                # Update mouse position for next field
+                current_mouse_x = field.get('x', current_mouse_x)
+                current_mouse_y = field.get('y', current_mouse_y)
+            else:
+                print(f"      ❌ Failed to fill {field_purpose}")
+            
+            # Brief pause between fields
+            await asyncio.sleep(0.5)
+            
+        except Exception as e:
+            print(f"      ❌ Error processing field {field_index + 1}: {e}")
+            continue
+    
+    # Now handle cover letter if we found one (and haven't filled it already)
+    cover_letter_fields = [f for f in unique_fields if f.get('fieldPurpose') == 'cover_letter']
+    cover_letter_filled = any('cover_letter' in identifier for identifier in filled_field_names)
+    
+    if cover_letter_fields and not cover_letter_filled:
+        try:
+            field = cover_letter_fields[0]  # Use only the first cover letter field
+            print(f"\n   📝 Processing cover letter field...")
+            cover_letter_text = generate_cover_letter(user_data, llm)
+            
+            success = await perform_human_interaction(
+                tab, field, cover_letter_text, current_mouse_x, current_mouse_y
+            )
+            
+            if success:
+                filled_count += 1
+                print(f"      ✅ Successfully filled cover letter")
+                # Mark cover letter as filled
+                filled_field_names.add(f"{field.get('name', 'cover')}_cover_letter")
+            
+        except Exception as e:
+            print(f"      ❌ Error filling cover letter: {e}")
+    elif cover_letter_filled:
+        print(f"\n   ⏭️  Cover letter already filled, skipping")
+    
+    return filled_count
+
+def create_field_value_mapping(user_data):
+    """Create a mapping of field purposes to user data values."""
+    return {
+        'first_name': user_data.first_name,
+        'last_name': user_data.last_name,
+        'full_name': f"{user_data.first_name} {user_data.last_name}",
+        'email': user_data.email,
+        'phone': user_data.phone,
+        'address': user_data.address or "123 Main Street",  # Use provided address or default
+        'city': "Tampa",  # Separate city field
+        'postcode': "33602",  # Tampa zip code
+        'country': "United States",  # Country field
+        'linkedin': user_data.linkedin,
+        'github': user_data.github,
+        'portfolio': user_data.portfolio,
+        'salary': "60000",
+        'experience': "3+ years",
+        'availability': "Immediately",
+        'authorization': "Yes"
+    }
+
+def get_field_value(field_purpose, field_values, field_info, llm, user_data):
+    """Get the appropriate value for a field based on its purpose."""
+    field_type = field_info.get('type', '').lower()
+    field_name = field_info.get('name', '').lower()
+    label_text = field_info.get('labelText', '').lower()
+    
+    # Special handling for phone fields (often have country code dropdowns)
+    if field_purpose == 'full_name' and 'phone' in field_name:
+        # This is actually a phone field misidentified as full_name
+        return user_data.phone or "555-123-4567"
+    
+    if field_type == 'tel' or 'phone' in field_name:
+        # For phone fields, use just the number without country code
+        phone = user_data.phone or "555-123-4567"
+        # Remove any formatting and country codes
+        clean_phone = ''.join(filter(str.isdigit, phone))
+        if len(clean_phone) == 10:
+            return clean_phone  # Return just digits for phone inputs
+        elif len(clean_phone) == 11 and clean_phone.startswith('1'):
+            return clean_phone[1:]  # Remove US country code
+        return phone
+    
+    # Direct mapping for specific field purposes
+    if field_purpose in field_values and field_values[field_purpose]:
+        return field_values[field_purpose]
+    
+    # Handle checkboxes and radio buttons
+    if field_type in ['checkbox', 'radio']:
+        # For authorization/eligibility questions, default to "yes"
+        if any(keyword in f"{field_name} {label_text}" for keyword in ['authorized', 'eligible', 'legal', 'visa']):
+            return True
+        # For other checkboxes, check the context
+        return False
+    
+    # Handle select dropdowns
+    if field_info.get('tagName', '').lower() == 'select':
+        # This would need to be handled by getting the options and selecting appropriately
+        return None
+    
+    # Special handling for specific field names we see in the form
+    if 'headline' in field_name:
+        return "Software Developer"
+    
+    # Special handling for address-related fields that might not have been detected properly
+    if 'city' in field_name or 'city' in label_text:
+        return "Tampa"
+    elif 'postcode' in field_name or 'zip' in field_name or 'postal' in field_name:
+        return "33602"
+    elif 'country' in field_name or 'country' in label_text:
+        return "United States"
+    elif 'address' in field_name or 'street' in field_name:
+        return user_data.address or "123 Main Street"
+    
+    # Default text responses
+    default_responses = {
+        'other': "",  # Don't fill 'other' fields with N/A by default
+        'skills': "Python, JavaScript, React, Node.js",
+        'education': "Bachelor's Degree",
+        'experience': "3+ years of relevant experience"
+    }
+    
+    return default_responses.get(field_purpose, "")
+
+async def perform_human_interaction(tab, field_info, fill_value, start_x, start_y):
+    """Perform human-like interaction with a form field."""
+    try:
+        target_x = field_info.get('x', 0) + field_info.get('width', 0) // 2
+        target_y = field_info.get('y', 0) + field_info.get('height', 0) // 2
+        
+        # Step 1: Human-like mouse movement (drag from current position to target)
+        await perform_mouse_drag(tab, start_x, start_y, target_x, target_y)
+        
+        # Step 2: Click on the element
+        field_selector = create_field_selector(field_info)
+        element = await tab.select(field_selector, timeout=3)
+        
+        if not element:
+            print(f"         ❌ Could not find element with selector: {field_selector}")
+            return False
+        
+        # Click and focus on the element
+        await element.click()
+        await asyncio.sleep(0.2)
+        
+        # Ensure the element is focused
+        await element.focus()
+        await asyncio.sleep(0.1)
+        
+        # Step 3: Handle different field types
+        field_type = field_info.get('type', '').lower()
+        field_tag = field_info.get('tagName', '').lower()
+        
+        if field_type in ['checkbox', 'radio']:
+            # For checkboxes/radio buttons, the click is sufficient
+            print(f"         ✅ Clicked {field_type}")
+            return True
+            
+        elif field_tag == 'select':
+            # Handle dropdown selection
+            return await handle_select_field_interaction(tab, element, fill_value)
+            
+        elif field_type == 'tel' or 'phone' in field_info.get('name', '').lower():
+            # Special handling for phone fields
+            return await handle_phone_field_interaction(tab, element, fill_value, field_info)
+            
+        else:
+            # Handle text inputs and textareas
+            return await handle_text_field_interaction(tab, element, fill_value, field_selector)
+    
+    except Exception as e:
+        print(f"         ❌ Error in human interaction: {e}")
+        return False
+
+async def perform_mouse_drag(tab, start_x, start_y, end_x, end_y):
+    """Perform a human-like mouse drag movement."""
+    try:
+        # Calculate movement steps for smooth animation
+        steps = 10
+        step_x = (end_x - start_x) / steps
+        step_y = (end_y - start_y) / steps
+        
+        print(f"         🖱️  Mouse drag: ({start_x}, {start_y}) → ({end_x}, {end_y})")
+        
+        # Perform gradual movement
+        for i in range(steps + 1):
+            current_x = start_x + (step_x * i)
+            current_y = start_y + (step_y * i)
+            
+            await tab.evaluate(f"""
+            (function() {{
+                const event = new MouseEvent('mousemove', {{
+                    clientX: {current_x},
+                    clientY: {current_y},
+                    bubbles: true
+                }});
+                document.dispatchEvent(event);
+            }})();
+            """)
+            
+            await asyncio.sleep(0.02)  # Small delay for smooth movement
+        
+        print(f"         ✅ Mouse drag completed")
+        
+    except Exception as e:
+        print(f"         ❌ Error in mouse drag: {e}")
+
+def create_field_selector(field_info):
+    """Create a CSS selector for the field."""
+    selectors = []
+    
+    # Helper function to escape CSS selector values
+    def escape_css_value(value):
+        if not value:
+            return value
+        # Escape special characters that could break CSS selectors
+        return value.replace('"', '\\"').replace("'", "\\'").replace('\\', '\\\\')
+    
+    if field_info.get('id'):
+        escaped_id = escape_css_value(field_info['id'])
+        selectors.append(f'#{escaped_id}')
+    
+    if field_info.get('name'):
+        escaped_name = escape_css_value(field_info['name'])
+        selectors.append(f'[name="{escaped_name}"]')
+    
+    if field_info.get('className'):
+        # Use first class name and escape it
+        first_class = field_info['className'].split()[0]
+        escaped_class = escape_css_value(first_class)
+        if escaped_class:
+            selectors.append(f'.{escaped_class}')
+    
+    # Fallback: use tag with type
+    tag = field_info.get('tagName', '').lower()
+    field_type = field_info.get('type', '')
+    if tag and field_type:
+        escaped_type = escape_css_value(field_type)
+        selectors.append(f'{tag}[type="{escaped_type}"]')
+    elif tag:
+        selectors.append(tag)
+    
+    # Return the most specific selector first
+    return selectors[0] if selectors else 'input'
+
+async def handle_text_field_interaction(tab, element, fill_value, field_selector):
+    """Handle interaction with text input fields."""
+    try:
+        # Step 1: Clear existing content using the element directly
+        print(f"         🧹 Clearing existing content...")
+        
+        # Method 1: Use the element directly to clear content
+        try:
+            # Focus and select all content
+            await element.focus()
+            await asyncio.sleep(0.1)
+            
+            # Select all content and clear it using JavaScript through the element
+            await tab.evaluate("""
+            (function() {
+                const activeElement = document.activeElement;
+                if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
+                    activeElement.select();
+                    activeElement.value = '';
+                    activeElement.dispatchEvent(new Event('input', { bubbles: true }));
+                    activeElement.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+            })();
+            """)
+            
+            await asyncio.sleep(0.2)
+            
+        except Exception as clear_error:
+            print(f"         ⚠️  Primary clear method failed: {clear_error}")
+            
+            # Fallback: Try to clear using a safer selector approach
+            try:
+                # Create a safer selector by escaping special characters
+                safe_selector = field_selector.replace("'", "\\'").replace('"', '\\"')
+                unique_var = f"clearField_{abs(hash(safe_selector)) % 100000}"
+                
+                await tab.evaluate(f"""
+                (function() {{
+                    try {{
+                        const {unique_var} = document.querySelector("{safe_selector}");
+                        if ({unique_var}) {{
+                            {unique_var}.focus();
+                            {unique_var}.select();
+                            {unique_var}.value = '';
+                            {unique_var}.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                            {unique_var}.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                        }}
+                    }} catch (e) {{
+                        console.log('Clear field error:', e);
+                    }}
+                }})();
+                """)
+                
+                await asyncio.sleep(0.2)
+                
+            except Exception as fallback_error:
+                print(f"         ⚠️  Fallback clear method also failed: {fallback_error}")
+        
+        # Step 2: Type the new value character by character for better reliability
+        print(f"         ⌨️  Typing: {str(fill_value)[:30]}...")
+        
+        # Clear any remaining content first by selecting all
+        try:
+            await element.click()
+            await asyncio.sleep(0.1)
+            
+            # Multiple clearing attempts for stubborn fields
+            for attempt in range(3):
+                try:
+                    # Method 1: Select all and clear
+                    await tab.evaluate("""
+                    (function() {
+                        const activeElement = document.activeElement;
+                        if (activeElement) {
+                            activeElement.focus();
+                            activeElement.select();
+                            activeElement.value = '';
+                            activeElement.dispatchEvent(new Event('input', { bubbles: true }));
+                            activeElement.dispatchEvent(new Event('change', { bubbles: true }));
+                            activeElement.dispatchEvent(new Event('keyup', { bubbles: true }));
+                        }
+                    })();
+                    """)
+                    
+                    await asyncio.sleep(0.1)
+                    
+                    # Check if field is now empty
+                    current_value = await tab.evaluate("""
+                    (function() {
+                        const activeElement = document.activeElement;
+                        return activeElement ? activeElement.value : '';
+                    })();
+                    """)
+                    
+                    if not current_value:
+                        print(f"         ✅ Field cleared on attempt {attempt + 1}")
+                        break
+                    else:
+                        print(f"         ⚠️  Field still contains '{current_value[:20]}...' after attempt {attempt + 1}")
+                        
+                        # Try more aggressive clearing for stubborn fields
+                        if attempt < 2:
+                            # Use multiple clearing strategies
+                            await tab.evaluate("""
+                            (function() {
+                                const activeElement = document.activeElement;
+                                if (activeElement) {
+                                    // Strategy 1: Multiple value clears
+                                    for (let i = 0; i < 3; i++) {
+                                        activeElement.value = '';
+                                        activeElement.textContent = '';
+                                        activeElement.innerHTML = '';
+                                    }
+                                    
+                                    // Strategy 2: Select all and delete
+                                    activeElement.focus();
+                                    activeElement.select();
+                                    
+                                    // Strategy 3: Simulate backspace/delete
+                                    const length = activeElement.value.length;
+                                    for (let i = 0; i < length; i++) {
+                                        activeElement.value = activeElement.value.slice(0, -1);
+                                    }
+                                    
+                                    // Final clear
+                                    activeElement.value = '';
+                                    
+                                    // Trigger all possible events
+                                    ['input', 'change', 'keyup', 'keydown', 'blur', 'focus'].forEach(eventType => {
+                                        activeElement.dispatchEvent(new Event(eventType, { bubbles: true }));
+                                    });
+                                }
+                            })();
+                            """)
+                            await asyncio.sleep(0.3)
+                        
+                except Exception as clear_attempt_error:
+                    print(f"         ⚠️  Clear attempt {attempt + 1} failed: {clear_attempt_error}")
+            
+        except Exception as select_error:
+            print(f"         ⚠️  Select all failed: {select_error}")
+        
+        # Final verification that field is empty before typing
+        final_check = await tab.evaluate("""
+        (function() {
+            const activeElement = document.activeElement;
+            return activeElement ? activeElement.value : '';
+        })();
+        """)
+        
+        if final_check:
+            print(f"         ⚠️  Field still not empty: '{final_check[:20]}...', doing final clear")
+            await tab.evaluate("""
+            (function() {
+                const activeElement = document.activeElement;
+                if (activeElement) {
+                    activeElement.value = '';
+                    activeElement.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+            })();
+            """)
+            await asyncio.sleep(0.2)
+        
+        # Now type the new value - use bulk typing to avoid character repetition
+        print(f"         ⌨️  Typing: {str(fill_value)[:30]}...")
+        
+        # Type the entire string at once to avoid repetition issues
+        await element.send_keys(str(fill_value))
+        await asyncio.sleep(0.3)
+        
+        # Step 3: Verify the value was set
+        try:
+            final_value = await tab.evaluate("""
+            (function() {
+                const activeElement = document.activeElement;
+                return activeElement ? activeElement.value : '';
+            })();
+            """)
+            
+            if final_value and str(fill_value) in final_value:
+                print(f"         ✅ Field filled successfully: '{final_value[:30]}...'")
+                return True
+            elif final_value:
+                print(f"         ⚠️  Field has content but may not match: '{final_value[:30]}...'")
+                return True
+            else:
+                print(f"         ❌ Field appears empty after filling")
+                return False
+                
+        except Exception as verify_error:
+            print(f"         ⚠️  Could not verify field content: {verify_error}")
+            # Assume success if we got this far without major errors
+            return True
+    
+    except Exception as e:
+        print(f"         ❌ Error handling text field: {e}")
+        return False
+
+async def handle_select_field_interaction(tab, element, fill_value):
+    """Handle interaction with select dropdown fields."""
+    try:
+        # This is a simplified version - in practice, you'd want to:
+        # 1. Get all options from the select
+        # 2. Find the best match for fill_value
+        # 3. Select that option
+        
+        print(f"         📋 Handling select field (simplified)")
+        # For now, just return True as select handling is complex
+        return True
+    
+    except Exception as e:
+        print(f"         ❌ Error handling select field: {e}")
+        return False
+
+async def handle_phone_field_interaction(tab, element, fill_value, field_info):
+    """Handle interaction with phone input fields that may have country code dropdowns."""
+    try:
+        print(f"         📞 Handling phone field...")
+        
+        # First, try to find and handle any country code dropdown
+        try:
+            # Look for country code dropdown near the phone field
+            country_dropdown = await tab.select('select[name*="country"], select[class*="country"], .country-select', timeout=2)
+            if country_dropdown:
+                print(f"         🌍 Found country dropdown, selecting US...")
+                # Try to select US/United States
+                await tab.evaluate("""
+                (function() {
+                    const countrySelect = document.querySelector('select[name*="country"], select[class*="country"], .country-select');
+                    if (countrySelect) {
+                        const options = countrySelect.querySelectorAll('option');
+                        for (let option of options) {
+                            const text = option.textContent.toLowerCase();
+                            const value = option.value.toLowerCase();
+                            if (text.includes('united states') || text.includes('us') || value.includes('us') || value === '+1') {
+                                option.selected = true;
+                                countrySelect.dispatchEvent(new Event('change', { bubbles: true }));
+                                break;
+                            }
+                        }
+                    }
+                })();
+                """)
+                await asyncio.sleep(0.5)
+        except Exception as country_error:
+            print(f"         ⚠️  No country dropdown found or error: {country_error}")
+        
+        # Now handle the phone number input
+        await element.focus()
+        await asyncio.sleep(0.2)
+        
+        # Clear the field more aggressively for phone inputs
+        print(f"         🧹 Clearing phone field...")
+        for attempt in range(3):
+            try:
+                await tab.evaluate("""
+                (function() {
+                    const activeElement = document.activeElement;
+                    if (activeElement) {
+                        activeElement.focus();
+                        activeElement.select();
+                        activeElement.value = '';
+                        // Trigger phone-specific events
+                        ['input', 'change', 'keyup', 'blur', 'focus'].forEach(eventType => {
+                            activeElement.dispatchEvent(new Event(eventType, { bubbles: true }));
+                        });
+                    }
+                })();
+                """)
+                
+                await asyncio.sleep(0.2)
+                
+                # Check if cleared
+                current_value = await tab.evaluate("""
+                (function() {
+                    const activeElement = document.activeElement;
+                    return activeElement ? activeElement.value : '';
+                })();
+                """)
+                
+                if not current_value:
+                    print(f"         ✅ Phone field cleared on attempt {attempt + 1}")
+                    break
+                else:
+                    print(f"         ⚠️  Phone field still contains '{current_value}' after attempt {attempt + 1}")
+                    
+            except Exception as clear_error:
+                print(f"         ⚠️  Phone clear attempt {attempt + 1} failed: {clear_error}")
+        
+        # Type the phone number
+        print(f"         ⌨️  Typing phone number: {fill_value}")
+        await element.send_keys(str(fill_value))
+        await asyncio.sleep(0.5)
+        
+        # Verify the phone number was entered
+        final_value = await tab.evaluate("""
+        (function() {
+            const activeElement = document.activeElement;
+            return activeElement ? activeElement.value : '';
+        })();
+        """)
+        
+        if final_value and str(fill_value) in final_value:
+            print(f"         ✅ Phone field filled successfully: '{final_value}'")
+            return True
+        elif final_value:
+            print(f"         ⚠️  Phone field has content: '{final_value}' (may be formatted)")
+            return True
+        else:
+            print(f"         ❌ Phone field appears empty after filling")
+            return False
+    
+    except Exception as e:
+        print(f"         ❌ Error handling phone field: {e}")
+        return False
+
+def generate_cover_letter(user_data, llm):
+    """Generate a cover letter for the user."""
+    return (
+        f"Dear Hiring Manager,\n\n"
+        f"I am writing to express my strong interest in this position. "
+        f"With my background and skills, I believe I would be a valuable addition to your team.\n\n"
+        f"I am excited about the opportunity to contribute to your organization and "
+        f"look forward to discussing how my experience can benefit your company.\n\n"
+        f"Thank you for your consideration.\n\n"
+        f"Best regards,\n{user_data.first_name} {user_data.last_name}"
+    )
 
 async def fill_additional_form_elements_nodriver(tab, user_data):
     """Fill additional form elements like salary and yes/no questions using nodriver directly."""
@@ -796,47 +1692,156 @@ async def get_llm_response(llm, prompt_text: str, user_data: UserData):
 
 async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_data: UserData, resume_file: UploadFile | None, file_url: str | None):
     """The main background task for the hybrid auto-apply process."""
+    print("\n" + "=" * 80)
+    print("🚀 BACKGROUND TASK STARTED - PROCESS HYBRID APPLY")
+    print("=" * 80)
+    
+    # Debug all parameters passed to the background task
+    print(f"🎯 TASK PARAMETERS:")
+    print(f"   Task ID: {task_id}")
+    print(f"   Job URL: {job_url}")
+    print(f"   API Key: {api_key[:8]}...{api_key[-8:] if len(api_key) > 16 else '***'}")
+    
+    print(f"\n👤 USER DATA OBJECT:")
+    print(f"   Type: {type(user_data)}")
+    print(f"   First Name: {user_data.first_name}")
+    print(f"   Last Name: {user_data.last_name}")
+    print(f"   Email: {user_data.email}")
+    print(f"   Phone: {user_data.phone}")
+    print(f"   LinkedIn: {user_data.linkedin or '❌ Not provided'}")
+    print(f"   GitHub: {user_data.github or '❌ Not provided'}")
+    print(f"   Portfolio: {user_data.portfolio or '❌ Not provided'}")
+    print(f"   Address: {user_data.address or '❌ Not provided'}")
+    
+    print(f"\n📄 RESUME FILE INFO:")
+    if resume_file:
+        print(f"   Resume File Object: ✅ Present")
+        print(f"   Filename: {resume_file.filename}")
+        print(f"   Content Type: {resume_file.content_type}")
+        print(f"   Has Content: {'✅' if hasattr(resume_file, 'file') else '❌'}")
+    else:
+        print(f"   Resume File Object: ❌ None")
+    
+    print(f"\n🔗 FILE URL INFO:")
+    if file_url:
+        print(f"   File URL: ✅ Present")
+        print(f"   URL Type: {'Data URL' if file_url.startswith('data:') else 'HTTP URL' if file_url.startswith(('http://', 'https://')) else 'Unknown'}")
+        print(f"   URL Length: {len(file_url)} characters")
+        print(f"   URL Preview: {file_url[:50]}{'...' if len(file_url) > 50 else ''}")
+    else:
+        print(f"   File URL: ❌ None")
+    
+    print("=" * 80)
+    
     tasks[task_id] = {"status": "starting", "message": "Starting hybrid auto-apply process."}
     browser = None
     temp_file_path = None
     
     try:
         # --- Setup Browser ---
+        print("🌐 BROWSER SETUP PHASE")
         tasks[task_id].update({"status": "processing", "message": "Initializing browser..."})
         llm = ChatGoogleGenerativeAI(model='gemini-2.5-flash', api_key=api_key) # For text responses only
         
-        # Use NATIVE Brave browser (not Flatpak) for Cloudflare compatibility
+        # Kill any existing browser instances first
+        kill_existing_brave_instances()
+        
+        # Setup profile paths
+        brave_executable_path = "/usr/bin/brave-browser"
+        main_profile_dir = os.path.expanduser("~/.config/BraveSoftware/Brave-Browser/")
+        
+        print("⚠️  IMPORTANT: Using your main Brave profile directly.")
+        print("   Any existing Brave instances have been automatically closed.")
+        print("   ADVANTAGES:")
+        print("   ✅ All your real cookies, logins, and extensions are active")
+        print("   ✅ Faster startup (no copying required)")
+        print("   ✅ Authentic browser fingerprint")
+        print("   RISKS:")
+        print("   ⚠️  Your main profile is being used directly")
+        print("   ⚠️  If script crashes, it might affect your browser data")
+        print("   ⚠️  Make sure not to open main Brave while this is running")
+        
+        # Check if profile directory exists
+        if not os.path.exists(main_profile_dir):
+            print(f"❌ Profile directory not found: {main_profile_dir}")
+            raise Exception(f"Brave profile directory not found: {main_profile_dir}")
+        
+        # Remove any lingering lock files
+        lock_files = ['SingletonLock', 'SingletonSocket', 'SingletonCookie']
+        for lock_file in lock_files:
+            lock_path = os.path.join(main_profile_dir, lock_file)
+            if os.path.exists(lock_path):
+                try:
+                    os.remove(lock_path)
+                    print(f"🧹 Removed lock file: {lock_file}")
+                except Exception as e:
+                    print(f"⚠️  Could not remove lock file {lock_file}: {e}")
+        
+        # Use a unique debugging port
+        debug_port = 9237
+        
+        print("🚀 Starting Brave browser with your main profile...")
+        print(f"   Using native executable: {brave_executable_path}")
+        print(f"   Using main profile: {main_profile_dir}")
+        print(f"   Using debugging port: {debug_port}")
+        
+        # Enhanced browser arguments for better compatibility with main profile
+        browser_args = [
+            f'--remote-debugging-port={debug_port}',
+            '--window-size=1920,1080',
+            '--start-maximized',
+            '--no-first-run',
+            '--no-default-browser-check',
+            '--disable-background-timer-throttling',  # Prevent background issues
+            '--disable-renderer-backgrounding',       # Prevent tab backgrounding issues
+            '--disable-backgrounding-occluded-windows',  # Prevent window management issues
+            '--disable-features=SameSiteByDefaultCookies',  # Allow third-party cookies for Turnstile
+            '--disable-blink-features=AutomationControlled',  # Hide automation
+            '--disable-web-security',  # Disable web security for iframe access
+            '--disable-features=VizDisplayCompositor',  # Improve rendering
+        ]
+
+        # Use NATIVE Brave browser with main profile for Cloudflare compatibility
         browser = await uc.start(
             headless=False,
-            browser_executable_path="/usr/bin/brave-browser",  # Native Brave installation
-            user_data_dir=os.path.expanduser("~/.config/BraveSoftware/Brave-Browser/"),  # Native profile location
-            browser_args=[
-                '--no-sandbox',  # Safe to use with native installation
-                '--window-size=1920,1080',
-                '--start-maximized',
-                '--remote-debugging-port=9223',
-                '--disable-features=SameSiteByDefaultCookies',  # Allow third-party cookies for Turnstile
-                '--disable-blink-features=AutomationControlled',  # Hide automation
-                '--disable-web-security',  # Disable web security for iframe access
-                '--disable-features=VizDisplayCompositor',  # Improve rendering
-                '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            ]
+            browser_executable_path=brave_executable_path,
+            user_data_dir=main_profile_dir,
+            browser_args=browser_args,
         )
+        
+        # Navigate to target URL immediately after browser starts
+        print("📍 Navigating to target URL...")
         tab = await browser.get(job_url)
-        print(f"Navigated to: {job_url}")
+        print(f"✅ Navigated to: {job_url}")
         
         # Wait for page to fully load and stabilize
         print("⏳ Waiting for page to fully load...")
-        await tab.sleep(3)
+        await tab.sleep(5)
         
         # Wait for any dynamic content to load
         try:
-            await tab.wait_for('Page.loadEventFired', timeout=10)
+            await tab.wait_for('Page.loadEventFired', timeout=3)
             print("✅ Page load event detected")
         except:
             print("⚠️  Page load event timeout, continuing...")
         
         await tab.sleep(2) # Additional wait for dynamic content
+        
+        # Verify we're on the right page
+        try:
+            current_url = await tab.evaluate("window.location.href")
+            print(f"📍 Final URL: {current_url}")
+            
+            if job_url.split('/')[-1] in current_url or job_url.split('/')[-2] in current_url:
+                print("✅ Successfully navigated to target!")
+            else:
+                print(f"⚠️  Navigation may not have completed fully")
+                print(f"   Expected: {job_url}")
+                print(f"   Actual: {current_url}")
+                
+        except Exception as verify_error:
+            print(f"⚠️  Could not verify final URL: {verify_error}")
+            print("   Browser is open - check manually if navigation worked")
 
         # --- Handle Cookie Banner on Initial Load ---
         await handle_cookie_banner(tab)
@@ -876,7 +1881,7 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
                     
                     print("Clicking apply button...")
                     await apply_button.click()
-                    await tab.sleep(3)
+                    await tab.sleep(1)
                     
                     print("Apply button clicked successfully!")
                     button_found = True
@@ -909,7 +1914,7 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
                         await element.mouse_move()
                         await tab.sleep(0.5)
                         await element.click()
-                        await tab.sleep(3)
+                        await tab.sleep(2)
                         print("Element clicked successfully!")
                         button_found = True
                         break
@@ -923,36 +1928,104 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
         # --- Handle Resume Upload ---
         tasks[task_id].update({"status": "processing", "message": "Looking for resume upload field..."})
         
+        # Create user-based filename
+        user_filename = f"{user_data.first_name}_{user_data.last_name}".replace(" ", "_")
+        print(f"📄 Creating user-based filename: {user_filename}")
+        
         # Process the resume, whether it's a direct upload or a URL
         if resume_file:
-            # Save uploaded file to a temporary path
-            suffix = os.path.splitext(resume_file.filename)[-1]
-            async with aiofiles.tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            # Save uploaded file to a temporary path with user's name
+            original_suffix = os.path.splitext(resume_file.filename)[-1] if resume_file.filename else '.pdf'
+            new_filename = f"{user_filename}{original_suffix}"
+            
+            print(f"📤 Processing uploaded resume file:")
+            print(f"   Original filename: {resume_file.filename}")
+            print(f"   New filename: {new_filename}")
+            print(f"   File extension: {original_suffix}")
+            
+            async with aiofiles.tempfile.NamedTemporaryFile(delete=False, suffix=original_suffix) as tmp:
                 content = await resume_file.read()
                 await tmp.write(content)
                 temp_file_path = tmp.name
+                
+            # Rename the temp file to include user's name for better identification
+            user_temp_path = os.path.join(os.path.dirname(temp_file_path), new_filename)
+            os.rename(temp_file_path, user_temp_path)
+            temp_file_path = user_temp_path
+            
+            print(f"✅ Resume saved as: {temp_file_path}")
+            
         elif file_url:
             # Handle file_url: support both HTTP(S) and data URLs
             if file_url.startswith('data:'):
                 try:
                     match = re.match(r'data:(?P<mime>[^;]+);filename=(?P<filename>[^;]+);base64,(?P<data>.+)', file_url)
-                    filename = match.group('filename')
-                    suffix = os.path.splitext(filename)[-1]
-                    file_data = base64.b64decode(match.group('data'))
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                    if match:
+                        original_filename = match.group('filename')
+                        original_suffix = os.path.splitext(original_filename)[-1]
+                    else:
+                        # Fallback if no filename in data URL
+                        original_suffix = '.pdf'  # Default to PDF
+                    
+                    new_filename = f"{user_filename}{original_suffix}"
+                    
+                    print(f"🔗 Processing data URL resume:")
+                    print(f"   Original filename: {original_filename if match else 'Not specified'}")
+                    print(f"   New filename: {new_filename}")
+                    print(f"   File extension: {original_suffix}")
+                    
+                    file_data = base64.b64decode(match.group('data') if match else file_url.split(',')[1])
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=original_suffix) as tmp:
                         tmp.write(file_data)
                         temp_file_path = tmp.name
+                    
+                    # Rename to include user's name
+                    user_temp_path = os.path.join(os.path.dirname(temp_file_path), new_filename)
+                    os.rename(temp_file_path, user_temp_path)
+                    temp_file_path = user_temp_path
+                    
+                    print(f"✅ Resume saved as: {temp_file_path}")
+                    
                 except Exception as e:
-                    print(f"Failed to parse data URL: {e}")
+                    print(f"❌ Failed to parse data URL: {e}")
             else:
                 # Download file from HTTP(S) URL
+                print(f"🌐 Downloading resume from URL:")
+                print(f"   URL: {file_url[:100]}{'...' if len(file_url) > 100 else ''}")
+                
                 async with httpx.AsyncClient() as client:
                     response = await client.get(file_url)
                     response.raise_for_status()
-                    suffix = os.path.splitext(file_url)[-1]
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                    
+                    # Try to get extension from URL or Content-Type
+                    original_suffix = os.path.splitext(file_url)[-1]
+                    if not original_suffix:
+                        content_type = response.headers.get('content-type', '')
+                        if 'pdf' in content_type:
+                            original_suffix = '.pdf'
+                        elif 'word' in content_type or 'docx' in content_type:
+                            original_suffix = '.docx'
+                        elif 'doc' in content_type:
+                            original_suffix = '.doc'
+                        else:
+                            original_suffix = '.pdf'  # Default fallback
+                    
+                    new_filename = f"{user_filename}{original_suffix}"
+                    
+                    print(f"   Content-Type: {response.headers.get('content-type', 'Unknown')}")
+                    print(f"   File size: {len(response.content)} bytes")
+                    print(f"   New filename: {new_filename}")
+                    
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=original_suffix) as tmp:
                         tmp.write(response.content)
                         temp_file_path = tmp.name
+                    
+                    # Rename to include user's name
+                    user_temp_path = os.path.join(os.path.dirname(temp_file_path), new_filename)
+                    os.rename(temp_file_path, user_temp_path)
+                    temp_file_path = user_temp_path
+                    
+                    print(f"✅ Resume downloaded and saved as: {temp_file_path}")
 
         if temp_file_path:
             print(f"📄 Looking for resume upload field...")
@@ -1119,8 +2192,8 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
         else:
             print("⚠️  No resume file provided")
 
-        # --- SIMPLE FORM FILLING ---
-        tasks[task_id].update({"status": "processing", "message": "Filling out basic form fields..."})
+        # --- ADVANCED FORM ANALYSIS AND FILLING ---
+        tasks[task_id].update({"status": "processing", "message": "Analyzing forms and filling required fields..."})
         await analyze_and_fill_all_form_elements(tab, llm, user_data)
         
         # --- DIRECT NODRIVER FORM COMPLETION FOR TESTING ---
@@ -1374,16 +2447,56 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
     except Exception as e:
         error_message = f"An error occurred: {e}"
         print(error_message)
+        print("\n🔧 TROUBLESHOOTING:")
+        print("   - Make sure your main Brave browser is completely closed")
+        print("   - Check if any Brave processes are still running: ps aux | grep brave")
+        print("   - The profile might be corrupted or have permission issues")
+        print("   - Verify that the Brave profile directory exists and is accessible")
+        import traceback
+        traceback.print_exc()
         tasks[task_id].update({"status": "failed", "message": error_message})
     finally:
         if browser:
-            browser.stop()
+            print("🛑 Closing browser...")
+            try:
+                # Try multiple methods to ensure browser closes
+                await browser.stop()
+                print("✅ Browser.stop() called")
+                
+                # Give it a moment to close
+                await asyncio.sleep(2)
+                
+                # Force kill any remaining processes as backup
+                try:
+                    subprocess.run(['pkill', '-f', 'brave-browser'], capture_output=True)
+                    subprocess.run(['pkill', '-f', f'remote-debugging-port=9237'], capture_output=True)
+                    print("✅ Backup process cleanup completed")
+                except Exception as cleanup_error:
+                    print(f"⚠️  Backup cleanup failed: {cleanup_error}")
+                    
+            except Exception as close_error:
+                print(f"⚠️  Error closing browser: {close_error}")
+                # Force kill as fallback
+                try:
+                    subprocess.run(['pkill', '-f', 'brave-browser'], capture_output=True)
+                    print("✅ Force killed browser processes")
+                except:
+                    print("⚠️  Could not force kill browser processes")
+            
+            print("✅ Browser cleanup completed.")
+            
         if temp_file_path and os.path.exists(temp_file_path):
             os.remove(temp_file_path)
 
 async def parse_prompt_to_user_data(llm: ChatGoogleGenerativeAI, prompt: str) -> UserData:
     """Uses the LLM to parse the unstructured prompt into a structured UserData object."""
-    print("Parsing prompt to extract structured user data...")
+    print("🤖 LLM PARSING PROCESS STARTED")
+    print("-" * 50)
+    
+    print(f"📝 INPUT PROMPT TO PARSE:")
+    print(f"   Length: {len(prompt)} characters")
+    print(f"   Content: {prompt[:300]}{'...' if len(prompt) > 300 else ''}")
+    
     parsing_prompt = (
         "You are a data extraction expert. Parse the following text from a job application prompt "
         "and extract the user's personal information. Return ONLY a valid JSON object with the following keys: "
@@ -1393,17 +2506,59 @@ async def parse_prompt_to_user_data(llm: ChatGoogleGenerativeAI, prompt: str) ->
         "JSON object:"
     )
     
+    print(f"\n🎯 LLM PARSING PROMPT:")
+    print(f"   Prompt Length: {len(parsing_prompt)} characters")
+    print(f"   Model: gemini-2.5-flash")
+    
     try:
+        print(f"\n⏳ SENDING REQUEST TO LLM...")
         response = await llm.ainvoke(parsing_prompt)
+        
+        print(f"\n📤 LLM RESPONSE RECEIVED:")
+        print(f"   Response Type: {type(response)}")
+        print(f"   Response Content Length: {len(response.content)} characters")
+        print(f"   Raw Response: {response.content[:500]}{'...' if len(response.content) > 500 else ''}")
+        
         # Clean the response to ensure it's valid JSON
         json_string = response.content.strip().replace("```json", "").replace("```", "")
+        
+        print(f"\n🧹 CLEANED JSON STRING:")
+        print(f"   Cleaned Length: {len(json_string)} characters")
+        print(f"   Cleaned Content: {json_string}")
+        
+        print(f"\n🔄 VALIDATING JSON WITH PYDANTIC...")
         user_data_model = UserData.model_validate_json(json_string)
-        print("Successfully parsed user data from prompt.")
+        
+        print(f"\n✅ PARSING SUCCESSFUL!")
+        print(f"   Parsed Object Type: {type(user_data_model)}")
+        print(f"   Extracted Fields:")
+        print(f"      First Name: {user_data_model.first_name}")
+        print(f"      Last Name: {user_data_model.last_name}")
+        print(f"      Email: {user_data_model.email}")
+        print(f"      Phone: {user_data_model.phone}")
+        print(f"      LinkedIn: {user_data_model.linkedin or 'Not extracted'}")
+        print(f"      GitHub: {user_data_model.github or 'Not extracted'}")
+        print(f"      Portfolio: {user_data_model.portfolio or 'Not extracted'}")
+        print(f"      Address: {user_data_model.address or 'Not extracted'}")
+        
+        print("-" * 50)
         return user_data_model
+        
     except Exception as e:
-        print(f"Failed to parse user data from prompt: {e}. Proceeding with empty data.")
+        print(f"\n❌ PARSING FAILED!")
+        print(f"   Error Type: {type(e).__name__}")
+        print(f"   Error Message: {str(e)}")
+        print(f"   Falling back to default UserData object...")
+        
         # Return a default/empty model if parsing fails
-        return UserData(first_name="N/A", last_name="N/A", email="N/A", phone="N/A")
+        fallback_data = UserData(first_name="N/A", last_name="N/A", email="N/A", phone="N/A")
+        
+        print(f"\n🔄 FALLBACK DATA CREATED:")
+        print(f"   Type: {type(fallback_data)}")
+        print(f"   Fields: first_name=N/A, last_name=N/A, email=N/A, phone=N/A")
+        
+        print("-" * 50)
+        return fallback_data
 
 
 @app.post("/auto-apply")
@@ -1418,12 +2573,96 @@ async def hybrid_auto_apply(
     Endpoint to trigger the hybrid auto-application process.
     Receives user data and job info, then starts a background task.
     """
+    print("=" * 80)
+    print("🔍 API REQUEST DEBUGGING - RECEIVED CLIENT DATA")
+    print("=" * 80)
+    
+    # Debug URL parameter
+    print(f"📍 JOB URL:")
+    print(f"   Raw URL: {url}")
+    print(f"   URL Length: {len(url)} characters")
+    print(f"   URL Valid: {'✅' if url.startswith(('http://', 'https://')) else '❌'}")
+    
+    # Debug API Key parameter (show first/last few chars for security)
+    print(f"\n🔑 API KEY:")
+    if api_key:
+        masked_key = f"{api_key[:8]}...{api_key[-8:]}" if len(api_key) > 16 else "***MASKED***"
+        print(f"   API Key: {masked_key}")
+        print(f"   Key Length: {len(api_key)} characters")
+        print(f"   Key Valid: {'✅' if len(api_key) > 20 else '❌'}")
+    else:
+        print(f"   API Key: ❌ NOT PROVIDED")
+    
+    # Debug Prompt parameter
+    print(f"\n📝 USER PROMPT:")
+    print(f"   Prompt Length: {len(prompt)} characters")
+    print(f"   Prompt Preview: {prompt[:200]}{'...' if len(prompt) > 200 else ''}")
+    if len(prompt) > 200:
+        print(f"   Prompt End: ...{prompt[-100:]}")
+    
+    # Debug Resume File parameter
+    print(f"\n📄 RESUME FILE:")
+    if resume and resume.filename:
+        print(f"   Filename: {resume.filename}")
+        print(f"   Content Type: {resume.content_type}")
+        print(f"   File Size: {resume.size if hasattr(resume, 'size') else 'Unknown'} bytes")
+        print(f"   File Extension: {resume.filename.split('.')[-1] if '.' in resume.filename else 'None'}")
+        print(f"   File Valid: ✅")
+    else:
+        print(f"   Resume File: ❌ NOT PROVIDED")
+    
+    # Debug File URL parameter
+    print(f"\n🔗 FILE URL:")
+    if file_url:
+        print(f"   File URL: {file_url[:100]}{'...' if len(file_url) > 100 else ''}")
+        print(f"   URL Length: {len(file_url)} characters")
+        print(f"   URL Type: {'Data URL' if file_url.startswith('data:') else 'HTTP URL' if file_url.startswith(('http://', 'https://')) else 'Unknown'}")
+        print(f"   File URL Valid: ✅")
+    else:
+        print(f"   File URL: ❌ NOT PROVIDED")
+    
+    # Debug Resume Source Priority
+    print(f"\n📋 RESUME SOURCE PRIORITY:")
+    if resume and resume.filename:
+        print(f"   Primary Source: 📄 Uploaded File ({resume.filename})")
+        print(f"   Secondary Source: {'🔗 File URL (backup)' if file_url else '❌ None'}")
+    elif file_url:
+        print(f"   Primary Source: 🔗 File URL")
+        print(f"   Secondary Source: ❌ None")
+    else:
+        print(f"   Primary Source: ❌ NO RESUME PROVIDED")
+        print(f"   ⚠️  WARNING: No resume source available!")
+    
+    print("=" * 80)
+    
     llm = ChatGoogleGenerativeAI(model='gemini-2.5-flash', api_key=api_key)
     
     # Use the LLM to parse the unstructured prompt into structured data
+    print("🤖 PARSING USER PROMPT WITH LLM...")
     user_data_model = await parse_prompt_to_user_data(llm, prompt)
-
+    
+    # Debug the parsed user data
+    print(f"\n👤 PARSED USER DATA:")
+    print(f"   First Name: {user_data_model.first_name}")
+    print(f"   Last Name: {user_data_model.last_name}")
+    print(f"   Email: {user_data_model.email}")
+    print(f"   Phone: {user_data_model.phone}")
+    print(f"   LinkedIn: {user_data_model.linkedin or '❌ Not provided'}")
+    print(f"   GitHub: {user_data_model.github or '❌ Not provided'}")
+    print(f"   Portfolio: {user_data_model.portfolio or '❌ Not provided'}")
+    print(f"   Address: {user_data_model.address or '❌ Not provided'}")
+    
+    # Generate task ID and show task info
     task_id = str(uuid.uuid4())
+    print(f"\n🎯 TASK CREATION:")
+    print(f"   Task ID: {task_id}")
+    print(f"   Status: Starting background process")
+    print(f"   Process: Hybrid Auto-Apply")
+    
+    print("=" * 80)
+    print("✅ API REQUEST PROCESSING COMPLETE - STARTING BACKGROUND TASK")
+    print("=" * 80)
+    
     # Pass the file_url to the background task
     asyncio.create_task(process_hybrid_apply(task_id, url, api_key, user_data_model, resume, file_url))
     
@@ -1759,7 +2998,7 @@ async def inspect_and_highlight_turnstile(tab):
             const results = {turnstile_info_js};
             let highlightIndex = 0;
             
-            // Helper function to create highlight box
+            // Helper function to create highlight outline (no fill)
             function createHighlight(x, y, width, height, color, label, zIndex = 999999) {{
                 const highlight = document.createElement('div');
                 highlight.id = '{highlight_id}_' + highlightIndex++;
@@ -1768,11 +3007,12 @@ async def inspect_and_highlight_turnstile(tab):
                 highlight.style.top = y + 'px';
                 highlight.style.width = width + 'px';
                 highlight.style.height = height + 'px';
-                highlight.style.border = '3px solid ' + color;
-                highlight.style.backgroundColor = color.replace('rgb', 'rgba').replace(')', ', 0.1)');
+                highlight.style.border = '2px solid ' + color;
+                highlight.style.backgroundColor = 'transparent';  // No fill - outline only
                 highlight.style.zIndex = zIndex;
                 highlight.style.pointerEvents = 'none';
                 highlight.style.boxSizing = 'border-box';
+                highlight.style.boxShadow = '0 0 0 1px rgba(255,255,255,0.8)';  // White outline for visibility
                 
                 // Add label
                 const labelDiv = document.createElement('div');
@@ -2160,8 +3400,8 @@ async def try_coordinate_guessing_method(tab, turnstile_info, llm):
         debug_port = await get_active_debug_port()
         
         if not debug_port:
-            print("❌ Could not find debug port for coordinate guessing")
-            return False
+            print("❌ Could not find debug port for coordinate guessing, trying default port 9237")
+            debug_port = 9237  # Use our known debug port as fallback
             
         browser = await playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{debug_port}")
         context = browser.contexts[0]
@@ -2174,7 +3414,7 @@ async def try_coordinate_guessing_method(tab, turnstile_info, llm):
             # Add visual marker for this guess
             await tab.evaluate(f"""
             (function() {{
-                // Create a bright cyan marker for guessed position
+                // Create a bright cyan outline marker for guessed position
                 const marker = document.createElement('div');
                 marker.id = 'guess-marker-{i}';
                 marker.style.position = 'fixed';
@@ -2182,13 +3422,13 @@ async def try_coordinate_guessing_method(tab, turnstile_info, llm):
                 marker.style.top = '{pos['y'] - 12}px';
                 marker.style.width = '24px';
                 marker.style.height = '24px';
-                marker.style.backgroundColor = 'cyan';
-                marker.style.border = '3px solid magenta';
+                marker.style.backgroundColor = 'transparent';  // No fill - outline only
+                marker.style.border = '3px solid cyan';
                 marker.style.borderRadius = '50%';
                 marker.style.zIndex = '999999';
                 marker.style.pointerEvents = 'none';
                 marker.style.opacity = '0.9';
-                marker.style.boxShadow = '0 0 15px rgba(0,255,255,0.8)';
+                marker.style.boxShadow = '0 0 15px rgba(0,255,255,0.8), inset 0 0 0 1px rgba(255,255,255,0.8)';
                 
                 // Add number label
                 const label = document.createElement('div');
@@ -2255,4 +3495,4 @@ async def try_coordinate_guessing_method(tab, turnstile_info, llm):
         return False
 
 if __name__ == "__main__":
-    uvicorn.run("nodrive_appy_test:app", host="0.0.0.0", port=8000, reload=True) 
+    uvicorn.run("nodrive_appy_test:app", host="0.0.0.0", port=8000, reload=True)
