@@ -159,6 +159,8 @@ async def analyze_and_fill_all_form_elements(tab, llm, user_data):
     """Advanced form filling approach that finds forms and identifies required fields."""
     print("=== ADVANCED FORM ANALYSIS AND FILLING ===")
     
+    filled_field_purposes = set()  # Track which field purposes were successfully filled
+    
     try:
         # Wait for form to be ready
         await tab.sleep(2)
@@ -168,7 +170,7 @@ async def analyze_and_fill_all_form_elements(tab, llm, user_data):
         
         if not forms_info:
             print("❌ No forms found on the page")
-            return
+            return filled_field_purposes
         
         print(f"📋 Found {len(forms_info)} form(s) on the page")
         
@@ -190,13 +192,15 @@ async def analyze_and_fill_all_form_elements(tab, llm, user_data):
             # Print field analysis
             print_field_analysis(field_analysis)
             
-            # Fill the form fields
-            filled_count = await fill_form_with_human_interaction(tab, field_analysis, user_data, llm)
+            # Fill the form fields and get information about what was filled
+            filled_count, form_filled_purposes = await fill_form_with_human_interaction(tab, field_analysis, user_data, llm)
             total_filled += filled_count
+            filled_field_purposes.update(form_filled_purposes)
             
             print(f"   ✅ Filled {filled_count} fields in form {form_index + 1}")
         
         print(f"\n🎯 FORM FILLING COMPLETE: Filled {total_filled} total fields across all forms")
+        print(f"🎯 FILLED FIELD PURPOSES: {', '.join(sorted(filled_field_purposes))}")
         
         if total_filled == 0:
             print("⚠️  No fields were filled - trying fallback approach...")
@@ -212,6 +216,8 @@ async def analyze_and_fill_all_form_elements(tab, llm, user_data):
             await simple_form_fill_fallback(tab, user_data)
         except Exception as fallback_error:
             print(f"❌ Fallback also failed: {fallback_error}")
+    
+    return filled_field_purposes
 
 async def find_all_forms(tab):
     """Find all forms on the page and return their information."""
@@ -298,6 +304,21 @@ async def analyze_form_fields(tab, form_info, llm):
             
             if (!form) return {{ fields: [] }};
             
+            // === Added helper to classify element interaction type ===
+            function determineInteractionType(el) {{
+                const tag = (el.tagName || '').toLowerCase();
+                const typeAttr = (el.type || '').toLowerCase();
+                const roleAttr = (el.getAttribute('role') || '').toLowerCase();
+
+                if (typeAttr === 'checkbox' || roleAttr === 'checkbox') return 'checkbox';
+                if (typeAttr === 'radio' || roleAttr === 'radio') return 'radio';
+                if (tag === 'select') return 'select';
+                if (roleAttr === 'combobox' || roleAttr === 'listbox' || roleAttr === 'menu') {{
+                    return 'select-custom'; // non-native dropdowns (e.g., headless UI)
+                }}
+                return 'text';
+            }}
+            
             const fields = [];
             const formElements = form.querySelectorAll('input, textarea, select');
             
@@ -323,7 +344,8 @@ async def analyze_form_fields(tab, form_info, llm):
                     x: Math.round(rect.x),
                     y: Math.round(rect.y),
                     width: Math.round(rect.width),
-                    height: Math.round(rect.height)
+                    height: Math.round(rect.height),
+                    role: element.getAttribute('role') || ''
                 }};
                 
                 // Analyze if field is required (not just the HTML required attribute)
@@ -382,6 +404,7 @@ async def analyze_form_fields(tab, form_info, llm):
                             }}
                         }});
                     }}
+
                 }}
                 
                 // Determine field purpose based on various attributes
@@ -393,6 +416,8 @@ async def analyze_form_fields(tab, form_info, llm):
                 fieldInfo.contextText = contextText.substring(0, 200);
                 fieldInfo.fieldPurpose = fieldPurpose;
                 fieldInfo.isInteractable = !fieldInfo.disabled && !fieldInfo.readonly;
+                // Store the computed interaction type for later use in Python
+                fieldInfo.interactionType = determineInteractionType(element);
                 
                 fields.push(fieldInfo);
             }});
@@ -414,14 +439,18 @@ async def analyze_form_fields(tab, form_info, llm):
                     'country': ['country', 'nation', 'nationality'],
                     'linkedin': ['linkedin', 'linked in'],
                     'github': ['github', 'git hub'],
-                    'portfolio': ['portfolio', 'website', 'url', 'site'],
-                    'cover_letter': ['cover letter', 'coverletter', 'letter', 'why', 'motivation', 'message'],
+                    'portfolio': ['portfolio', 'website', 'personal website'],
+                    'cover_letter': ['cover letter', 'cover_letter', 'coverletter', 'letter', 'motivation'],
                     'salary': ['salary', 'wage', 'compensation', 'pay', 'expected salary'],
-                    'experience': ['experience', 'years', 'work history'],
-                    'skills': ['skills', 'abilities', 'competencies'],
+                    'experience': ['experience', 'years of experience', 'work experience'],
+                    'skills': ['skills', 'skill', 'technical skills', 'competencies'],
                     'education': ['education', 'degree', 'school', 'university'],
                     'availability': ['availability', 'start date', 'when can you start'],
+                    'work_authorization': ['authorized to work', 'eligible to work', 'work authorization', 'legal right to work', 'authorized for employment', 'work eligibility', 'employment authorization', 'legally authorized', 'work legally', 'authorized/eligible to work'],
+                    'visa_sponsorship': ['visa sponsorship', 'sponsorship', 'require sponsorship', 'need sponsorship', 'visa required', 'work visa', 'h1b', 'sponsor', 'immigration status'],
+                    'relocation': ['relocate', 'relocation', 'willing to relocate', 'open to relocation', 'move', 'willing to move', 'geographic preference', 'willing to re'],
                     'authorization': ['authorized', 'visa', 'work permit', 'eligibility'],
+                    'summary': ['summary', 'about', 'about you', 'about yourself', 'profile', 'professional summary', 'personal statement', 'bio', 'biography', 'introduction', 'tell us about yourself'],
                     'other': []
                 }};
                 
@@ -432,6 +461,16 @@ async def analyze_form_fields(tab, form_info, llm):
                         if (allText.includes(keyword)) {{
                             return purpose;
                         }}
+                    }}
+                }}
+                
+                // If no specific purpose found, try to use a meaningful label/name instead of 'other'
+                const meaningfulName = labelText.trim() || fieldInfo.name || fieldInfo.placeholder || fieldInfo.id;
+                if (meaningfulName && meaningfulName.length > 0 && meaningfulName.length < 50) {{
+                    // Clean up the name for display
+                    const cleanName = meaningfulName.replace(/[^a-zA-Z0-9\s]/g, ' ').trim().replace(/\s+/g, '_').toLowerCase();
+                    if (cleanName && cleanName !== 'undefined' && cleanName !== 'null') {{
+                        return cleanName;
                     }}
                 }}
                 
@@ -500,7 +539,7 @@ async def fill_form_with_human_interaction(tab, field_analysis, user_data, llm):
     
     if not fillable_fields:
         print("   ❌ No fillable fields found")
-        return 0
+        return 0, set()
     
     # Create field value mapping
     field_values = create_field_value_mapping(user_data)
@@ -514,6 +553,7 @@ async def fill_form_with_human_interaction(tab, field_analysis, user_data, llm):
     filled_count = 0
     current_mouse_x, current_mouse_y = 100, 100  # Starting mouse position
     filled_field_names = set()  # Track filled fields to avoid duplicates
+    filled_field_purposes = set()  # Track field purposes that were successfully filled
     processed_coordinates = set()  # Track processed coordinates to avoid duplicates
     
     print(f"   🎯 Processing {len(fillable_fields)} fillable fields...")
@@ -554,7 +594,9 @@ async def fill_form_with_human_interaction(tab, field_analysis, user_data, llm):
     # Show exactly which fields will be processed according to user specifications
     required_fields = [f for f in unique_fields if f.get('isRequired', False)]
     cover_letter_fields = [f for f in unique_fields if f.get('fieldPurpose') == 'cover_letter']
-    ignored_fields = [f for f in unique_fields if not f.get('isRequired', False) and f.get('fieldPurpose') != 'cover_letter']
+    work_related_fields = [f for f in unique_fields if f.get('fieldPurpose') in ['work_authorization', 'visa_sponsorship', 'relocation', 'summary']]
+    special_fields = ['cover_letter', 'work_authorization', 'visa_sponsorship', 'relocation', 'summary']
+    ignored_fields = [f for f in unique_fields if not f.get('isRequired', False) and f.get('fieldPurpose') not in special_fields]
     
     print(f"\n   📋 PROCESSING PLAN (per user specifications):")
     print(f"      ✅ REQUIRED FIELDS TO FILL: {len(required_fields)}")
@@ -565,11 +607,15 @@ async def fill_form_with_human_interaction(tab, field_analysis, user_data, llm):
     for i, field in enumerate(cover_letter_fields):
         print(f"         {i+1}. {field.get('fieldPurpose', 'other').upper()} - {field.get('name', 'unknown')}")
     
+    print(f"      ✅ WORK-RELATED FIELDS TO FILL: {len(work_related_fields)}")
+    for i, field in enumerate(work_related_fields):
+        print(f"         {i+1}. {field.get('fieldPurpose', 'other').upper()} - {field.get('name', 'unknown')}")
+    
     print(f"      ❌ FIELDS TO IGNORE: {len(ignored_fields)}")
     for i, field in enumerate(ignored_fields):
         print(f"         {i+1}. {field.get('fieldPurpose', 'other').upper()} - {field.get('name', 'unknown')} (optional)")
     
-    print(f"\n   🎯 TOTAL FIELDS TO PROCESS: {len(required_fields) + len(cover_letter_fields)}")
+    print(f"\n   🎯 TOTAL FIELDS TO PROCESS: {len(required_fields) + len(cover_letter_fields) + len(work_related_fields)}")
     print(f"   🚫 TOTAL FIELDS TO IGNORE: {len(ignored_fields)}")
     
     for field_index, field in enumerate(unique_fields):
@@ -586,9 +632,10 @@ async def fill_form_with_human_interaction(tab, field_analysis, user_data, llm):
             print(f"      Required: {'✅' if is_required else '❌'}")
             print(f"      Position: ({field.get('x', 0)}, {field.get('y', 0)})")
             
-            # STRICT FILTERING: Only process required fields OR cover letter
-            if not is_required and field_purpose != 'cover_letter':
-                print(f"      ⏭️  IGNORING: Not required and not cover letter - skipping completely")
+            # STRICT FILTERING: Only process required fields OR cover letter OR special work-related fields
+            special_fields = ['cover_letter', 'work_authorization', 'visa_sponsorship', 'relocation', 'summary']
+            if not is_required and field_purpose not in special_fields:
+                print(f"      ⏭️  IGNORING: Not required and not a special field - skipping completely")
                 continue
             
             # Enhanced duplicate prevention using multiple identifiers
@@ -633,6 +680,8 @@ async def fill_form_with_human_interaction(tab, field_analysis, user_data, llm):
                 # Track all field identifiers to avoid duplicates
                 for identifier in field_identifiers:
                     filled_field_names.add(identifier)
+                # Track the field purpose that was successfully filled
+                filled_field_purposes.add(field_purpose)
                 # Update mouse position for next field
                 current_mouse_x = field.get('x', current_mouse_x)
                 current_mouse_y = field.get('y', current_mouse_y)
@@ -665,13 +714,14 @@ async def fill_form_with_human_interaction(tab, field_analysis, user_data, llm):
                 print(f"      ✅ Successfully filled cover letter")
                 # Mark cover letter as filled
                 filled_field_names.add(f"{field.get('name', 'cover')}_cover_letter")
+                filled_field_purposes.add('cover_letter')
             
         except Exception as e:
             print(f"      ❌ Error filling cover letter: {e}")
     elif cover_letter_filled:
         print(f"\n   ⏭️  Cover letter already filled, skipping")
     
-    return filled_count
+    return filled_count, filled_field_purposes
 
 def create_field_value_mapping(user_data):
     """Create a mapping of field purposes to user data values."""
@@ -691,7 +741,11 @@ def create_field_value_mapping(user_data):
         'salary': "60000",
         'experience': "3+ years",
         'availability': "Immediately",
-        'authorization': "Yes"
+        'authorization': "Yes",
+        'work_authorization': "Yes",  # Authorized to work in the US
+        'visa_sponsorship': "No",     # Does not require visa sponsorship
+        'relocation': "Yes",          # Willing to relocate
+        'summary': f"Experienced professional with strong technical expertise and proven track record. Skilled in modern technologies with excellent problem-solving abilities and commitment to delivering high-quality results. Eager to contribute to team success and drive innovation in a dynamic environment."
     }
 
 def get_field_value(field_purpose, field_values, field_info, llm, user_data):
@@ -699,6 +753,8 @@ def get_field_value(field_purpose, field_values, field_info, llm, user_data):
     field_type = field_info.get('type', '').lower()
     field_name = field_info.get('name', '').lower()
     label_text = field_info.get('labelText', '').lower()
+    context_text = field_info.get('contextText', '').lower()
+    field_tag = field_info.get('tagName', '').lower()
     
     # Special handling for phone fields (often have country code dropdowns)
     if field_purpose == 'full_name' and 'phone' in field_name:
@@ -716,15 +772,80 @@ def get_field_value(field_purpose, field_values, field_info, llm, user_data):
             return clean_phone[1:]  # Remove US country code
         return phone
     
+    # ENHANCED HANDLING FOR WORK AUTHORIZATION, VISA SPONSORSHIP, AND RELOCATION
+    # These fields can appear as radio buttons, dropdowns, or text inputs
+    
+    if field_purpose == 'work_authorization':
+        print(f"         🔍 Work Authorization field detected:")
+        print(f"            Field type: {field_type}")
+        print(f"            Field tag: {field_tag}")
+        print(f"            Label: {label_text[:50]}...")
+        print(f"            Context: {context_text[:50]}...")
+        
+        if field_type in ['checkbox', 'radio']:
+            # For radio buttons/checkboxes, return True for "Yes" options
+            return True
+        elif field_tag == 'select':
+            # For dropdowns, return the text value
+            return "Yes"
+        else:
+            # For text inputs, return appropriate text
+            return "Yes"
+    
+    elif field_purpose == 'visa_sponsorship':
+        print(f"         🔍 Visa Sponsorship field detected:")
+        print(f"            Field type: {field_type}")
+        print(f"            Field tag: {field_tag}")
+        print(f"            Label: {label_text[:50]}...")
+        print(f"            Context: {context_text[:50]}...")
+        
+        if field_type in ['checkbox', 'radio']:
+            # For radio buttons/checkboxes, return False for "No" options
+            return False
+        elif field_tag == 'select':
+            # For dropdowns, return the text value
+            return "No"
+        else:
+            # For text inputs, return appropriate text
+            return "No"
+    
+    elif field_purpose == 'relocation':
+        print(f"         🔍 Relocation field detected:")
+        print(f"            Field type: {field_type}")
+        print(f"            Field tag: {field_tag}")
+        print(f"            Label: {label_text[:50]}...")
+        print(f"            Context: {context_text[:50]}...")
+        
+        if field_type in ['checkbox', 'radio']:
+            # For radio buttons/checkboxes, return True for "Yes" options
+            return True
+        elif field_tag == 'select':
+            # For dropdowns, return the text value
+            return "Yes"
+        else:
+            # For text inputs, return appropriate text
+            return "Yes"
+    
     # Direct mapping for specific field purposes
     if field_purpose in field_values and field_values[field_purpose]:
         return field_values[field_purpose]
     
-    # Handle checkboxes and radio buttons
+    # Handle checkboxes and radio buttons (general case)
     if field_type in ['checkbox', 'radio']:
-        # For authorization/eligibility questions, default to "yes"
-        if any(keyword in f"{field_name} {label_text}" for keyword in ['authorized', 'eligible', 'legal', 'visa']):
-            return True
+        # Enhanced keyword detection for authorization/eligibility questions
+        authorization_keywords = ['authorized', 'eligible', 'legal', 'visa', 'work permit', 'employment authorization']
+        sponsorship_keywords = ['sponsorship', 'sponsor', 'visa required', 'immigration']
+        relocation_keywords = ['relocate', 'relocation', 'move', 'willing to move']
+        
+        all_text = f"{field_name} {label_text} {context_text}"
+        
+        if any(keyword in all_text for keyword in authorization_keywords):
+            return True  # Yes, authorized to work
+        elif any(keyword in all_text for keyword in sponsorship_keywords):
+            return False  # No, does not require sponsorship
+        elif any(keyword in all_text for keyword in relocation_keywords):
+            return True  # Yes, willing to relocate
+        
         # For other checkboxes, check the context
         return False
     
@@ -749,7 +870,8 @@ def get_field_value(field_purpose, field_values, field_info, llm, user_data):
     
     # Default text responses
     default_responses = {
-        'other': "",  # Don't fill 'other' fields with N/A by default
+        'other': "Experienced professional with strong technical background and proven track record in delivering results.",  # Provide meaningful default for summary/other fields
+        'summary': f"Experienced professional with strong technical expertise and proven track record. Skilled in modern technologies with excellent problem-solving abilities and commitment to delivering high-quality results. Eager to contribute to team success and drive innovation in a dynamic environment.",
         'skills': "Python, JavaScript, React, Node.js",
         'education': "Bachelor's Degree",
         'experience': "3+ years of relevant experience"
@@ -785,15 +907,33 @@ async def perform_human_interaction(tab, field_info, fill_value, start_x, start_
         # Step 3: Handle different field types
         field_type = field_info.get('type', '').lower()
         field_tag = field_info.get('tagName', '').lower()
+        field_purpose = field_info.get('fieldPurpose', 'other')
+        interaction_type = (field_info.get('interactionType') or '').lower()
         
-        if field_type in ['checkbox', 'radio']:
-            # For checkboxes/radio buttons, the click is sufficient
-            print(f"         ✅ Clicked {field_type}")
-            return True
-            
-        elif field_tag == 'select':
-            # Handle dropdown selection
-            return await handle_select_field_interaction(tab, element, fill_value)
+        # Derive normalized interaction categories
+        is_checkbox = field_type == 'checkbox' or interaction_type == 'checkbox'
+        is_radio    = field_type == 'radio'    or interaction_type == 'radio'
+        is_select   = field_tag == 'select'    or interaction_type.startswith('select')
+
+        if is_checkbox or is_radio:
+            # For checkboxes/radio buttons, handle special cases
+            if field_purpose in ['work_authorization', 'visa_sponsorship', 'relocation']:
+                return await handle_choice_field_interaction(tab, element, fill_value, field_info)
+            else:
+                # For regular checkboxes/radio buttons, the click is sufficient
+                print(f"         ✅ Clicked {'checkbox' if is_checkbox else 'radio'}")
+                return True
+        
+        elif is_select:
+            # Handle dropdown selection with enhanced logic for special fields
+            if field_purpose in ['work_authorization', 'visa_sponsorship', 'relocation']:
+                return await handle_enhanced_select_interaction(tab, element, fill_value, field_info)
+            else:
+                return await handle_select_field_interaction(tab, element, fill_value)
+        
+        elif field_purpose in ['work_authorization', 'visa_sponsorship', 'relocation']:
+            # Special handling for these fields that might be disguised as text inputs but are actually dropdowns
+            return await handle_special_field_interaction(tab, element, fill_value, field_info)
             
         elif field_type == 'tel' or 'phone' in field_info.get('name', '').lower():
             # Special handling for phone fields
@@ -1092,6 +1232,301 @@ async def handle_select_field_interaction(tab, element, fill_value):
         print(f"         ❌ Error handling select field: {e}")
         return False
 
+async def handle_choice_field_interaction(tab, element, fill_value, field_info):
+    """Handle radio buttons and checkboxes for work authorization, visa sponsorship, and relocation."""
+    try:
+        field_purpose = field_info.get('fieldPurpose', 'other')
+        field_name = field_info.get('name', '')
+        label_text = field_info.get('labelText', '').lower()
+        context_text = field_info.get('contextText', '').lower()
+        
+        print(f"         🎯 Handling {field_purpose} choice field")
+        print(f"            Fill value: {fill_value}")
+        print(f"            Label: {label_text[:50]}...")
+        
+        # For radio buttons, we need to find the correct option to select
+        if field_info.get('type', '').lower() == 'radio':
+            # Find all radio buttons with the same name
+            try:
+                all_radios = await tab.select_all(f'input[name="{field_name}"]', timeout=3)
+                print(f"         📻 Found {len(all_radios)} radio buttons with name '{field_name}'")
+                
+                # Analyze each radio button option
+                for i, radio in enumerate(all_radios):
+                    try:
+                        await radio.update()
+                        radio_value = radio.attrs.get('value', '').lower()
+                        radio_id = radio.attrs.get('id', '')
+                        
+                        # Find associated label for this radio button
+                        radio_label = ""
+                        if radio_id:
+                            try:
+                                label_elem = await tab.select(f'label[for="{radio_id}"]', timeout=1)
+                                if label_elem:
+                                    await label_elem.update()
+                                    radio_label = label_elem.text.strip().lower()
+                            except:
+                                pass
+                        
+                        print(f"            Radio {i+1}: value='{radio_value}', label='{radio_label}'")
+                        
+                        # Determine if this is the correct option based on our answer
+                        should_select = False
+                        
+                        if field_purpose == 'work_authorization' and fill_value:
+                            # Looking for "Yes" options
+                            if any(keyword in f"{radio_value} {radio_label}" for keyword in ['yes', 'true', 'authorized', 'eligible']):
+                                should_select = True
+                        elif field_purpose == 'visa_sponsorship' and not fill_value:
+                            # Looking for "No" options  
+                            if any(keyword in f"{radio_value} {radio_label}" for keyword in ['no', 'false', 'not required', 'do not require']):
+                                should_select = True
+                        elif field_purpose == 'relocation' and fill_value:
+                            # Looking for "Yes" options
+                            if any(keyword in f"{radio_value} {radio_label}" for keyword in ['yes', 'true', 'willing', 'open to']):
+                                should_select = True
+                        
+                        if should_select:
+                            print(f"            ✅ Selecting radio button {i+1}: {radio_label or radio_value}")
+                            await radio.mouse_move()
+                            await asyncio.sleep(0.2)
+                            await radio.click()
+                            await asyncio.sleep(0.3)
+                            return True
+                    
+                    except Exception as radio_error:
+                        print(f"            ❌ Error analyzing radio {i+1}: {radio_error}")
+                        continue
+                
+                print(f"         ⚠️  No matching radio option found, clicking first available")
+                if all_radios:
+                    await all_radios[0].click()
+                    return True
+                
+            except Exception as radio_error:
+                print(f"         ❌ Error finding radio buttons: {radio_error}")
+        
+        # For checkboxes or fallback, just click the element
+        print(f"         ✅ Clicking checkbox/fallback element")
+        return True
+    
+    except Exception as e:
+        print(f"         ❌ Error handling choice field: {e}")
+        return False
+
+async def handle_enhanced_select_interaction(tab, element, fill_value, field_info):
+    """Handle select dropdowns for work authorization, visa sponsorship, and relocation with intelligent option matching."""
+    try:
+        field_purpose = field_info.get('fieldPurpose', 'other')
+        
+        print(f"         📋 Enhanced select handling for {field_purpose}")
+        print(f"            Target value: {fill_value}")
+        
+        # Get all options from the select element
+        try:
+            options = await tab.select_all('option', timeout=3)
+            print(f"         📋 Found {len(options)} options in select")
+            
+            selected_option = None
+            
+            for i, option in enumerate(options):
+                try:
+                    await option.update()
+                    option_value = option.attrs.get('value', '').lower()
+                    option_text = option.text.strip().lower()
+                    
+                    print(f"            Option {i+1}: value='{option_value}', text='{option_text}'")
+                    
+                    # Match logic based on field purpose and our target value
+                    should_select = False
+                    
+                    if field_purpose == 'work_authorization' and str(fill_value).lower() == 'yes':
+                        # Looking for "Yes" options
+                        if any(keyword in f"{option_value} {option_text}" for keyword in 
+                               ['yes', 'true', 'authorized', 'eligible', 'legally authorized', 'permitted']):
+                            should_select = True
+                    
+                    elif field_purpose == 'visa_sponsorship' and str(fill_value).lower() == 'no':
+                        # Looking for "No" options
+                        if any(keyword in f"{option_value} {option_text}" for keyword in 
+                               ['no', 'false', 'not required', 'do not require', 'not needed', 'none']):
+                            should_select = True
+                    
+                    elif field_purpose == 'relocation' and str(fill_value).lower() == 'yes':
+                        # Looking for "Yes" options
+                        if any(keyword in f"{option_value} {option_text}" for keyword in 
+                               ['yes', 'true', 'willing', 'open to', 'able to relocate', 'can relocate']):
+                            should_select = True
+                    
+                    if should_select:
+                        selected_option = option
+                        print(f"            ✅ Will select option {i+1}: {option_text}")
+                        break
+                
+                except Exception as option_error:
+                    print(f"            ❌ Error analyzing option {i+1}: {option_error}")
+                    continue
+            
+            # Select the chosen option
+            if selected_option:
+                await selected_option.mouse_move()
+                await asyncio.sleep(0.2)
+                await selected_option.click()
+                await asyncio.sleep(0.3)
+                print(f"         ✅ Successfully selected option")
+                return True
+            else:
+                print(f"         ⚠️  No matching option found, trying fallback selection")
+                # Fallback: select the first non-empty option
+                for option in options:
+                    try:
+                        await option.update()
+                        if option.text.strip() and option.text.strip().lower() not in ['select', 'choose', 'pick one']:
+                            await option.click()
+                            print(f"         ✅ Selected fallback option: {option.text.strip()}")
+                            return True
+                    except:
+                        continue
+        
+        except Exception as options_error:
+            print(f"         ❌ Error getting select options: {options_error}")
+        
+        return False
+    
+    except Exception as e:
+        print(f"         ❌ Error in enhanced select interaction: {e}")
+        return False
+
+async def handle_special_field_interaction(tab, element, fill_value, field_info):
+    """Handle special fields that might be disguised dropdowns or require special interaction."""
+    try:
+        field_purpose = field_info.get('fieldPurpose', 'other')
+        field_name = field_info.get('name', '')
+        
+        print(f"         🎯 Special field handling for {field_purpose}")
+        print(f"            Field name: {field_name}")
+        print(f"            Target value: {fill_value}")
+        
+        # First, try to click the field to see if it opens a dropdown
+        await element.click()
+        await asyncio.sleep(1)  # Wait for dropdown to appear
+        
+        # Look for dropdown options that appeared after clicking
+        try:
+            # Try to find dropdown options with various selectors
+            dropdown_selectors = [
+                'div[role="option"]',
+                'li[role="option"]', 
+                '.dropdown-option',
+                '.select-option',
+                '[data-value]',
+                'div[class*="option"]',
+                'li[class*="option"]'
+            ]
+            
+            options_found = []
+            for selector in dropdown_selectors:
+                try:
+                    options = await tab.select_all(selector, timeout=2)
+                    if options:
+                        print(f"         📋 Found {len(options)} options with selector: {selector}")
+                        
+                        # Check if this looks like a country dropdown (bad) vs Yes/No dropdown (good)
+                        if len(options) > 10:
+                            # Sample the first few options to see if they look like countries
+                            sample_texts = []
+                            for i, option in enumerate(options[:5]):
+                                try:
+                                    await option.update()
+                                    sample_texts.append(option.text.strip().lower())
+                                except:
+                                    continue
+                            
+                            # Check if this looks like a country list
+                            country_indicators = ['united states', 'canada', 'germany', 'australia', 'france']
+                            if any(country in ' '.join(sample_texts) for country in country_indicators):
+                                print(f"         ⚠️  Detected country dropdown with {len(options)} options - this is wrong for {field_purpose}")
+                                print(f"         🔍 Sample options: {sample_texts}")
+                                
+                                # This is a country dropdown, not what we want for work auth/relocation
+                                # Close the dropdown and try text input instead
+                                await element.click()  # Click again to close
+                                await asyncio.sleep(0.5)
+                                print(f"         ⚠️  Falling back to text input for {field_purpose}")
+                                return await handle_text_field_interaction(tab, element, str(fill_value), f'[name="{field_name}"]')
+                        
+                        options_found.extend(options)
+                        break
+                except:
+                    continue
+            
+            if options_found:
+                print(f"         📋 Total options found: {len(options_found)}")
+                
+                # Analyze options and select the appropriate one
+                for i, option in enumerate(options_found):
+                    try:
+                        await option.update()
+                        option_text = option.text.strip().lower()
+                        option_value = option.attrs.get('data-value', '').lower()
+                        
+                        print(f"            Option {i+1}: text='{option_text}', value='{option_value}'")
+                        
+                        should_select = False
+                        
+                        if field_purpose == 'work_authorization' and str(fill_value).lower() == 'yes':
+                            if any(keyword in f"{option_text} {option_value}" for keyword in 
+                                   ['yes', 'true', 'authorized', 'eligible']):
+                                should_select = True
+                        
+                        elif field_purpose == 'visa_sponsorship' and str(fill_value).lower() == 'no':
+                            if any(keyword in f"{option_text} {option_value}" for keyword in 
+                                   ['no', 'false', 'not required']):
+                                should_select = True
+                        
+                        elif field_purpose == 'relocation' and str(fill_value).lower() == 'yes':
+                            if any(keyword in f"{option_text} {option_value}" for keyword in 
+                                   ['yes', 'true', 'willing']):
+                                should_select = True
+                        
+                        if should_select:
+                            print(f"            ✅ Selecting option {i+1}: {option_text}")
+                            await option.mouse_move()
+                            await asyncio.sleep(0.2)
+                            await option.click()
+                            await asyncio.sleep(0.5)
+                            return True
+                    
+                    except Exception as option_error:
+                        print(f"            ❌ Error analyzing option {i+1}: {option_error}")
+                        continue
+                
+                print(f"         ⚠️  No matching option found, trying first available")
+                if options_found:
+                    try:
+                        await options_found[0].click()
+                        print(f"         ✅ Selected first available option")
+                        return True
+                    except:
+                        pass
+            
+            else:
+                print(f"         ⚠️  No dropdown options found, treating as text field")
+                # Fall back to text input
+                return await handle_text_field_interaction(tab, element, str(fill_value), f'[name="{field_name}"]')
+        
+        except Exception as dropdown_error:
+            print(f"         ❌ Error handling dropdown: {dropdown_error}")
+            # Fall back to text input
+            return await handle_text_field_interaction(tab, element, str(fill_value), f'[name="{field_name}"]')
+        
+        return False
+    
+    except Exception as e:
+        print(f"         ❌ Error in special field interaction: {e}")
+        return False
+
 async def handle_phone_field_interaction(tab, element, fill_value, field_info):
     """Handle interaction with phone input fields that may have country code dropdowns."""
     try:
@@ -1206,7 +1641,7 @@ def generate_cover_letter(user_data, llm):
         f"Best regards,\n{user_data.first_name} {user_data.last_name}"
     )
 
-async def fill_additional_form_elements_nodriver(tab, user_data):
+async def fill_additional_form_elements_nodriver(tab, user_data, skip_work_auth=False, skip_relocation=False):
     """Fill additional form elements like salary and yes/no questions using nodriver directly."""
     print("=== DIRECT NODRIVER ADDITIONAL FORM FILLING ===")
     
@@ -1259,7 +1694,183 @@ async def fill_additional_form_elements_nodriver(tab, user_data):
         except Exception as e:
             print(f"No YES button found: {e}")
         
-        print("✅ Completed simple form element filling")
+        # 4. Look for work authorization questions - but only if not already handled
+        if not skip_work_auth:
+            print("🔍 Looking for work authorization questions...")
+            authorization_phrases = [
+                "authorized to work",
+                "eligible to work", 
+                "legal right to work",
+                "work authorization"
+            ]
+            
+            auth_handled = False
+        else:
+            print("⏭️  Skipping work authorization (already handled by main form filling)")
+            auth_handled = True
+            authorization_phrases = []  # Empty the list so loop doesn't run
+        
+        for phrase in authorization_phrases:
+            try:
+                auth_element = await tab.find(phrase, timeout=2)
+                if auth_element and not auth_handled:
+                    print(f"✅ Found work authorization question: '{phrase}'")
+                    
+                    # First try to find and interact with dropdown
+                    try:
+                        # Look for dropdown trigger near authorization text
+                        dropdown_trigger = await tab.find("Select an option", timeout=2)
+                        if dropdown_trigger:
+                            print("🔽 Found dropdown trigger for work authorization, clicking to open...")
+                            await dropdown_trigger.mouse_move()
+                            await asyncio.sleep(0.3)
+                            await dropdown_trigger.click()
+                            await asyncio.sleep(1)
+                            
+                            # Now look for "Yes" option in dropdown
+                            yes_option = await tab.find("Yes", timeout=2)
+                            if yes_option:
+                                await yes_option.mouse_move()
+                                await asyncio.sleep(0.3)
+                                await yes_option.click()
+                                await asyncio.sleep(0.5)
+                                print("✅ Selected Yes from work authorization dropdown")
+                                auth_handled = True
+                                break
+                    except:
+                        pass
+                    
+                    # Fallback: Look for a "Yes" button or radio near this text
+                    if not auth_handled:
+                        try:
+                            yes_near_auth = await tab.find("Yes", timeout=1)
+                            if yes_near_auth:
+                                # Check if it's already selected/checked
+                                try:
+                                    is_checked = await tab.evaluate("""
+                                    (function() {
+                                        const yesElements = Array.from(document.querySelectorAll('input[type="checkbox"], input[type="radio"]'));
+                                        for (let elem of yesElements) {
+                                            if (elem.checked) return true;
+                                        }
+                                        return false;
+                                    })();
+                                    """)
+                                    
+                                    if not is_checked:
+                                        await yes_near_auth.mouse_move()
+                                        await asyncio.sleep(0.3)
+                                        await yes_near_auth.click()
+                                        await asyncio.sleep(0.5)
+                                        print("✅ Clicked Yes for work authorization")
+                                        auth_handled = True
+                                    else:
+                                        print("✅ Work authorization already selected")
+                                        auth_handled = True
+                                except:
+                                    await yes_near_auth.mouse_move()
+                                    await asyncio.sleep(0.3)
+                                    await yes_near_auth.click()
+                                    await asyncio.sleep(0.5)
+                                    print("✅ Clicked Yes for work authorization")
+                                    auth_handled = True
+                                break
+                        except:
+                            pass
+            except Exception as e:
+                continue
+        
+        # 5. Look for visa sponsorship questions
+        print("🔍 Looking for visa sponsorship questions...")
+        sponsorship_phrases = [
+            "visa sponsorship",
+            "require sponsorship",
+            "need sponsorship"
+        ]
+        
+        for phrase in sponsorship_phrases:
+            try:
+                sponsor_element = await tab.find(phrase, timeout=2)
+                if sponsor_element:
+                    print(f"✅ Found visa sponsorship question: '{phrase}'")
+                    # Look for a "No" button or radio near this text
+                    try:
+                        no_near_sponsor = await tab.find("No", timeout=1)
+                        if no_near_sponsor:
+                            await no_near_sponsor.mouse_move()
+                            await asyncio.sleep(0.3)
+                            await no_near_sponsor.click()
+                            await asyncio.sleep(0.5)
+                            print("✅ Clicked No for visa sponsorship")
+                            break
+                    except:
+                        pass
+            except Exception as e:
+                continue
+        
+        # 6. Look for relocation questions - but only if not already handled
+        if not skip_relocation:
+            print("🔍 Looking for relocation questions...")
+            relocation_phrases = [
+                "willing to relocate",
+                "open to relocation",
+                "relocate"
+            ]
+            
+            relocation_handled = False
+        else:
+            print("⏭️  Skipping relocation (already handled by main form filling)")
+            relocation_handled = True
+            relocation_phrases = []  # Empty the list so loop doesn't run
+        
+        for phrase in relocation_phrases:
+            try:
+                relocate_element = await tab.find(phrase, timeout=2)
+                if relocate_element and not relocation_handled:
+                    print(f"✅ Found relocation question: '{phrase}'")
+                    
+                    # First try to find and interact with dropdown
+                    try:
+                        # Look for dropdown trigger near relocation text
+                        dropdown_trigger = await tab.find("Select an option", timeout=2)
+                        if dropdown_trigger:
+                            print("🔽 Found dropdown trigger, clicking to open...")
+                            await dropdown_trigger.mouse_move()
+                            await asyncio.sleep(0.3)
+                            await dropdown_trigger.click()
+                            await asyncio.sleep(1)
+                            
+                            # Now look for "Yes" option in dropdown
+                            yes_option = await tab.find("Yes", timeout=2)
+                            if yes_option:
+                                await yes_option.mouse_move()
+                                await asyncio.sleep(0.3)
+                                await yes_option.click()
+                                await asyncio.sleep(0.5)
+                                print("✅ Selected Yes from relocation dropdown")
+                                relocation_handled = True
+                                break
+                    except:
+                        pass
+                    
+                    # Fallback: Look for a "Yes" button or radio near this text
+                    if not relocation_handled:
+                        try:
+                            yes_near_relocate = await tab.find("Yes", timeout=1)
+                            if yes_near_relocate:
+                                await yes_near_relocate.mouse_move()
+                                await asyncio.sleep(0.3)
+                                await yes_near_relocate.click()
+                                await asyncio.sleep(0.5)
+                                print("✅ Clicked Yes for relocation")
+                                relocation_handled = True
+                                break
+                        except:
+                            pass
+            except Exception as e:
+                continue
+        
+        print("✅ Completed enhanced form element filling")
         
     except Exception as e:
         print(f"Error in additional form filling: {e}")
@@ -1278,6 +1889,15 @@ async def simple_form_fill_fallback(tab, user_data):
         (['input[type="tel"]', 'input[name*="phone"]'], user_data.phone),
         (['input[name*="address"]', 'input[placeholder*="address"]', 'textarea[name*="address"]'], user_data.address or "Tampa, FL"),
         (['textarea[name*="cover"]', 'textarea[placeholder*="cover"]'], "I am excited to apply for this position and believe my skills and experience make me a strong candidate."),
+        # Work authorization patterns
+        (['input[name*="authorized"]', 'input[name*="eligible"]', 'input[name*="work_auth"]'], "Yes"),
+        (['select[name*="authorized"]', 'select[name*="eligible"]', 'select[name*="work_auth"]'], "Yes"),
+        # Visa sponsorship patterns  
+        (['input[name*="sponsor"]', 'input[name*="visa"]', 'input[name*="immigration"]'], "No"),
+        (['select[name*="sponsor"]', 'select[name*="visa"]', 'select[name*="immigration"]'], "No"),
+        # Relocation patterns
+        (['input[name*="relocate"]', 'input[name*="relocation"]', 'input[name*="move"]'], "Yes"),
+        (['select[name*="relocate"]', 'select[name*="relocation"]', 'select[name*="move"]'], "Yes"),
     ]
     
     for selectors, value in field_mappings:
@@ -2194,11 +2814,16 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
 
         # --- ADVANCED FORM ANALYSIS AND FILLING ---
         tasks[task_id].update({"status": "processing", "message": "Analyzing forms and filling required fields..."})
-        await analyze_and_fill_all_form_elements(tab, llm, user_data)
+        filled_field_purposes = await analyze_and_fill_all_form_elements(tab, llm, user_data)
         
         # --- DIRECT NODRIVER FORM COMPLETION FOR TESTING ---
         tasks[task_id].update({"status": "processing", "message": "Filling additional form elements with nodriver..."})
-        await fill_additional_form_elements_nodriver(tab, user_data)
+        
+        # Determine what to skip based on what was already filled
+        skip_work_auth = 'work_authorization' in filled_field_purposes
+        skip_relocation = 'relocation' in filled_field_purposes
+        
+        await fill_additional_form_elements_nodriver(tab, user_data, skip_work_auth=skip_work_auth, skip_relocation=skip_relocation)
 
         # --- SUBMIT THE FORM ---
         tasks[task_id].update({"status": "processing", "message": "Submitting application..."})
@@ -2577,63 +3202,9 @@ async def hybrid_auto_apply(
     print("🔍 API REQUEST DEBUGGING - RECEIVED CLIENT DATA")
     print("=" * 80)
     
-    # Debug URL parameter
-    print(f"📍 JOB URL:")
-    print(f"   Raw URL: {url}")
-    print(f"   URL Length: {len(url)} characters")
-    print(f"   URL Valid: {'✅' if url.startswith(('http://', 'https://')) else '❌'}")
-    
-    # Debug API Key parameter (show first/last few chars for security)
-    print(f"\n🔑 API KEY:")
-    if api_key:
-        masked_key = f"{api_key[:8]}...{api_key[-8:]}" if len(api_key) > 16 else "***MASKED***"
-        print(f"   API Key: {masked_key}")
-        print(f"   Key Length: {len(api_key)} characters")
-        print(f"   Key Valid: {'✅' if len(api_key) > 20 else '❌'}")
-    else:
-        print(f"   API Key: ❌ NOT PROVIDED")
-    
-    # Debug Prompt parameter
-    print(f"\n📝 USER PROMPT:")
-    print(f"   Prompt Length: {len(prompt)} characters")
-    print(f"   Prompt Preview: {prompt[:200]}{'...' if len(prompt) > 200 else ''}")
-    if len(prompt) > 200:
-        print(f"   Prompt End: ...{prompt[-100:]}")
-    
-    # Debug Resume File parameter
-    print(f"\n📄 RESUME FILE:")
-    if resume and resume.filename:
-        print(f"   Filename: {resume.filename}")
-        print(f"   Content Type: {resume.content_type}")
-        print(f"   File Size: {resume.size if hasattr(resume, 'size') else 'Unknown'} bytes")
-        print(f"   File Extension: {resume.filename.split('.')[-1] if '.' in resume.filename else 'None'}")
-        print(f"   File Valid: ✅")
-    else:
-        print(f"   Resume File: ❌ NOT PROVIDED")
-    
-    # Debug File URL parameter
-    print(f"\n🔗 FILE URL:")
-    if file_url:
-        print(f"   File URL: {file_url[:100]}{'...' if len(file_url) > 100 else ''}")
-        print(f"   URL Length: {len(file_url)} characters")
-        print(f"   URL Type: {'Data URL' if file_url.startswith('data:') else 'HTTP URL' if file_url.startswith(('http://', 'https://')) else 'Unknown'}")
-        print(f"   File URL Valid: ✅")
-    else:
-        print(f"   File URL: ❌ NOT PROVIDED")
-    
-    # Debug Resume Source Priority
-    print(f"\n📋 RESUME SOURCE PRIORITY:")
-    if resume and resume.filename:
-        print(f"   Primary Source: 📄 Uploaded File ({resume.filename})")
-        print(f"   Secondary Source: {'🔗 File URL (backup)' if file_url else '❌ None'}")
-    elif file_url:
-        print(f"   Primary Source: 🔗 File URL")
-        print(f"   Secondary Source: ❌ None")
-    else:
-        print(f"   Primary Source: ❌ NO RESUME PROVIDED")
-        print(f"   ⚠️  WARNING: No resume source available!")
-    
-    print("=" * 80)
+    # Concise request summary (avoid duplicating sensitive details)
+    print("📝 Request Summary:")
+    print(f"   URL Valid: {'✅' if url.startswith(('http://', 'https://')) else '❌'} | Resume Upload: {'Yes' if resume and resume.filename else 'No'} | File URL: {'Yes' if file_url else 'No'} | Prompt Length: {len(prompt)} chars")
     
     llm = ChatGoogleGenerativeAI(model='gemini-2.5-flash', api_key=api_key)
     
@@ -2641,16 +3212,8 @@ async def hybrid_auto_apply(
     print("🤖 PARSING USER PROMPT WITH LLM...")
     user_data_model = await parse_prompt_to_user_data(llm, prompt)
     
-    # Debug the parsed user data
-    print(f"\n👤 PARSED USER DATA:")
-    print(f"   First Name: {user_data_model.first_name}")
-    print(f"   Last Name: {user_data_model.last_name}")
-    print(f"   Email: {user_data_model.email}")
-    print(f"   Phone: {user_data_model.phone}")
-    print(f"   LinkedIn: {user_data_model.linkedin or '❌ Not provided'}")
-    print(f"   GitHub: {user_data_model.github or '❌ Not provided'}")
-    print(f"   Portfolio: {user_data_model.portfolio or '❌ Not provided'}")
-    print(f"   Address: {user_data_model.address or '❌ Not provided'}")
+    # Brief confirmation of parsed user data (names only to avoid duplication)
+    print(f"\n👤 Parsed User: {user_data_model.first_name} {user_data_model.last_name} | Email: {user_data_model.email}")
     
     # Generate task ID and show task info
     task_id = str(uuid.uuid4())
@@ -3495,4 +4058,4 @@ async def try_coordinate_guessing_method(tab, turnstile_info, llm):
         return False
 
 if __name__ == "__main__":
-    uvicorn.run("nodrive_appy_test:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("nodrive_appy_test:app", host="0.0.0.0", port=8000, reload=True)    
