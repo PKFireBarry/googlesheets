@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 import textwrap
 from difflib import get_close_matches
+import shutil
 
 import nodriver as uc
 from playwright.async_api import async_playwright
@@ -92,21 +93,6 @@ class ElementInfo:
     validation_rules: Dict[str, Any] = field(default_factory=dict)
     max_selections: int = 1  # For checkbox groups
 
-# Deprecated: Old form filling functions removed - using comprehensive system from cloudflare_test.py
-
-# Deprecated: Old field context function removed - using comprehensive system from cloudflare_test.py
-
-# Deprecated: Old form filling function removed - using comprehensive system from cloudflare_test.py
-
-# Deprecated: Old additional form filling function removed - using comprehensive system from cloudflare_test.py
-
-# Deprecated: Old fallback form filling function removed - using comprehensive system from cloudflare_test.py
-
-# Deprecated: Old LLM intelligence function removed - using comprehensive system from cloudflare_test.py
-
-# Deprecated: Old text field handler removed - using comprehensive system from cloudflare_test.py
-
-# Deprecated: All remaining old field handlers removed - using comprehensive system from cloudflare_test.py
 
 async def handle_cookie_banner(tab):
     """
@@ -155,15 +141,15 @@ async def handle_cookie_banner(tab):
     print("No cookie banner found or handled.")
     return False # No button was clicked
 
-# Removed LLM navigation function - using native nodriver methods only
-
-# Deprecated: Old LLM response function removed - using comprehensive LLMAnswerGenerator from cloudflare_test.py
 
 async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_data: UserData, resume_file: UploadFile | None, file_url: str | None):
     """The main background task for the hybrid auto-apply process."""
     tasks[task_id] = {"status": "starting", "message": "Starting hybrid auto-apply process."}
     browser = None
     temp_file_path = None
+    temp_dir = None
+    resume_content = None
+    resume_filename = None
     
     try:
         # --- Setup Browser ---
@@ -355,36 +341,52 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
         # --- Handle Resume Upload ---
         tasks[task_id].update({"status": "processing", "message": "Looking for resume upload field..."})
         
-        # Process the resume, whether it's a direct upload or a URL
-        if resume_file:
-            # Save uploaded file to a temporary path
-            suffix = os.path.splitext(resume_file.filename)[-1]
-            async with aiofiles.tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        if resume_file or file_url:
+            original_filename = ""
+            content = b""
+
+            if resume_file:
+                original_filename = resume_file.filename
                 content = await resume_file.read()
-                await tmp.write(content)
-                temp_file_path = tmp.name
-        elif file_url:
-            # Handle file_url: support both HTTP(S) and data URLs
-            if file_url.startswith('data:'):
-                try:
-                    match = re.match(r'data:(?P<mime>[^;]+);filename=(?P<filename>[^;]+);base64,(?P<data>.+)', file_url)
-                    filename = match.group('filename')
-                    suffix = os.path.splitext(filename)[-1]
-                    file_data = base64.b64decode(match.group('data'))
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-                        tmp.write(file_data)
-                        temp_file_path = tmp.name
-                except Exception as e:
-                    print(f"Failed to parse data URL: {e}")
-            else:
-                # Download file from HTTP(S) URL
-                async with httpx.AsyncClient() as client:
-                    response = await client.get(file_url)
-                    response.raise_for_status()
-                    suffix = os.path.splitext(file_url)[-1]
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-                        tmp.write(response.content)
-                        temp_file_path = tmp.name
+            elif file_url:
+                if file_url.startswith('data:'):
+                    try:
+                        match = re.match(r'data:(?P<mime>[^;]+);filename=(?P<filename>[^;]+);base64,(?P<data>.+)', file_url)
+                        original_filename = match.group('filename')
+                        content = base64.b64decode(match.group('data'))
+                    except Exception as e:
+                        print(f"Failed to parse data URL: {e}")
+                else:
+                    # Download file from HTTP(S) URL
+                    async with httpx.AsyncClient() as client:
+                        response = await client.get(file_url)
+                        response.raise_for_status()
+                        content = response.content
+                        original_filename = file_url.split("/")[-1]
+
+            if original_filename and content:
+                resume_content = content
+                
+                # Get file extension
+                suffix = os.path.splitext(original_filename)[-1]
+
+                # Sanitize names for the filename
+                first_name = re.sub(r'[^a-zA-Z0-9]', '', user_data.first_name)
+                last_name = re.sub(r'[^a-zA-Z0-9]', '', user_data.last_name)
+                
+                # Create the new filename
+                new_resume_filename = f"{first_name}-{last_name}-Resume{suffix}"
+                resume_filename = new_resume_filename # For LLM context
+
+                # Create a temporary directory to hold the renamed file
+                temp_dir = tempfile.mkdtemp()
+                temp_file_path = os.path.join(temp_dir, new_resume_filename)
+
+                # Write the resume content to the new file path
+                async with aiofiles.open(temp_file_path, 'wb') as tmp:
+                    await tmp.write(content)
+
+                print(f"📄 Renamed resume to '{new_resume_filename}' and saved to temporary path.")
 
         if temp_file_path:
             print(f"📄 Looking for resume upload field...")
@@ -572,7 +574,7 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
         
         # Initialize form filling agent
         print("🤖 Initializing form filling agent...")
-        form_agent = FormFillingAgent(tab, llm_generator, user_data)
+        form_agent = FormFillingAgent(tab, llm_generator, user_data, resume_file_content=resume_content, resume_filename=resume_filename)
         
         # Fill the form using the comprehensive system
         tasks[task_id].update({"status": "processing", "message": "Filling form fields with comprehensive system..."})
@@ -868,8 +870,14 @@ async def process_hybrid_apply(task_id: str, job_url: str, api_key: str, user_da
             
             print("✅ Browser cleanup completed.")
             
-        if temp_file_path and os.path.exists(temp_file_path):
+        if temp_dir and os.path.exists(temp_dir):
+            import shutil
+            shutil.rmtree(temp_dir)
+            print(f"🧹 Cleaned up temporary directory: {temp_dir}")
+        elif temp_file_path and os.path.exists(temp_file_path):
+            # Fallback for old logic if temp_dir wasn't created
             os.remove(temp_file_path)
+
 
 async def parse_prompt_to_user_data(api_key: str, prompt: str) -> UserData:
     """Uses the LLM to parse the unstructured prompt into a structured UserData object."""
@@ -920,6 +928,7 @@ async def hybrid_auto_apply(
     asyncio.create_task(process_hybrid_apply(task_id, url, api_key, user_data_model, resume, file_url))
     
     return {"task_id": task_id, "status": "starting"}
+
 
 @app.get("/auto-apply-status/{task_id}")
 async def get_task_status(task_id: str):
@@ -1085,10 +1094,6 @@ async def get_active_debug_port():
     
     print("❌ No active debug ports found")
     return None
-
-
-
-
 
 async def inspect_and_highlight_turnstile(tab):
     """Inspect the DOM for Turnstile elements and create visual highlights around them."""
@@ -1573,7 +1578,7 @@ async def guess_checkbox_coordinates_from_container(turnstile_info):
         guessed_positions = []
         
         # Position 1: Left side, vertically centered (most common)
-        guess1_x = widget_x + 20
+        guess1_x = widget_x + 17
         guess1_y = widget_y + (widget_height // 2)
         guessed_positions.append({
             'x': guess1_x,
@@ -1583,7 +1588,7 @@ async def guess_checkbox_coordinates_from_container(turnstile_info):
         })
         
         # Position 2: Upper-left area (typical checkbox position)
-        guess2_x = widget_x + 15
+        guess2_x = widget_x + 13
         guess2_y = widget_y + (widget_height // 3)
         guessed_positions.append({
             'x': guess2_x,
@@ -2640,55 +2645,67 @@ class LLMAnswerGenerator:
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel(model_name)
 
-    async def get_llm_answer(self, question: str, user_context: str, options: Optional[List[str]] = None) -> str:
+    async def get_llm_answer(self, question: str, user_context: str, options: Optional[List[str]] = None, resume_file_content: Optional[bytes] = None, resume_filename: Optional[str] = None) -> str:
         """Generates an answer using the LLM."""
+        prompt_parts: list[str | dict] = []
+        
+        initial_prompt = f"""
+You are an expert data-matching AI. Your task is to answer job application questions with extreme accuracy, based *only* on the provided user profile and resume. You must act as if you are the user, representing their skills and experience truthfully and confidently.
+
+**User Profile:**
+{user_context}
+"""
+        prompt_parts.append(initial_prompt)
+
+        if resume_file_content and resume_filename:
+            import mimetypes
+            mime_type, _ = mimetypes.guess_type(resume_filename)
+            if mime_type and mime_type in ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/msword", "text/plain"]:
+                prompt_parts.append("\n**User Resume:**\n")
+                prompt_parts.append({
+                    "mime_type": mime_type,
+                    "data": base64.b64encode(resume_file_content).decode()
+                })
+
+        # Add the critical rules after the context
+        rules_prompt = """
+**CRITICAL Answering Rules:**
+1.  **PRIORITIZE THE RESUME:** The resume is the primary source of truth for skills, experience, and qualifications.
+2.  **SKILLS ARE PARAMOUNT:** For any question about experience or proficiency (e.g., "Do you know Python?", "Experience with Git?"), if the skill or technology is mentioned ANYWHERE in the resume (especially under "Skills" or "Projects"), you MUST answer "YES" or the most positive equivalent option provided.
+3.  **BE CONFIDENT, NOT CAUTIOUS:** Assume the user is proficient in any skill they've listed. Do not downplay their abilities.
+4.  **EXACT MATCHING:** You must respond with the exact text of one of the provided options. Do not add any extra text, explanation, or punctuation.
+"""
+        prompt_parts.append(rules_prompt)
+
         if options and len(options) > 0:
             # This is a multiple-choice or dropdown question
-            # Clean up options for display (remove value parts)
-            clean_options = []
-            for opt in options:
-                clean_opt = re.sub(r'\s*\(value:.*?\)\s*$', '', opt).strip()
-                clean_options.append(clean_opt)
+            clean_options = [re.sub(r'\s*\(value:.*?\)\s*$', '', opt).strip() for opt in options]
             
-            prompt = f"""
-You are a helpful assistant applying for a job on behalf of a user.
-Here is the user's profile for context:
-{user_context}
-
-Here is a question from the job application:
+            final_prompt = f"""
+**Question to Answer:**
 "{question}"
 
-You MUST choose exactly ONE option from the list below. Your answer must be EXACTLY one of these options, word-for-word:
-
+**Available Options:**
 {chr(10).join([f"{i+1}. {opt}" for i, opt in enumerate(clean_options)])}
 
-CRITICAL INSTRUCTIONS:
-- Respond with ONLY the exact text of the best option
-- Copy the option text EXACTLY as shown above
-- Do not add any explanation, numbering, or extra text
-- Do not paraphrase or modify the option text
-- If the option is long, copy the ENTIRE text exactly
-
-Example: If option 2 is best, respond with exactly: "{clean_options[0] if clean_options else 'N/A'}"
+Based on the rules and provided data, what is the correct option?
 """
+            prompt_parts.append(final_prompt)
         else:
             # This is a text input question
-            prompt = f"""
-You are a helpful assistant applying for a job on behalf of a user.
-Here is the user's profile for context:
-{user_context}
-
-Here is a question from the job application:
+            final_prompt = f"""
+**Question to Answer:**
 "{question}"
 
-Please provide a concise, professional, one-sentence answer to this question based on the user's profile.
-Your answer should be suitable for a job application form.
+Based on the rules and provided data, please provide a concise, professional, one-sentence answer.
 """
+            prompt_parts.append(final_prompt)
+
         try:
             print(f"🧠 Asking Gemini: \"{question[:60]}{'...' if len(question) > 60 else ''}\"")
             if options and len(options) > 0:
-                print(f"   📋 Available options ({len(options)}): {', '.join([opt[:30] + ('...' if len(opt) > 30 else '') for opt in clean_options])}")
-            response = await self.model.generate_content_async(prompt)
+                print(f"   📋 Available options ({len(options)}): {', '.join([opt[:30] + ('...' if len(opt) > 30 else '') for opt in [re.sub(r'\\s*\\(value:.*?\\)\\s*$', '', opt).strip() for opt in options]])}")
+            response = await self.model.generate_content_async(prompt_parts)
             answer = response.text.strip()
             print(f"💡 Gemini's Answer: \"{answer[:60]}{'...' if len(answer) > 60 else ''}\"")
             return answer
@@ -2696,15 +2713,30 @@ Your answer should be suitable for a job application form.
             print(f"❌ Error calling Gemini API: {e}")
             return f"[LLM Error: {e}]"
 
-    async def get_checkbox_selections(self, question: str, options: List[str], max_selections: int, user_context: str) -> List[str]:
+    async def get_checkbox_selections(self, question: str, options: List[str], max_selections: int, user_context: str, resume_file_content: Optional[bytes] = None, resume_filename: Optional[str] = None) -> List[str]:
         """Generate checkbox selections using the LLM."""
         options_text = "\n".join([f"- {opt}" for opt in options])
+        
+        prompt_parts: list[str | dict] = []
         
         prompt = f"""
 You are a helpful assistant applying for a job on behalf of a user.
 Here is the user's profile for context:
 {user_context}
+"""
+        prompt_parts.append(prompt)
 
+        if resume_file_content and resume_filename:
+            import mimetypes
+            mime_type, _ = mimetypes.guess_type(resume_filename)
+            if mime_type and mime_type in ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/msword", "text/plain"]:
+                prompt_parts.append("\nHere is the user's resume for additional context. Use it to inform your selections.\n")
+                prompt_parts.append({
+                    "mime_type": mime_type,
+                    "data": base64.b64encode(resume_file_content).decode()
+                })
+
+        final_prompt = f"""
 Here is a question from the job application:
 "{question}"
 
@@ -2720,9 +2752,11 @@ Compute (EC2, VMs, Functions)
 
 Do not add any explanation or additional text.
 """
+        prompt_parts.append(final_prompt)
+        
         try:
             print(f"🧠 Asking Gemini to select {max_selections} options from {len(options)} choices...")
-            response = await self.model.generate_content_async(prompt)
+            response = await self.model.generate_content_async(prompt_parts)
             answer = response.text.strip()
             
             # Parse the response into individual selections
@@ -2736,11 +2770,13 @@ Do not add any explanation or additional text.
 
 class FormFillingAgent:
     """Orchestrates filling the form using UserData and an LLM."""
-    def __init__(self, tab, llm_generator: LLMAnswerGenerator, user_data: UserData):
+    def __init__(self, tab, llm_generator: LLMAnswerGenerator, user_data: UserData, resume_file_content: Optional[bytes] = None, resume_filename: Optional[str] = None):
         self.tab = tab
         self.llm = llm_generator
         self.user_data = user_data
         self.user_context = user_data.to_context_string()
+        self.resume_file_content = resume_file_content
+        self.resume_filename = resume_filename
 
     def get_answer_from_user_data(self, purpose: str) -> Optional[str]:
         """Gets a pre-defined answer from the UserData object."""
@@ -2784,7 +2820,9 @@ class FormFillingAgent:
                 answer = await self.llm.get_llm_answer(
                     question=element.label_text,
                     user_context=self.user_context,
-                    options=element.available_options
+                    options=element.available_options,
+                    resume_file_content=self.resume_file_content,
+                    resume_filename=self.resume_filename
                 )
 
             if answer:
@@ -3326,7 +3364,9 @@ class FormFillingAgent:
                         question=element.label_text,
                         options=[opt for opt in element.available_options],
                         max_selections=element.max_selections,
-                        user_context=self.user_context
+                        user_context=self.user_context,
+                        resume_file_content=self.resume_file_content,
+                        resume_filename=self.resume_filename
                     )
                     
                     if multiple_answers:
@@ -3414,8 +3454,5 @@ class FormFillingAgent:
         return False
 
 if __name__ == "__main__":
-    import uvicorn
-    print("🚀 Starting FastAPI server with comprehensive form filling system...")
-    print("📡 Server will be available at: http://localhost:8000")
-    print("📖 API docs available at: http://localhost:8000/docs")
+    print("🚀 Starting FastAPI")
     uvicorn.run(app, host="0.0.0.0", port=8000)
