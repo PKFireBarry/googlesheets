@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 // Gemini API Configuration
-const GEMINI_MODEL = 'gemini-2.5-flash-preview-05-20';
+const GEMINI_MODEL = 'gemini-2.5-flash';
 
 /**
  * Helper function to check if resume phrases are present in the cover letter
@@ -299,22 +299,32 @@ Return ONLY the finished cover letter with no additional comments, notes, or exp
     // Call the Gemini API
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${geminiApiKey}`;
     
+    const requestPayload = {
+      contents: [geminiContent],
+      generationConfig: {
+        temperature: 0.3, // Balanced between creativity and coherence
+        topP: 0.8,
+        topK: 40,
+        maxOutputTokens: 4096, // Increased to accommodate thinking tokens + actual response
+        responseMimeType: "text/plain" // Ensure plain text response
+      }
+    };
+    
     console.log('Calling Gemini API...');
+    console.log('API URL:', apiUrl);
+    console.log('Request payload structure:', JSON.stringify({
+      contents: geminiContent.parts.length > 0 && geminiContent.parts[0].inlineData ? 
+        [{ parts: [{ text: geminiContent.parts[0].text }, { inlineData: { mimeType: geminiContent.parts[0].inlineData?.mimeType, data: '[PDF_DATA]' } }] }] :
+        [{ parts: [{ text: geminiContent.parts[0].text }] }],
+      generationConfig: requestPayload.generationConfig
+    }, null, 2));
     
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        contents: [geminiContent],
-        generationConfig: {
-          temperature: 0.3, // Balanced between creativity and coherence
-          topP: 0.8,
-          topK: 40,
-          maxOutputTokens: 1024 // Ensure enough tokens for a full cover letter
-        }
-      })
+      body: JSON.stringify(requestPayload)
     });
     
     if (!response.ok) {
@@ -343,13 +353,133 @@ Return ONLY the finished cover letter with no additional comments, notes, or exp
     const data = await response.json();
     console.log('Gemini API response received');
     
+    // Debug: Log the full response structure
+    console.log('FULL GEMINI API RESPONSE:');
+    console.log(JSON.stringify(data, null, 2));
+    
     // Extract the text from the Gemini response
-    let coverLetterText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    // Handle both regular responses and thinking mode responses
+    let coverLetterText = '';
+    const candidate = data?.candidates?.[0];
+    
+    if (candidate?.content?.parts) {
+      // Standard response format
+      coverLetterText = candidate.content.parts[0]?.text || '';
+    } else if (candidate?.content?.role === 'model' && !candidate.content.parts) {
+      // Thinking mode might return content differently
+      console.log('Response in thinking mode format, checking for alternative content structure');
+    }
     
     console.log('RAW RESPONSE FROM GEMINI:');
     console.log('----------------------------------------');
     console.log(coverLetterText);
     console.log('----------------------------------------');
+    
+    // Check if there are any safety ratings or blocking reasons
+    if (candidate?.finishReason) {
+      console.log('Finish reason:', candidate.finishReason);
+    }
+    if (candidate?.safetyRatings) {
+      console.log('Safety ratings:', candidate.safetyRatings);
+    }
+    
+    // Check token usage for debugging
+    if (data?.usageMetadata) {
+      const metadata = data.usageMetadata;
+      console.log('Token usage:', {
+        promptTokens: metadata.promptTokenCount,
+        totalTokens: metadata.totalTokenCount,
+        thoughtsTokens: metadata.thoughtsTokenCount || 0
+      });
+    }
+    
+    // If we got an empty response and we were using PDF data, try again with text-only
+    if (!coverLetterText && resumePdfData) {
+      console.log('Empty response with PDF data, trying with text-only fallback...');
+      
+      const fallbackPrompt = `Generate a modern, concise, and impactful cover letter for the following job application:
+
+Job Title: ${jobTitle}
+Company: ${companyName}
+Job Description: ${jobDescription}
+${skills ? `Relevant Skills: ${skills}` : ''}
+${location ? `Job Location: ${location}` : ''}
+${resumeContent ? `
+===== Resume Content =====
+${resumeContent}
+=======================
+` : ''}
+
+Follow these MODERN COVER LETTER GUIDELINES:
+
+1. CONCISENESS: Keep it brief (around 300 words) with 2-3 short paragraphs. Recruiters are busy and appreciate brevity.
+
+2. NEW INFORMATION ONLY: Don't just repeat what's in the resume. Add context, personal connection to the role/company, or elaborate on specific points that make the candidate ideal for THIS SPECIFIC position.
+
+3. AUTHENTIC CONNECTION: Draw genuine connections between the candidate's qualifications and this specific job/company. Avoid generic language.
+
+4. STAND OUT: Make the letter memorable but professional. Focus on what makes this candidate uniquely valuable.
+
+FORMAT GUIDELINES:
+- Include only the company name and city/state for the address (e.g., "${companyName}, ${location || 'Company Location'}")
+- Use "Dear Hiring Manager," as the salutation
+- Include 2-3 concise paragraphs for the body
+- ALWAYS END with "Sincerely," followed by the candidate's full name
+
+EXTREMELY IMPORTANT: 
+- DO NOT use placeholder text in brackets
+- DO NOT include any explanatory text, justifications, or notes
+- Your response must ONLY include the final, polished cover letter
+
+Return ONLY the finished cover letter with no additional comments, notes, or explanations.`;
+
+      const fallbackContent = {
+        parts: [{ text: fallbackPrompt }]
+      };
+      
+      const fallbackPayload = {
+        contents: [fallbackContent],
+        generationConfig: {
+          temperature: 0.3,
+          topP: 0.8,
+          topK: 40,
+          maxOutputTokens: 4096,
+          responseMimeType: "text/plain"
+        }
+      };
+      
+      console.log('Making fallback API call without PDF...');
+      
+      const fallbackResponse = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(fallbackPayload)
+      });
+      
+      if (fallbackResponse.ok) {
+        const fallbackData = await fallbackResponse.json();
+        console.log('Fallback response received:', JSON.stringify(fallbackData, null, 2));
+        
+        const fallbackCandidate = fallbackData?.candidates?.[0];
+        if (fallbackCandidate?.content?.parts) {
+          coverLetterText = fallbackCandidate.content.parts[0]?.text || '';
+        }
+        
+        console.log('Fallback cover letter text:', coverLetterText);
+        console.log('Fallback finish reason:', fallbackCandidate?.finishReason);
+        
+        if (fallbackData?.usageMetadata) {
+          const metadata = fallbackData.usageMetadata;
+          console.log('Fallback token usage:', {
+            promptTokens: metadata.promptTokenCount,
+            totalTokens: metadata.totalTokenCount,
+            thoughtsTokens: metadata.thoughtsTokenCount || 0
+          });
+        }
+      }
+    }
     
     // Simpler function that just fixes the date and preserves everything else
     function minimalCleanResponse(text: string): string {
