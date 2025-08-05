@@ -4,11 +4,10 @@ import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import CookieUtil from '../utils/cookies'
 import { Loader2, Linkedin, HelpCircle, ChevronDown } from 'lucide-react'
-import { lookupLinkedInHR, LinkedInContactData } from '../utils/webhook'
-import ApiKeyConfiguration from '../components/linkedin/ApiKeyConfiguration'
+import { lookupLinkedInHRWithJina, LinkedInContactData } from '../utils/webhook'
 import CompanySelector from '../components/linkedin/CompanySelector'
 import JobDetails from '../components/linkedin/JobDetails'
-import LinkedInContacts from '../components/linkedin/LinkedInContacts'
+import LinkedInContacts from '../components/linkedin/LinkedInContactsCompact'
 import HowItWorksModal from '../components/linkedin/HowItWorksModal'
 import ApiInfoModal from '../components/linkedin/ApiInfoModal'
 import PageHeader from '../components/linkedin/PageHeader'
@@ -63,7 +62,6 @@ function LinkedInLookupContent() {
   const [searchResults, setSearchResults] = useState<LinkedInContactData[]>([])
   const [isSearching, setIsSearching] = useState(false)
   const [autoSearchDone, setAutoSearchDone] = useState(false)
-  const [geminiApiKey, setGeminiApiKey] = useState('')
   const [autoSearchEnabled, setAutoSearchEnabled] = useState(false)
   
   // Add state variables for tracking the task status
@@ -88,21 +86,14 @@ function LinkedInLookupContent() {
   // Add state for how it works modal
   const [showHowItWorksModal, setShowHowItWorksModal] = useState(false)
   
+  
   useEffect(() => {
     // Load companies from cookie or search params on mount
     const loadData = async () => {
       try {
+        console.log('🔍 LinkedIn Lookup: Starting loadData...')
         setLoading(true)
         
-        // Load Gemini API key from cookie if available
-        const savedApiKey = CookieUtil.get("geminiApiKey")
-        if (savedApiKey) {
-          console.log('Found saved Gemini API key, loading...')
-          setGeminiApiKey(savedApiKey)
-          
-          // Add debug log to verify the API key is being loaded correctly
-          console.log(`API key loaded from cookie: ${savedApiKey.substring(0, 3)}...`)
-        }
         
         // Check if we have a jobId in the URL - if so, try to load from localStorage first
         const jobId = searchParams.get("jobId")
@@ -351,27 +342,15 @@ function LinkedInLookupContent() {
     }
   }, [searchParams]);
   
-  const handleSaveSettings = () => {
-    try {
-      // Save Gemini API key if provided
-      if (geminiApiKey) {
-        // Use secure cookie storage with 30-day expiration
-        CookieUtil.setSecure("geminiApiKey", geminiApiKey, 30);
-      }
-      
-      // Clear any previous errors
-      setError(null)
-      
-      console.log('Settings saved:', {
-        geminiApiKey: geminiApiKey ? '[API KEY SET]' : '[NOT SET]'
-      })
-    } catch (error) {
-      // Invalid settings
-      setError('Failed to save settings')
-    }
-  }
   
   const handleSearch = async () => {
+    console.log('🔍 LinkedIn Lookup: handleSearch called')
+    console.log('🔍 LinkedIn Lookup: Current state:', {
+      useCustomCompany,
+      customCompany,
+      selectedCompany
+    })
+    
     // Use either the selected company from dropdown or the custom company input
     let companyToSearch = useCustomCompany ? customCompany : selectedCompany
     
@@ -395,23 +374,6 @@ function LinkedInLookupContent() {
       return
     }
     
-    // Log the current API key state to debug
-    console.log('Current geminiApiKey state:', geminiApiKey ? `${geminiApiKey.substring(0, 3)}...` : 'not set')
-    console.log('Environment API key:', process.env.NEXT_PUBLIC_GEMINI_API_KEY ? 'set' : 'not set')
-    
-    // Check if we have an API key in cookie but not in state
-    if (!geminiApiKey && !process.env.NEXT_PUBLIC_GEMINI_API_KEY) {
-      const cookieApiKey = CookieUtil.get("geminiApiKey")
-      if (cookieApiKey) {
-        console.log('Found API key in cookie but not in state, using cookie value')
-        // Use the cookie value directly
-        setGeminiApiKey(cookieApiKey)
-        // Continue with the search using the cookie value
-      } else {
-      setError('Please configure the Gemini API key first')
-      return
-      }
-    }
     
     console.log(`Starting search for company: ${companyToSearch}`)
     
@@ -432,35 +394,40 @@ function LinkedInLookupContent() {
       const jobInfo = selectedJob || extractJobInfo();
       console.log('Job data for lookup:', jobInfo);
       
+      // Define status update callback first (used by both search methods)
+      const statusUpdateCallback = (update: { 
+        status: string; 
+        progress: number; 
+        elapsedTime: number; 
+        message?: string;
+      }) => {
+        console.log('Status update:', update);
+        setTaskStatus(update.status);
+        setTaskProgress(update.progress);
+        setTaskElapsedTime(update.elapsedTime);
+        if (update.message) {
+          setStatusMessage(update.message);
+        }
+      };
+
       try {
-        // Define the status update callback
-        const statusUpdateCallback = (update: { 
-          status: string; 
-          progress: number; 
-          elapsedTime: number; 
-          message?: string;
-        }) => {
-          console.log('Status update:', update);
-          setTaskStatus(update.status);
-          setTaskProgress(update.progress);
-          setTaskElapsedTime(update.elapsedTime);
-          if (update.message) {
-            setStatusMessage(update.message);
-          }
-        };
+        // Use Jina.ai search method with direct API call
+        console.log('🔍 LinkedIn Lookup: Starting Jina.ai search for:', companyToSearch)
         
-        // Use the cookie value if state is not set yet
-        const apiKeyToUse = geminiApiKey || CookieUtil.get("geminiApiKey") || undefined
+        const geminiApiKeyToUse = process.env.NEXT_PUBLIC_GEMINI_API_KEY || undefined
         
-        // Use the direct LinkedIn lookup method with polling and status updates
-        // Pass the job data as the third parameter
-        const responseData = await lookupLinkedInHR(
-          companyToSearch, 
-          apiKeyToUse,
-          jobInfo, // Pass job data to enhance personalization
+        console.log('🔍 LinkedIn Lookup: Starting Jina.ai search')
+        
+        // Use the direct Jina LinkedIn lookup function
+        const responseData = await lookupLinkedInHRWithJina(
+          companyToSearch,
+          geminiApiKeyToUse,
+          undefined, // API will use environment variable
+          jobInfo, // Pass job data for context
           180000, // 3 minutes timeout
-          statusUpdateCallback
+          statusUpdateCallback // Status updates
         );
+        
         console.log('LinkedIn search completed, response data:', responseData);
         
         // Check if we got valid results
@@ -636,12 +603,12 @@ function LinkedInLookupContent() {
     return Array.from(new Set(finalSkills));
   }
   
-  // Generate outreach message based on job and contact details
+  // Generate outreach message and enhance it with AI
   const generateOutreachMessage = (
     contact: LinkedInContactData, 
     job: Record<string, unknown> | null
   ) => {
-    // We'll use the original referral template
+    // Extract basic info for the original template
     const contactName = contact.name !== 'n/a' ? contact.name.split(' ')[0] : 'Hiring Manager'
     const jobTitle = (job?.title || job?.job_title || 'the open position') as string
     const companyName = contact.company || selectedCompany || 'your company'
@@ -655,8 +622,8 @@ function LinkedInLookupContent() {
       }
     }
     
-    // Original job referral template
-      return `Hello ${contactName},
+    // Original template (as you want it)
+    const originalMessage = `Hello ${contactName},
 
 I hope I'm reaching out to the right person. I'm interested in the ${jobTitle} position at ${companyName} and was wondering if you're involved in the hiring process.
 
@@ -665,6 +632,79 @@ I've carefully reviewed the job description and believe my background in ${skill
 Could you kindly let me know if you're the appropriate contact for this role or if you could refer me to the right person? I'd be grateful for any guidance you can provide.
 
 Thank you for your assistance,`
+
+    // Return original message for now - we'll enhance it with AI in the next step
+    return originalMessage
+  }
+
+  // AI-enhanced message generation
+  const generateEnhancedMessage = async (
+    contact: LinkedInContactData, 
+    job: Record<string, unknown> | null
+  ): Promise<string> => {
+    try {
+      // Generate the base message
+      const originalMessage = generateOutreachMessage(contact, job)
+      
+      // Use Gemini to clean up and enhance the message
+      const geminiApiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY
+      if (!geminiApiKey) {
+        console.log('No Gemini API key found, returning original message')
+        return originalMessage
+      }
+
+      const prompt = `Please review and improve the following LinkedIn outreach message. Fix any grammatical errors, improve formatting, ensure proper capitalization, and make sure the job title and skills are properly formatted. Keep the same tone and structure - just clean it up and make it more professional.
+
+Original message:
+${originalMessage}
+
+Contact details for context:
+- Name: ${contact.name}
+- Title: ${contact.title}
+- Company: ${contact.company}
+
+Job details for context:
+- Title: ${job?.title || job?.job_title || 'Unknown'}
+- Skills: ${job?.skills || 'Not specified'}
+
+Return only the improved message text, nothing else.`
+
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiApiKey}`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: prompt
+            }]
+          }],
+          generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 1000,
+          }
+        })
+      })
+
+      if (!response.ok) {
+        console.error('Gemini API error, returning original message')
+        return originalMessage
+      }
+
+      const data = await response.json()
+      const enhancedText = data.candidates?.[0]?.content?.parts?.[0]?.text
+
+      if (enhancedText) {
+        return enhancedText.trim()
+      } else {
+        console.error('No enhanced text returned, using original')
+        return originalMessage
+      }
+    } catch (error) {
+      console.error('Error enhancing message with AI:', error)
+      return generateOutreachMessage(contact, job) // Fallback to original
+    }
   }
   
   // Handle copy message to clipboard
@@ -734,25 +774,36 @@ Thank you for your assistance,`
   }
   
   // Handle regenerating a message (reset to original)
-  const handleRegenerateMessage = (contactId: string, contact: LinkedInContactData) => {
-    // Generate a fresh message based on the contact and selected job
-    const freshMessage = generateOutreachMessage(contact, selectedJob);
-    
-    // Update the editable message state
-    setEditableMessages(prev => ({
-      ...prev,
-      [contactId]: freshMessage
-    }));
+  const handleRegenerateMessage = async (contactId: string, contact: LinkedInContactData) => {
+    try {
+      // Generate AI-enhanced message based on the contact and selected job
+      const enhancedMessage = await generateEnhancedMessage(contact, selectedJob);
+      
+      // Update the editable message state
+      setEditableMessages(prev => ({
+        ...prev,
+        [contactId]: enhancedMessage
+      }));
+    } catch (error) {
+      console.error('Error generating enhanced message:', error);
+      // Fallback to original message generation
+      const fallbackMessage = generateOutreachMessage(contact, selectedJob);
+      setEditableMessages(prev => ({
+        ...prev,
+        [contactId]: fallbackMessage
+      }));
+    }
   }
   
   return (
-    <div className="no-overflow mobile-container">
-      {/* API Key Information Modal */}
-      {showApiInfoModal && (
-        <ApiInfoModal onClose={() => setShowApiInfoModal(false)} />
-      )}
-      
-      <PageHeader />
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 px-4 py-6 sm:px-6 lg:px-8">
+      <div className="max-w-7xl mx-auto">
+        {/* API Key Information Modal */}
+        {showApiInfoModal && (
+          <ApiInfoModal onClose={() => setShowApiInfoModal(false)} />
+        )}
+        
+        <PageHeader />
       
       {error && (
         <div className="mb-6 bg-red-100 dark:bg-red-900/30 border border-red-400 text-red-700 dark:text-red-300 px-4 py-3 rounded-md">
@@ -790,22 +841,11 @@ Thank you for your assistance,`
         </div>
       </div>
       
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-        {/* API Key Configuration - Only show if no API key is available */}
-        {(!geminiApiKey && !process.env.NEXT_PUBLIC_GEMINI_API_KEY) ? (
-          <div className="lg:col-span-1">
-            <ApiKeyConfiguration 
-              geminiApiKey={geminiApiKey}
-              setGeminiApiKey={setGeminiApiKey}
-              onSave={handleSaveSettings}
-              onHelp={() => setShowApiInfoModal(true)}
-            />
-          </div>
-        ) : null}
-        
+
+      <div className="grid grid-cols-1 gap-6 mb-8">
         {/* Company Selection */}
         {!selectedJob && (
-          <div className={(!geminiApiKey && !process.env.NEXT_PUBLIC_GEMINI_API_KEY) ? 'lg:col-span-2' : 'lg:col-span-3'}>
+          <div className="w-full">
             <CompanySelector
               loading={loading}
               error={error}
@@ -817,7 +857,10 @@ Thank you for your assistance,`
               useCustomCompany={useCustomCompany}
               setUseCustomCompany={setUseCustomCompany}
               isSearching={isSearching}
-              onSearch={handleSearch}
+              onSearch={() => {
+                console.log('🔍 LinkedIn Lookup: Search button clicked!')
+                handleSearch()
+              }}
             />
           </div>
         )}
@@ -838,7 +881,6 @@ Thank you for your assistance,`
         
         {/* Search Results (within combined container) */}
         <LinkedInContacts
-          geminiApiKey={geminiApiKey}
           selectedCompany={selectedCompany}
           isSearching={isSearching}
           taskStatus={taskStatus}
@@ -866,6 +908,7 @@ Thank you for your assistance,`
       {showHowItWorksModal && (
         <HowItWorksModal onClose={() => setShowHowItWorksModal(false)} />
       )}
+      </div>
     </div>
   )
 }

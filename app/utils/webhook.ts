@@ -75,6 +75,74 @@ export interface LinkedInContactData {
  * @param onStatusUpdate Optional callback for status updates
  * @returns Array of contact data objects
  */
+/**
+ * Direct LinkedIn lookup using Jina.ai search (replaces browser automation)
+ * @param company The company name to search for
+ * @param geminiApiKey Gemini API key for parsing
+ * @param jinaApiKey Jina.ai API key for search
+ * @param jobData Optional job data (for compatibility)
+ * @param timeout Not used anymore (for compatibility)
+ * @param onStatusUpdate Optional status callback (for compatibility)
+ * @returns Promise with LinkedIn contact data
+ */
+export const lookupLinkedInHRWithJina = async (
+  company: string,
+  geminiApiKey?: string,
+  jinaApiKey?: string,
+  jobData?: Record<string, unknown>,
+  timeout = 180000,
+  onStatusUpdate?: TaskStatusCallback
+): Promise<LinkedInContactData[]> => {
+  if (!company) {
+    throw new Error('Company name is required');
+  }
+
+  // API key validation is now handled by the /api/linkedin route
+
+  try {
+    // Update status - starting search
+    onStatusUpdate?.({
+      status: 'searching',
+      progress: 25,
+      elapsedTime: 0,
+      message: 'Searching LinkedIn profiles with Jina.ai...'
+    });
+
+    // Call the updated LinkedIn API with Jina.ai search
+    const response = await fetch('/api/linkedin', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        company,
+        apiKey: geminiApiKey
+        // jinaApiKey removed - API route will use environment variable
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+    }
+
+    const linkedInContacts = await response.json();
+
+    // Update status - completed
+    onStatusUpdate?.({
+      status: 'completed',
+      progress: 100,
+      elapsedTime: Date.now(),
+      message: 'Search completed successfully!'
+    });
+
+    return linkedInContacts;
+  } catch (error) {
+    console.error('Error in LinkedIn lookup with Jina:', error);
+    throw error;
+  }
+};
+
 export const lookupLinkedInHR = async (
   company: string, 
   apiKey?: string,
